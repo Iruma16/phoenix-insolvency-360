@@ -1,0 +1,17 @@
+```text
+# Seguridad (NUNCA SUBIR)
+.env
+
+# Entornos Virtuales y Librerías
+venv/
+__pycache__/
+
+# Base de datos local (Datos sensibles)
+*.db
+*.sqlite3
+
+# Archivos de sistema
+.DS_Store
+
+# Archivos temporales
+temp.pdf

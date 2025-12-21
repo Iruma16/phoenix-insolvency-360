@@ -1,0 +1,6 @@
+ID,Concepto,Fecha,Importe,Estado,Tipo_Deuda
+1,Prestamo ICO,2024-01-15,-15000,Pendiente,Financiera
+2,Nomina Marzo,2024-03-30,-2500,Pendiente,Laboral
+3,Hacienda IVA T1,2024-04-20,-4500,Pendiente,Publico
+4,Proveedor Maderas SL,2024-05-10,-1200,Pendiente,Ordinario
+5,Saldo Banco Santander,2024-06-01,2000,Real,Activo
