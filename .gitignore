@@ -1,17 +1,23 @@
-```text
-# Seguridad (NUNCA SUBIR)
+# --- SEGURIDAD (CRÍTICO) ---
 .env
 
-# Entornos Virtuales y Librerías
+# --- CARPETAS DE DATOS Y DOCUMENTACIÓN (PRIVADO) ---
+data/
+doc/
+reports/
+test/
+
+# --- ENTORNOS Y LIBRERÍAS ---
 venv/
+.venv/
 __pycache__/
 
-# Base de datos local (Datos sensibles)
+# --- BASES DE DATOS LOCALES ---
 *.db
 *.sqlite3
 
-# Archivos de sistema
+# --- ARCHIVOS DE SISTEMA Y TEMPORALES ---
 .DS_Store
-
-# Archivos temporales
 temp.pdf
+# Runtime (incluye BD)
+runtime/

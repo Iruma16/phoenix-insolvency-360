@@ -1,0 +1,15 @@
+{
+  "source": "BOE (Boletín Oficial del Estado)",
+  "last_update": "2024-01-01",
+  "reference": "Ley 22/2003, de 9 de julio, Concursal (texto consolidado)",
+  "reference_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2003-14086",
+  "scope": "Ley Concursal completa",
+  "version": "consolidada_2024",
+  "version_label": "LC consolidada BOE 2024-01-01",
+  "hash": "",
+  "notes": "Actualización manual. NO actualizar automáticamente. Requiere revisión legal antes de cualquier actualización. El version_label identifica la versión legible para humanos.",
+  "chunk_strategy": "por_articulo",
+  "total_articles": 0,
+  "ingestion_date": ""
+}
+

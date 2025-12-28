@@ -1,0 +1,51 @@
+from pathlib import Path
+
+# =========================================================
+# VARIABLES DE CONFIGURACIÓN DEL SISTEMA
+# =========================================================
+
+# Ruta raíz donde se guardan los archivos de los clientes
+DATA = Path(__file__).parent.parent.parent / "clients_data"
+# Vectorstores para casos (embeddings) — NO es evidencia legal, es derivado y regenerable
+# Estructura: clients_data/cases/<case_id>/vectorstore/
+CASES_VECTORSTORE_BASE = DATA / "cases"
+# Vectorstores para contenido legal (ley concursal y jurisprudencia)
+# Estructura: clients_data/_vectorstore/legal/<tipo>/
+LEGAL_VECTORSTORE_BASE = DATA / "_vectorstore" / "legal"
+LEGAL_LEY_VECTORSTORE = LEGAL_VECTORSTORE_BASE / "ley_concursal"
+LEGAL_JURISPRUDENCIA_VECTORSTORE = LEGAL_VECTORSTORE_BASE / "jurisprudencia"
+# =========================================================
+# CONFIG EMBEDDINGS (cámbialo si quieres)
+# =========================================================
+EMBEDDING_MODEL = "text-embedding-3-large"
+EMBEDDING_BATCH_SIZE = 64
+# =========================================================
+# RAG / LLM
+# =========================================================
+RAG_LLM_MODEL = "gpt-4o-mini"
+RAG_TEMPERATURE = 0.0
+RAG_TOP_K_DEFAULT = 5
+RAG_AUTO_BUILD_EMBEDDINGS = True
+# Score mínimo de similitud (distancia máxima permitida)
+# ChromaDB usa distancia L2: menor = más similar
+# Valores típicos: 0.5-1.0 (muy estricto), 1.0-1.5 (moderado), 1.5+ (permitivo)
+RAG_MIN_SIMILARITY_SCORE = 1.5  # Filtrar resultados con distancia > 1.5
+# Umbrales para determinar si la respuesta es débil
+RAG_WEAK_RESPONSE_MAX_DISTANCE = 1.3  # Si el mejor match tiene distancia > esto, respuesta débil
+RAG_HALLUCINATION_RISK_THRESHOLD = 1.4  # Si el mejor match tiene distancia > esto, alto riesgo de alucinación
+# =========================================================
+# CALIDAD DOCUMENTAL Y RIESGO LEGAL
+# =========================================================
+# Umbrales de calidad para bloqueo de conclusiones automáticas
+LEGAL_QUALITY_SCORE_BLOCK_THRESHOLD = 60  # Score < 60: bloquear conclusiones automáticas
+LEGAL_QUALITY_SCORE_WARNING_THRESHOLD = 75  # Score < 75: advertir sobre calidad
+# Documentos críticos desde perspectiva legal (requieren embeddings)
+CRITICAL_DOCUMENT_TYPES = {
+    "contrato",
+    "acta",
+    "acuerdo_societario",
+    "poder",
+    "balance",
+    "pyg",
+    "extracto_bancario",
+}
