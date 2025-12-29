@@ -1,14 +1,42 @@
-from __future__ import annotations
+from typing import TypedDict, List, Optional, Dict, Any
 
-from typing import TypedDict, List, Optional
+
+class Document(TypedDict):
+    doc_id: str
+    doc_type: str
+    content: str
+    date: Optional[str]
+
+
+class TimelineEvent(TypedDict):
+    date: str
+    description: str
+    source_doc_id: Optional[str]
+
+
+class Risk(TypedDict):
+    risk_type: str
+    severity: str
+    explanation: str
+    evidence: List[str]
 
 
 class AuditState(TypedDict):
-    """
-    Estado compartido entre nodos del Auditor.
-    """
     case_id: str
-    documents_processed: List[str]
-    events_detected: List[str]
-    risks: List[str]
+
+    # Identidad del caso
+    company_profile: Dict[str, Any]
+
+    # Datos
+    documents: List[Document]
+    timeline: List[TimelineEvent]
+
+    # Análisis
+    risks: List[Risk]
+    missing_documents: List[str]
+    legal_findings: List[Dict[str, Any]]
+
+    # Salida
     notes: Optional[str]
+    report: Optional[Dict[str, Any]]
+
