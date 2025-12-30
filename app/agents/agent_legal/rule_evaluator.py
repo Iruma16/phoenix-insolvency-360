@@ -40,6 +40,10 @@ class RuleEvaluator:
 
     def _tokenize(self, expression: str) -> List[str]:
         """Tokeniza una expresión separando operadores, valores y funciones."""
+        # Validación defensiva
+        if not isinstance(expression, str):
+            raise TypeError(f"Expression must be string, got {type(expression)}")
+        
         tokens = []
         current = ''
         i = 0

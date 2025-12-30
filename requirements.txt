@@ -1,5 +1,14 @@
 fastapi
 uvicorn
+langchain==0.3.27
+langchain-openai==0.3.35
+langchain-core
+langchain-text-splitters
+reportlab==4.4.7
+passlib[bcrypt]
+python-jose[cryptography]
+PyJWT
+streamlit
 sqlalchemy
 psycopg2-binary
 python-dotenv

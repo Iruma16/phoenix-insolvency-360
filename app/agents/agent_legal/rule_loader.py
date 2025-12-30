@@ -48,7 +48,23 @@ def load_default_rulebook() -> Rulebook:
 
     Returns:
         Rulebook por defecto
+        
+    Raises:
+        FileNotFoundError: Si no se encuentra el rulebook
     """
-    default_path = Path(__file__).parent.parent.parent.parent / "tests" / "reports" / "rulebook_mvp_completo.json"
-    return load_rulebook(default_path)
+    # Ubicaciones posibles (en orden de prioridad)
+    possible_paths = [
+        Path(__file__).parent / "rulebook.json",
+        Path(__file__).parent.parent.parent / "legal" / "rulebook" / "trlc_rules.json",
+        Path(__file__).parent.parent.parent.parent / "tests" / "reports" / "rulebook_mvp_completo.json",
+    ]
+    
+    for path in possible_paths:
+        if path.exists():
+            logger.info(f"Rulebook cargado desde: {path}")
+            return load_rulebook(path)
+    
+    raise FileNotFoundError(
+        f"No se encontró el rulebook en ninguna ubicación: {[str(p) for p in possible_paths]}"
+    )
 

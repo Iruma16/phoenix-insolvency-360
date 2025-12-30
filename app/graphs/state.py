@@ -35,6 +35,13 @@ class AuditState(TypedDict):
     risks: List[Risk]
     missing_documents: List[str]
     legal_findings: List[Dict[str, Any]]
+    
+    # Análisis LLM (opcional)
+    auditor_llm: Optional[Dict[str, Any]]
+    prosecutor_llm: Optional[Dict[str, Any]]
+    
+    # Rule Engine
+    rule_based_findings: Optional[List[Dict[str, Any]]]
 
     # Salida
     notes: Optional[str]

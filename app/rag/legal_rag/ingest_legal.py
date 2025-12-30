@@ -88,74 +88,103 @@ def _save_metadata(metadata_path: Path, metadata: Dict[str, Any]) -> None:
 
 def chunk_ley_concursal(text: str) -> List[Dict[str, Any]]:
     """
-    Divide el texto de la Ley Concursal por artículo.
+    Divide el texto COMPLETO de la Ley Concursal por tamaño con solape.
     
-    Cada artículo se convierte en un chunk con metadata:
-    - article: "165", "172", etc.
+    ESTRATEGIA COMPLETA (no por artículo):
+    - Chunk size: 1000-1500 caracteres
+    - Overlap: 150 caracteres
+    - Un artículo puede generar varios chunks
+    - Un chunk puede contener varios artículos
+    - Se incluyen TODOS los libros, títulos, disposiciones, anexos
+    
+    Metadata por chunk:
     - law: "Ley Concursal"
     - type: "ley"
-    - chunk_id: "LC-ART-165" (determinista y estable)
+    - chunk_id: "LC-FULL-{índice}" (determinista)
+    - chunk_index: posición en el texto
     """
     chunks: List[Dict[str, Any]] = []
-    lines = text.split('\n')
     
-    current_article = None
-    current_text = []
+    # Configuración de chunking
+    CHUNK_SIZE = 1200  # caracteres
+    OVERLAP = 150  # caracteres
+    MIN_CHUNK_SIZE = 200  # mínimo para considerar un chunk válido
     
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+    text_length = len(text)
+    chunk_index = 0
+    start = 0
+    
+    while start < text_length:
+        # Calcular fin del chunk
+        end = start + CHUNK_SIZE
         
-        # Detectar inicio de artículo (Art. XXX, Artículo XXX, etc.)
-        if line.startswith("Art.") or line.startswith("Artículo"):
-            # Guardar artículo anterior si existe
-            if current_article and current_text:
-                chunk_text = "\n".join(current_text).strip()
-                # Validación mínima pre-embedding
-                if len(chunk_text) >= 50:  # Longitud mínima razonable
-                    chunks.append({
-                        "text": chunk_text,
-                        "metadata": {
-                            "article": current_article,
-                            "law": "Ley Concursal",
-                            "type": "ley",
-                            "chunk_id": f"LC-ART-{current_article}",  # Determinista
-                        },
-                    })
-                else:
-                    print(f"⚠️  [WARN] Artículo {current_article} demasiado corto ({len(chunk_text)} chars), omitido")
+        # Si no es el último chunk, buscar un punto de corte natural
+        if end < text_length:
+            # Buscar el último punto, salto de línea o espacio en los últimos 200 chars
+            search_start = max(start + CHUNK_SIZE - 200, start)
+            search_end = min(end + 100, text_length)
             
-            # Extraer número de artículo
-            import re
-            match = re.search(r'Art\.?\s*(\d+)', line, re.IGNORECASE)
-            if match:
-                current_article = match.group(1)
-                current_text = [line]
+            # Prioridad: doble salto de línea (párrafo)
+            last_paragraph = text.rfind('\n\n', search_start, search_end)
+            if last_paragraph > search_start:
+                end = last_paragraph + 2
             else:
-                current_article = None
-                current_text = []
-        else:
-            if current_article:
-                current_text.append(line)
-            # Si no hay artículo actual, ignorar líneas sueltas
-    
-    # Guardar último artículo
-    if current_article and current_text:
-        chunk_text = "\n".join(current_text).strip()
-        # Validación mínima pre-embedding
-        if len(chunk_text) >= 50:  # Longitud mínima razonable
+                # Si no hay párrafo, buscar salto de línea simple
+                last_newline = text.rfind('\n', search_start, search_end)
+                if last_newline > search_start:
+                    end = last_newline + 1
+                else:
+                    # Si no hay salto, buscar punto
+                    last_period = text.rfind('. ', search_start, search_end)
+                    if last_period > search_start:
+                        end = last_period + 2
+                    else:
+                        # Si no hay nada, buscar espacio
+                        last_space = text.rfind(' ', search_start, search_end)
+                        if last_space > search_start:
+                            end = last_space + 1
+        
+        # Extraer chunk
+        chunk_text = text[start:end].strip()
+        
+        # Validar tamaño mínimo
+        if len(chunk_text) >= MIN_CHUNK_SIZE:
+            # Intentar detectar artículos en este chunk para metadata
+            import re
+            articles_in_chunk = re.findall(r'Art(?:ículo|\.)\s+(\d+)', chunk_text)
+            article_ref = None
+            if articles_in_chunk:
+                # Si hay artículos, usar el primero como referencia
+                article_ref = articles_in_chunk[0]
+            
+            metadata = {
+                "law": "Ley Concursal",
+                "type": "ley",
+                "chunk_id": f"LC-FULL-{chunk_index:04d}",
+                "chunk_index": str(chunk_index),
+                "char_start": str(start),
+                "char_end": str(end),
+                "ingestion_type": "full_text_overlap",
+            }
+            
+            # Añadir article_ref solo si existe
+            if article_ref:
+                metadata["article_ref"] = article_ref
+            
             chunks.append({
                 "text": chunk_text,
-                "metadata": {
-                    "article": current_article,
-                    "law": "Ley Concursal",
-                    "type": "ley",
-                    "chunk_id": f"LC-ART-{current_article}",  # Determinista
-                },
+                "metadata": metadata,
             })
-        else:
-            print(f"⚠️  [WARN] Artículo {current_article} demasiado corto ({len(chunk_text)} chars), omitido")
+            chunk_index += 1
+        elif len(chunk_text) > 0:
+            print(f"⚠️  [WARN] Chunk {chunk_index} demasiado corto ({len(chunk_text)} chars), omitido")
+        
+        # Avanzar con solape
+        start = end - OVERLAP
+        
+        # Evitar loops infinitos
+        if start >= text_length or (end >= text_length and start + MIN_CHUNK_SIZE >= text_length):
+            break
     
     return chunks
 
@@ -242,19 +271,37 @@ def chunk_jurisprudencia(text: str, filename: str) -> List[Dict[str, Any]]:
 
 def ingest_ley_concursal(overwrite: bool = False) -> Dict[str, Any]:
     """
-    Ingiere Ley Concursal desde raw/ley_concursal_consolidada.txt.
+    Ingiere TRLC COMPLETO desde documents/ (texto descargado del BOE).
+    
+    Busca el archivo más reciente con patrón ley_concursal_boe_consolidado_trlc_*.txt
     
     Returns:
         Dict con estadísticas de ingesta
     """
-    raw_file = LEGAL_LEY_RAW / "ley_concursal_consolidada.txt"
+    # Buscar archivo TRLC más reciente en documents/
+    docs_dir = DATA / "legal" / "ley_concursal" / "documents"
     
-    if not raw_file.exists():
+    if not docs_dir.exists():
         raise FileNotFoundError(
-            f"Archivo raw no encontrado: {raw_file}\n"
-            "Por favor, coloca el texto consolidado de la Ley Concursal en: "
-            f"{raw_file}"
+            f"Directorio documents no encontrado: {docs_dir}\n"
+            "Ejecuta primero: python scripts/download_trlc_completo.py"
         )
+    
+    # Buscar archivos TXT del TRLC
+    trlc_files = sorted(
+        docs_dir.glob("ley_concursal_boe_consolidado_trlc_*.txt"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True
+    )
+    
+    if not trlc_files:
+        raise FileNotFoundError(
+            f"No se encontró archivo TRLC en: {docs_dir}\n"
+            "Ejecuta primero: python scripts/download_trlc_completo.py"
+        )
+    
+    raw_file = trlc_files[0]
+    print(f"📄 Usando archivo: {raw_file.name}")
     
     # Leer texto
     with open(raw_file, 'r', encoding='utf-8') as f:

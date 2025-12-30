@@ -1,0 +1,527 @@
+{
+  "metadata": {
+    "version": "2.0.0",
+    "source": "TRLC (RDL 1/2020)",
+    "last_updated": "2024-12-30",
+    "description": "Reglas legales automatizadas para detección de riesgos concursales - Versión ampliada"
+  },
+  "rules": [
+    {
+      "rule_id": "TRLC_ART5_DELAY_FILING",
+      "risk_type": "delay_filing",
+      "article_refs": ["Art. 5 TRLC", "Art. 443 TRLC"],
+      "trigger": {
+        "condition": "detectado_delay_filing == true"
+      },
+      "evidence_required": {
+        "document_types": ["acta_junta", "balance_pyg"],
+        "descriptions": ["Acta de junta reconociendo insolvencia", "Balance y PyG del ejercicio"]
+      },
+      "severity_logic": {
+        "high": "tiene_riesgo_alto == true",
+        "medium": "tiene_riesgo_medio == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "high": "tiene_acta == true AND tiene_balance == true",
+        "medium": "tiene_acta == true OR tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 5 TRLC establece el deber de solicitar concurso en 2 meses desde conocimiento de insolvencia. El incumplimiento puede dar lugar a calificación culpable (Art. 443 TRLC).",
+        "recommendation_template": "Verificar fecha exacta de conocimiento de insolvencia y comparar con fecha de solicitud. Documentar causas del retraso si las hubiere."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART6_COLLABORATION_DUTY",
+      "risk_type": "documentation_gap",
+      "article_refs": ["Art. 6 TRLC", "Art. 443.1 TRLC"],
+      "trigger": {
+        "condition": "detectado_gaps == true"
+      },
+      "evidence_required": {
+        "document_types": ["balance_pyg", "acta_junta", "informe_tesoreria"],
+        "descriptions": ["Documentación contable completa", "Actas de junta", "Informes de tesorería"]
+      },
+      "severity_logic": {
+        "high": "num_documentos < 3",
+        "medium": "num_documentos < 5",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "high": "tiene_balance == false OR tiene_acta == false",
+        "medium": "num_documentos < 4",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 6 TRLC impone al deudor el deber de colaborar con la administración concursal, incluyendo entrega de documentación completa. La falta de documentación esencial puede constituir presunción de culpabilidad (Art. 443.1 TRLC).",
+        "recommendation_template": "Solicitar documentación faltante de forma fehaciente. Documentar intentos de obtención y respuestas del deudor."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART11_ACCOUNTING_OBLIGATIONS",
+      "risk_type": "accounting_red_flags",
+      "article_refs": ["Art. 11 TRLC", "Art. 443.2 TRLC"],
+      "trigger": {
+        "condition": "detectado_accounting_flags == true"
+      },
+      "evidence_required": {
+        "document_types": ["balance_pyg", "libros_contables"],
+        "descriptions": ["Balance y PyG auditados", "Libros contables legalizados"]
+      },
+      "severity_logic": {
+        "high": "tiene_balance == false",
+        "medium": "detectado_inconsistencias == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "high": "tiene_balance == false AND tiene_acta == true",
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 11 TRLC establece obligaciones de llevanza de contabilidad. El incumplimiento sustancial constituye presunción de culpabilidad (Art. 443.2 TRLC).",
+        "recommendation_template": "Verificar existencia y regularidad de libros contables obligatorios. Evaluar si las irregularidades son sustanciales o formales."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART165_EFFECTS_DECLARATION",
+      "risk_type": "procedural_compliance",
+      "article_refs": ["Art. 165 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 3"
+      },
+      "evidence_required": {
+        "document_types": ["auto_declaracion"],
+        "descriptions": ["Auto de declaración de concurso"]
+      },
+      "severity_logic": {
+        "medium": "tiene_acta == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "num_documentos >= 4",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 165 TRLC regula los efectos de la declaración de concurso sobre el deudor. Es fundamental verificar el cumplimiento de las obligaciones derivadas de la declaración.",
+        "recommendation_template": "Verificar que se han cumplido las obligaciones del Art. 165 TRLC tras la declaración de concurso."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART172_ADMINISTRATION_POWERS",
+      "risk_type": "administration_compliance",
+      "article_refs": ["Art. 172 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 2"
+      },
+      "evidence_required": {
+        "document_types": ["comunicaciones_administrador"],
+        "descriptions": ["Comunicaciones con administrador concursal"]
+      },
+      "severity_logic": {
+        "medium": "detectado_gaps == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_acta == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 172 TRLC regula las facultades de la administración concursal. La falta de colaboración puede constituir presunción de culpabilidad.",
+        "recommendation_template": "Verificar cumplimiento de requerimientos de la administración concursal según Art. 172 TRLC."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART443_PRESUMPTION_CULPABLE",
+      "risk_type": "document_inconsistency",
+      "article_refs": ["Art. 443 TRLC"],
+      "trigger": {
+        "condition": "detectado_inconsistencias == true AND tiene_riesgo_alto == true"
+      },
+      "evidence_required": {
+        "document_types": ["balance_pyg", "acta_junta", "informe_auditoria"],
+        "descriptions": ["Documentación contable completa", "Actas de junta", "Informe de auditoría si procede"]
+      },
+      "severity_logic": {
+        "high": "num_riesgos_heuristicos >= 3",
+        "medium": "num_riesgos_heuristicos >= 2",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "high": "tiene_balance == true AND tiene_acta == true",
+        "medium": "tiene_balance == true OR tiene_acta == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 443 TRLC establece presunciones de culpabilidad ante determinadas conductas. La concurrencia de múltiples presunciones incrementa el riesgo de calificación culpable.",
+        "recommendation_template": "Analizar detalladamente cada presunción. Identificar prueba que pueda desvirtuar las presunciones. Evaluar posibilidad de acuerdo con acreedores."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART444_CULPABLE_CLASSIFICATION",
+      "risk_type": "culpable_classification_risk",
+      "article_refs": ["Art. 444 TRLC"],
+      "trigger": {
+        "condition": "tiene_riesgo_alto == true AND detectado_inconsistencias == true"
+      },
+      "evidence_required": {
+        "document_types": ["balance_pyg", "acta_junta", "informe_auditoria"],
+        "descriptions": ["Documentación contable", "Actas societarias", "Informes de auditoría"]
+      },
+      "severity_logic": {
+        "high": "num_riesgos_heuristicos >= 3",
+        "medium": "num_riesgos_heuristicos >= 2",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "high": "tiene_balance == true AND tiene_acta == true",
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 444 TRLC regula la calificación culpable del concurso. La concurrencia de conductas dolosas o gravemente negligentes puede dar lugar a esta calificación.",
+        "recommendation_template": "Evaluar exhaustivamente las conductas del deudor. Identificar posibles eximentes o atenuantes. Considerar estrategia defensiva."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART445_AFFECTED_PERSONS",
+      "risk_type": "personal_liability_risk",
+      "article_refs": ["Art. 445 TRLC"],
+      "trigger": {
+        "condition": "tiene_riesgo_alto == true"
+      },
+      "evidence_required": {
+        "document_types": ["acta_junta", "poderes_administradores"],
+        "descriptions": ["Actas de nombramiento", "Poderes de administradores"]
+      },
+      "severity_logic": {
+        "high": "detectado_inconsistencias == true",
+        "medium": "detectado_gaps == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_acta == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 445 TRLC determina las personas afectadas por la calificación culpable. Administradores, liquidadores y apoderados generales pueden ser declarados cómplices.",
+        "recommendation_template": "Identificar personas con responsabilidad potencial según Art. 445 TRLC. Evaluar defensas individuales."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART446_CONSEQUENCES",
+      "risk_type": "liability_consequences",
+      "article_refs": ["Art. 446 TRLC"],
+      "trigger": {
+        "condition": "tiene_riesgo_alto == true"
+      },
+      "evidence_required": {
+        "document_types": ["balance_pyg", "listado_acreedores"],
+        "descriptions": ["Balance final", "Listado de acreedores"]
+      },
+      "severity_logic": {
+        "high": "detectado_accounting_flags == true",
+        "medium": "detectado_inconsistencias == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 446 TRLC establece las consecuencias de la calificación culpable: inhabilitación, pérdida de derechos, y cobertura del déficit concursal.",
+        "recommendation_template": "Evaluar impacto potencial de las consecuencias del Art. 446 TRLC. Cuantificar riesgo económico."
+      }
+    },
+    {
+      "rule_id": "TRLC_MICROEMPRESA_SPECIAL_PROCEDURE",
+      "risk_type": "procedural_option",
+      "article_refs": ["Art. 332 TRLC", "Art. 333 TRLC"],
+      "trigger": {
+        "condition": "empresa_sector != 'Desconocido'"
+      },
+      "evidence_required": {
+        "document_types": ["balance_pyg", "censo_empleados"],
+        "descriptions": ["Balance para verificar umbrales", "Censo de empleados"]
+      },
+      "severity_logic": {
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "num_documentos >= 3",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Libro III TRLC (Arts. 332 y ss.) establece un procedimiento especial simplificado para microempresas (< 10 trabajadores, activo < 1M€, cifra negocio < 2M€). Este procedimiento es más ágil y menos costoso.",
+        "recommendation_template": "Verificar si se cumplen los requisitos del Art. 333 TRLC. Evaluar conveniencia del procedimiento especial frente al ordinario."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART100_MASS_CREDITS",
+      "risk_type": "credit_classification",
+      "article_refs": ["Art. 100 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 3"
+      },
+      "evidence_required": {
+        "document_types": ["listado_acreedores", "facturas"],
+        "descriptions": ["Listado de acreedores", "Facturas de gastos"]
+      },
+      "severity_logic": {
+        "medium": "detectado_accounting_flags == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 100 TRLC regula los créditos contra la masa. Es fundamental identificar correctamente estos créditos para evitar conflictos.",
+        "recommendation_template": "Revisar clasificación de créditos según Art. 100 TRLC. Verificar que gastos de la masa están correctamente identificados."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART238_AGREEMENT_APPROVAL",
+      "risk_type": "agreement_viability",
+      "article_refs": ["Art. 238 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 4"
+      },
+      "evidence_required": {
+        "document_types": ["propuesta_convenio", "plan_viabilidad"],
+        "descriptions": ["Propuesta de convenio", "Plan de viabilidad"]
+      },
+      "severity_logic": {
+        "medium": "detectado_inconsistencias == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 238 TRLC regula la aprobación del convenio. Es necesario verificar que se cumplen los requisitos de mayorías y contenido.",
+        "recommendation_template": "Verificar cumplimiento de requisitos del Art. 238 TRLC para aprobación del convenio."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART367_LIQUIDATION",
+      "risk_type": "liquidation_procedure",
+      "article_refs": ["Art. 367 TRLC"],
+      "trigger": {
+        "condition": "tiene_riesgo_alto == true"
+      },
+      "evidence_required": {
+        "document_types": ["inventario_bienes", "tasacion"],
+        "descriptions": ["Inventario de bienes", "Tasación de activos"]
+      },
+      "severity_logic": {
+        "high": "detectado_accounting_flags == true",
+        "medium": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 367 TRLC regula la apertura de la fase de liquidación. Es crucial verificar que se cumplen los requisitos y plazos.",
+        "recommendation_template": "Verificar cumplimiento de requisitos del Art. 367 TRLC para apertura de liquidación."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART176_SEPARATION_SUSPENSION",
+      "risk_type": "administration_powers_loss",
+      "article_refs": ["Art. 176 TRLC"],
+      "trigger": {
+        "condition": "detectado_inconsistencias == true"
+      },
+      "evidence_required": {
+        "document_types": ["auto_suspension", "comunicaciones_administrador"],
+        "descriptions": ["Auto de suspensión", "Comunicaciones con administrador"]
+      },
+      "severity_logic": {
+        "high": "tiene_riesgo_alto == true",
+        "medium": "detectado_gaps == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_acta == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 176 TRLC regula la separación y suspensión de facultades del deudor. La suspensión total implica pérdida de control sobre la empresa.",
+        "recommendation_template": "Evaluar si procede solicitar suspensión de facultades según Art. 176 TRLC."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART192_INVENTORY",
+      "risk_type": "inventory_compliance",
+      "article_refs": ["Art. 192 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 2"
+      },
+      "evidence_required": {
+        "document_types": ["inventario_bienes", "balance_pyg"],
+        "descriptions": ["Inventario de bienes", "Balance"]
+      },
+      "severity_logic": {
+        "medium": "tiene_balance == false",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "num_documentos >= 3",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 192 TRLC exige la presentación de inventario de bienes y derechos. Su ausencia o inexactitud puede constituir presunción de culpabilidad.",
+        "recommendation_template": "Verificar que el inventario del Art. 192 TRLC está completo y es exacto."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART193_CREDITORS_LIST",
+      "risk_type": "creditors_list_compliance",
+      "article_refs": ["Art. 193 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 2"
+      },
+      "evidence_required": {
+        "document_types": ["listado_acreedores"],
+        "descriptions": ["Listado de acreedores"]
+      },
+      "severity_logic": {
+        "medium": "detectado_gaps == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "num_documentos >= 3",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 193 TRLC exige la presentación de lista de acreedores. Su ausencia, inexactitud u ocultación puede constituir presunción de culpabilidad.",
+        "recommendation_template": "Verificar que la lista de acreedores del Art. 193 TRLC está completa y es exacta."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART194_MEMORY",
+      "risk_type": "memory_compliance",
+      "article_refs": ["Art. 194 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 2"
+      },
+      "evidence_required": {
+        "document_types": ["memoria_concursal"],
+        "descriptions": ["Memoria del concurso"]
+      },
+      "severity_logic": {
+        "medium": "detectado_gaps == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_acta == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 194 TRLC exige la presentación de memoria explicativa de las causas de insolvencia. Su ausencia puede constituir presunción de culpabilidad.",
+        "recommendation_template": "Verificar que la memoria del Art. 194 TRLC explica adecuadamente las causas de insolvencia."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART231_AGREEMENT_PROPOSAL",
+      "risk_type": "agreement_proposal_compliance",
+      "article_refs": ["Art. 231 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 3"
+      },
+      "evidence_required": {
+        "document_types": ["propuesta_convenio", "plan_pagos"],
+        "descriptions": ["Propuesta de convenio", "Plan de pagos"]
+      },
+      "severity_logic": {
+        "medium": "detectado_inconsistencias == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 231 TRLC regula el contenido de la propuesta de convenio. Debe incluir proposiciones de quita y/o espera y plan de pagos.",
+        "recommendation_template": "Verificar que la propuesta de convenio cumple los requisitos del Art. 231 TRLC."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART286_AGREEMENT_BREACH",
+      "risk_type": "agreement_breach_risk",
+      "article_refs": ["Art. 286 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 3"
+      },
+      "evidence_required": {
+        "document_types": ["seguimiento_convenio", "pagos_realizados"],
+        "descriptions": ["Informe de seguimiento", "Justificantes de pagos"]
+      },
+      "severity_logic": {
+        "high": "detectado_inconsistencias == true",
+        "medium": "detectado_gaps == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 286 TRLC regula el incumplimiento del convenio. El incumplimiento puede dar lugar a resolución y apertura de liquidación.",
+        "recommendation_template": "Verificar cumplimiento del convenio según Art. 286 TRLC. Evaluar riesgo de resolución."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART381_PAYMENT_PLAN",
+      "risk_type": "liquidation_payment_plan",
+      "article_refs": ["Art. 381 TRLC"],
+      "trigger": {
+        "condition": "tiene_riesgo_medio == true"
+      },
+      "evidence_required": {
+        "document_types": ["plan_liquidacion", "valoracion_activos"],
+        "descriptions": ["Plan de liquidación", "Valoración de activos"]
+      },
+      "severity_logic": {
+        "medium": "detectado_accounting_flags == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 381 TRLC regula el plan de liquidación. Debe incluir valoración de activos y plan de pagos a acreedores.",
+        "recommendation_template": "Verificar que el plan de liquidación cumple los requisitos del Art. 381 TRLC."
+      }
+    },
+    {
+      "rule_id": "TRLC_ART456_SUBORDINATED_CREDITS",
+      "risk_type": "credit_subordination",
+      "article_refs": ["Art. 456 TRLC"],
+      "trigger": {
+        "condition": "num_documentos >= 3"
+      },
+      "evidence_required": {
+        "document_types": ["listado_acreedores", "contratos_credito"],
+        "descriptions": ["Listado de acreedores", "Contratos de crédito"]
+      },
+      "severity_logic": {
+        "medium": "detectado_inconsistencias == true",
+        "low": "true"
+      },
+      "confidence_logic": {
+        "medium": "tiene_balance == true",
+        "low": "true"
+      },
+      "outputs": {
+        "description_template": "El Art. 456 TRLC regula los créditos subordinados. Es fundamental identificar correctamente estos créditos para evitar conflictos en el pago.",
+        "recommendation_template": "Revisar clasificación de créditos subordinados según Art. 456 TRLC."
+      }
+    }
+  ]
+}

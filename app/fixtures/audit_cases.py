@@ -42,6 +42,9 @@ CASE_RETAIL_001: AuditState = {
     "risks": [],
     "missing_documents": [],
     "legal_findings": [],
+    "auditor_llm": None,
+    "prosecutor_llm": None,
+    "rule_based_findings": [],
     "notes": None,
     "report": None,
 }
@@ -92,6 +95,9 @@ CASE_RETAIL_002: AuditState = {
     "risks": [],
     "missing_documents": [],
     "legal_findings": [],
+    "auditor_llm": None,
+    "prosecutor_llm": None,
+    "rule_based_findings": [],
     "notes": None,
     "report": None,
 }
@@ -148,6 +154,9 @@ CASE_RETAIL_003: AuditState = {
     "risks": [],
     "missing_documents": [],
     "legal_findings": [],
+    "auditor_llm": None,
+    "prosecutor_llm": None,
+    "rule_based_findings": [],
     "notes": None,
     "report": None,
 }

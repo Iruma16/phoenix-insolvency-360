@@ -90,7 +90,16 @@ def detect_risks(state: AuditState) -> AuditState:
     risks.append(_detect_documentation_gap(documents))
     risks.append(_detect_accounting_red_flags(documents))
     
-    state["risks"] = risks
+        state["risks"] = risks
+        
+        logger.info(
+            "Riesgos detectados",
+            case_id=case_id,
+            action="risk_detection_complete",
+            num_risks=len(risks),
+            risk_types=[r.get('risk_type') for r in risks]
+        )
+    
     return state
 
 
@@ -417,6 +426,19 @@ def build_report(state: AuditState) -> AuditState:
     }
     
     state["report"] = report
+    
+    # Generar PDF del informe
+    try:
+        from app.reports.pdf_report import generate_report_for_case
+        pdf_path = generate_report_for_case(state["case_id"], state)
+        report["pdf_path"] = pdf_path
+        print(f"✅ Informe PDF generado: {pdf_path}")
+    except Exception as e:
+        print(f"⚠️  Error generando PDF: {e}")
+        import traceback
+        traceback.print_exc()
+        report["pdf_path"] = None
+    
     return state
 
 

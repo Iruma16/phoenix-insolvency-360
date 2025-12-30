@@ -42,6 +42,10 @@ def _extract_allowed_articles(legal_context: str) -> Set[str]:
         r'ART\.?\s*(\d+)',  # ART. 165 (mayúsculas)
     ]
     
+    # Validación defensiva
+    if not legal_context or not isinstance(legal_context, str):
+        return set()
+    
     allowed_articles = set()
     for pattern in patterns:
         matches = re.findall(pattern, legal_context, re.IGNORECASE)

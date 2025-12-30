@@ -1,5 +1,7 @@
 # --- SEGURIDAD (CRÍTICO) ---
 .env
+.env.*
+*.key
 
 # --- CARPETAS DE DATOS Y DOCUMENTACIÓN (PRIVADO) ---
 data/
@@ -7,10 +9,23 @@ doc/
 reports/
 test/
 
+# --- DATOS RUNTIME DEL PROYECTO ---
+clients_data/_vectorstore/
+clients_data/cases/
+clients_data/logs/
+runtime/
+
+# --- RESULTADOS DE TESTS ---
+tests/report_junit.xml
+.coverage
+htmlcov/
+
 # --- ENTORNOS Y LIBRERÍAS ---
 venv/
 .venv/
 __pycache__/
+*.pyc
+*.pyo
 
 # --- BASES DE DATOS LOCALES ---
 *.db
@@ -18,6 +33,14 @@ __pycache__/
 
 # --- ARCHIVOS DE SISTEMA Y TEMPORALES ---
 .DS_Store
+Thumbs.db
 temp.pdf
-# Runtime (incluye BD)
-runtime/
+*.log
+
+# --- STREAMLIT ---
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# --- DOCKER ---
+docker/.env
+docker/*.env
