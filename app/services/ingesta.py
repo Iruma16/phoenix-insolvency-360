@@ -4,7 +4,8 @@ import io
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, Tuple
+from dataclasses import dataclass
 
 import pdfplumber
 import pandas as pd
@@ -19,6 +20,22 @@ from openai import OpenAI
 print("🟢 [INGESTA] Inicializando módulo de ingesta")
 load_dotenv()
 client = OpenAI()
+
+
+# =========================================================
+# DATACLASS PARA RESULTADO DE PARSING
+# =========================================================
+
+@dataclass
+class ParsingResult:
+    """
+    Resultado del parsing de un documento.
+    Incluye texto extraído y metadatos para validación.
+    """
+    texto: str
+    num_paginas: int  # Número de páginas detectadas
+    tipo_documento: str  # pdf, docx, txt, etc.
+    page_offsets: dict[int, tuple[int, int]] | None = None  # {page_num: (start_char, end_char)}
 
 # =========================================================
 # UTILIDADES GENERALES
@@ -55,38 +72,67 @@ def normalizar_fecha(fecha_str: str) -> Optional[str]:
 # INGESTA PDF / TXT
 # =========================================================
 
-def leer_pdf(file_stream) -> str:
+def leer_pdf(file_stream) -> ParsingResult:
     """
     Lee un archivo PDF y extrae todo el texto.
     Soporta tanto rutas de archivo (string) como streams.
+    Retorna ParsingResult con texto y metadatos.
+    
+    CORRECCIÓN: Calcula page_offsets para trazabilidad de páginas.
     """
     print("📄 [PDF] Inicio lectura de PDF")
     texto_completo = ""
+    num_paginas = 0
+    page_offsets = {}  # {page_num: (start_char, end_char)}
 
     try:
         # pdfplumber.open puede manejar tanto rutas como streams
         with pdfplumber.open(file_stream) as pdf:
-            print(f"📄 [PDF] Número de páginas: {len(pdf.pages)}")
+            num_paginas = len(pdf.pages)
+            print(f"📄 [PDF] Número de páginas: {num_paginas}")
+            
+            current_offset = 0
             for i, page in enumerate(pdf.pages):
+                page_num = i + 1  # Páginas comienzan en 1
+                page_start = current_offset
+                
                 text = page.extract_text()
                 if text:
                     texto_completo += text + "\n"
+                    current_offset += len(text) + 1  # +1 por el \n
                 else:
-                    print(f"⚠️ [PDF] Página {i} sin texto")
+                    print(f"⚠️ [PDF] Página {i+1} sin texto")
+                
+                page_end = current_offset
+                page_offsets[page_num] = (page_start, page_end)
 
         print(f"✅ [PDF] Texto extraído ({len(texto_completo)} caracteres)")
-        return texto_completo
+        print(f"✅ [PDF] Calculados offsets para {len(page_offsets)} páginas")
+        
+        return ParsingResult(
+            texto=texto_completo,
+            num_paginas=num_paginas,
+            tipo_documento="pdf",
+            page_offsets=page_offsets,
+        )
 
     except Exception as e:
         print("❌ [PDF] Error leyendo PDF")
         print(f"❌ [PDF] Detalle: {e}")
-        return ""
+        
+        return ParsingResult(
+            texto="",
+            num_paginas=0,
+            tipo_documento="pdf",
+            page_offsets=None,
+        )
 
 
-def leer_txt(file_stream) -> str:
+def leer_txt(file_stream) -> ParsingResult:
     """
     Lee un archivo TXT.
     Soporta tanto rutas de archivo (string) como streams.
+    Retorna ParsingResult con texto y metadatos.
     """
     print("📄 [TXT] Inicio lectura de TXT")
     try:
@@ -100,17 +146,28 @@ def leer_txt(file_stream) -> str:
             texto = content.decode("utf-8", errors="ignore") if isinstance(content, bytes) else str(content)
         
         print(f"✅ [TXT] Texto leído ({len(texto)} caracteres)")
-        return texto
+        
+        return ParsingResult(
+            texto=texto,
+            num_paginas=1,  # TXT no tiene concepto de páginas
+            tipo_documento="txt",
+        )
     except Exception as e:
         print("❌ [TXT] Error leyendo TXT")
         print(f"❌ [TXT] Detalle: {e}")
-        return ""
+        
+        return ParsingResult(
+            texto="",
+            num_paginas=0,
+            tipo_documento="txt",
+        )
 
 
-def leer_docx(file_stream, is_doc_legacy: bool = False) -> str:
+def leer_docx(file_stream, is_doc_legacy: bool = False) -> ParsingResult:
     """
     Lee un archivo DOCX y extrae todo el texto.
     Soporta tanto rutas de archivo (string) como streams.
+    Retorna ParsingResult con texto y metadatos.
     
     Parámetros
     ----------
@@ -121,6 +178,7 @@ def leer_docx(file_stream, is_doc_legacy: bool = False) -> str:
         Se intentará leer pero puede fallar. Se mostrará un warning si falla.
     """
     file_type = "DOC (legacy)" if is_doc_legacy else "DOCX"
+    tipo_doc = "doc" if is_doc_legacy else "docx"
     print(f"📄 [{file_type}] Inicio lectura de {file_type}")
     texto_completo = ""
     
@@ -153,7 +211,11 @@ def leer_docx(file_stream, is_doc_legacy: bool = False) -> str:
         else:
             print(f"✅ [{file_type}] Texto extraído ({len(texto_completo)} caracteres)")
         
-        return texto_completo.strip()
+        return ParsingResult(
+            texto=texto_completo.strip(),
+            num_paginas=1,  # DOCX no tiene concepto de páginas nativo
+            tipo_documento=tipo_doc,
+        )
     
     except Exception as e:
         if is_doc_legacy:
@@ -164,7 +226,12 @@ def leer_docx(file_stream, is_doc_legacy: bool = False) -> str:
         else:
             print(f"❌ [DOCX] Error leyendo DOCX")
             print(f"❌ [DOCX] Detalle: {e}")
-        return ""
+        
+        return ParsingResult(
+            texto="",
+            num_paginas=0,
+            tipo_documento=tipo_doc,
+        )
 
 
 # =========================================================
@@ -270,10 +337,15 @@ def leer_csv_excel(file_stream, filename: str) -> Optional[pd.DataFrame]:
 def ingerir_archivo(
     file_stream,
     filename: str,
-) -> Union[str, pd.DataFrame, None]:
+) -> Union[ParsingResult, pd.DataFrame, None]:
     """
     Punto único de entrada para ingesta.
     Detecta formato y delega la lectura.
+    
+    Retorna:
+    - ParsingResult para archivos de texto (PDF, TXT, DOCX, DOC)
+    - DataFrame para CSV/Excel
+    - None si el formato no es soportado
     """
 
     print("--------------------------------------------------")

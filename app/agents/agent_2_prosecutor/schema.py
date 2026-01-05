@@ -1,127 +1,148 @@
 """
-Esquemas de datos para el agente prosecutor.
-JSON de salida (acusaciones).
+REDISEÑO PROSECUTOR: Schema probatorio estricto.
+
+PRINCIPIO: NO EXISTE ACUSACIÓN SIN PRUEBA COMPLETA.
 """
 from __future__ import annotations
 
-from typing import List, Optional, Literal
+from typing import List, Literal
 from pydantic import BaseModel, Field
 
 
 # ============================
-# ENUMS / TIPOS CONTROLADOS
+# TIPOS CONTROLADOS
 # ============================
 
-RiskLevel = Literal["bajo", "medio", "alto", "critico"]
-
-LegalGround = Literal[
-    "retraso_concurso",
-    "alzamiento_bienes",
-    "doble_contabilidad",
-    "simulacion_patrimonial",
-    "pagos_preferentes",
-    "operaciones_vinculadas",
-    "falta_contabilidad",
-    "incumplimiento_deber_colaboracion",
-]
+Severidad = Literal["BAJA", "MEDIA", "ALTA", "CRITICA"]
 
 
 # ============================
-# PRUEBAS / EVIDENCIAS
+# OBLIGACIÓN LEGAL
 # ============================
 
-class Evidence(BaseModel):
-    document_id: str = Field(..., description="ID del documento donde se detecta el indicio")
-    document_name: Optional[str] = Field(None, description="Nombre legible del documento")
-    chunk_index: Optional[int] = Field(None, description="Fragmento concreto del documento")
-    excerpt: Optional[str] = Field(
-        None,
-        description="Texto exacto que sustenta la acusación"
-    )
-    date: Optional[str] = Field(
-        None,
-        description="Fecha relevante del hecho (YYYY-MM-DD si es posible)"
-    )
+class ObligacionLegal(BaseModel):
+    """Obligación legal concreta (ley + artículo + deber)."""
+    ley: str = Field(..., description="Ley aplicable (ej: 'Ley Concursal')")
+    articulo: str = Field(..., description="Artículo concreto (ej: 'Art. 165.1')")
+    deber: str = Field(..., description="Deber legal específico")
 
 
 # ============================
-# ACUSACIÓN INDIVIDUAL
+# EVIDENCIA DOCUMENTAL
 # ============================
 
-class LegalAccusation(BaseModel):
-    accusation_id: str = Field(..., description="Identificador único de la acusación")
-    legal_ground: LegalGround = Field(
+class EvidenciaDocumental(BaseModel):
+    """Evidencia trazable 1:1 al documento original."""
+    chunk_id: str = Field(..., description="Chunk ID determinista")
+    doc_id: str = Field(..., description="Document ID o filename")
+    page: int | None = Field(None, description="Número de página")
+    start_char: int = Field(..., description="Offset inicio en texto original")
+    end_char: int = Field(..., description="Offset fin en texto original")
+    extracto_literal: str = Field(..., description="Texto EXACTO del chunk (sin paráfrasis)")
+
+
+# ============================
+# ACUSACIÓN PROBATORIA
+# ============================
+
+class AcusacionProbatoria(BaseModel):
+    """
+    Acusación SOLO si cumple los 5 requisitos obligatorios.
+    
+    GATES BLOQUEANTES:
+    1. Obligación legal definida
+    2. Evidencia documental trazable
+    3. Evidencia suficiente (no parcial)
+    4. Nivel de confianza calculable
+    5. Evidencia faltante listada si aplica
+    """
+    accusation_id: str = Field(..., description="ID único de acusación")
+    
+    # REQUISITO 1: Obligación legal concreta
+    obligacion_legal: ObligacionLegal = Field(
         ...,
-        description="Base legal de posible calificación culpable"
+        description="Ley + artículo + deber específico"
     )
-    risk_level: RiskLevel = Field(
+    
+    # REQUISITO 2: Evidencia documental trazable
+    evidencia_documental: List[EvidenciaDocumental] = Field(
         ...,
-        description="Nivel de riesgo estimado"
+        min_items=1,
+        description="Evidencias trazables (mínimo 1)"
     )
-    title: str = Field(
+    
+    # REQUISITO 3: Descripción fáctica (sin adjetivos, sin conclusiones)
+    descripcion_factica: str = Field(
         ...,
-        description="Resumen corto y contundente de la acusación"
+        description="Descripción OBJETIVA de lo que el documento muestra literalmente"
     )
-    description: str = Field(
+    
+    # REQUISITO 4: Severidad evaluada
+    severidad: Severidad = Field(
         ...,
-        description="Explicación clara del riesgo detectado"
+        description="Severidad evaluada (BAJA|MEDIA|ALTA|CRITICA)"
     )
-    reasoning: str = Field(
+    
+    # REQUISITO 5: Nivel de confianza CALCULADO (NO hardcoded)
+    nivel_confianza: float = Field(
         ...,
-        description="Razonamiento lógico-temporal que conecta los hechos"
+        ge=0.0,
+        le=1.0,
+        description="Nivel de confianza calculado (0.0-1.0)"
     )
-    evidences: List[Evidence] = Field(
+    
+    # REQUISITO 6: Evidencia faltante explícita
+    evidencia_faltante: List[str] = Field(
         default_factory=list,
-        description="Pruebas documentales que sustentan la acusación"
-    )
-    estimated_probability: Optional[float] = Field(
-        None,
-        ge=0,
-        le=1,
-        description="Probabilidad estimada de que el juez considere esta causa"
-    )
-    legal_articles: List[str] = Field(
-        default_factory=list,
-        description="Artículos de ley citados (ej: 'Art. 165 LC')"
-    )
-    jurisprudence: List[str] = Field(
-        default_factory=list,
-        description="Resúmenes cortos de jurisprudencia relevante"
+        description="Documentos específicos que faltan para concluir"
     )
 
 
 # ============================
-# RESULTADO GLOBAL DEL AGENTE
+# SOLICITUD DE EVIDENCIA
+# ============================
+
+class SolicitudEvidencia(BaseModel):
+    """Solicitud explícita cuando NO se puede acusar."""
+    motivo: str = Field(
+        ...,
+        description="Por qué no se puede acusar (evidencia inexistente o parcial)"
+    )
+    evidencia_requerida: List[str] = Field(
+        ...,
+        min_items=1,
+        description="Lista específica de documentos/evidencias necesarias"
+    )
+
+
+# ============================
+# RESULTADO PROSECUTOR
 # ============================
 
 class ProsecutorResult(BaseModel):
-    case_id: str = Field(..., description="Identificador del caso")
+    """
+    Resultado del agente Prosecutor.
     
-    overall_risk_level: RiskLevel = Field(
-        ...,
-        description="Nivel global de riesgo de calificación culpable"
-    )
-
-    accusations: List[LegalAccusation] = Field(
+    SOLO contiene:
+    - Lista de acusaciones probatorias (si las hay)
+    - Solicitud de evidencia (si NO puede acusar)
+    
+    PROHIBIDO: summaries, narrativa, texto libre.
+    """
+    case_id: str = Field(..., description="ID del caso")
+    
+    acusaciones: List[AcusacionProbatoria] = Field(
         default_factory=list,
-        description="Listado completo de acusaciones detectadas"
+        description="Acusaciones probatorias (vacío si no hay evidencia suficiente)"
     )
-
-    critical_findings_count: int = Field(
+    
+    solicitud_evidencia: SolicitudEvidencia | None = Field(
+        None,
+        description="Solicitud explícita si no se puede acusar"
+    )
+    
+    # Contador (NO narrativa)
+    total_acusaciones: int = Field(
         ...,
-        description="Número de hallazgos críticos"
+        description="Número total de acusaciones formuladas"
     )
-
-    summary_for_lawyer: str = Field(
-        ...,
-        description="Resumen ejecutivo para el abogado (tono alerta)"
-    )
-
-    blocking_recommendation: bool = Field(
-        ...,
-        description=(
-            "True si NO se recomienda presentar el concurso "
-            "sin medidas defensivas previas"
-        )
-    )
-

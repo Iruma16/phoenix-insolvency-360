@@ -90,15 +90,7 @@ def detect_risks(state: AuditState) -> AuditState:
     risks.append(_detect_documentation_gap(documents))
     risks.append(_detect_accounting_red_flags(documents))
     
-        state["risks"] = risks
-        
-        logger.info(
-            "Riesgos detectados",
-            case_id=case_id,
-            action="risk_detection_complete",
-            num_risks=len(risks),
-            risk_types=[r.get('risk_type') for r in risks]
-        )
+    state["risks"] = risks
     
     return state
 

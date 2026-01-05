@@ -49,3 +49,15 @@ CRITICAL_DOCUMENT_TYPES = {
     "pyg",
     "extracto_bancario",
 }
+# =========================================================
+# ENDURECIMIENTO OPERACIONAL RAG (EVIDENCIA OBLIGATORIA)
+# =========================================================
+# REGLA 4: Umbral mínimo de contexto
+RAG_MIN_CHUNKS_REQUIRED = 1  # Mínimo de chunks con buena similitud para responder
+# REGLA 6: Decisión trazable (habilitar logging detallado)
+RAG_TRACE_DECISIONS = True  # Mostrar decisiones por stdout
+# =========================================================
+# CAPA DE PRODUCTO RAG (SCORING + POLÍTICAS + PHRASING)
+# =========================================================
+# REGLA 2: Política activa de no respuesta
+RAG_ACTIVE_POLICY = "estandar"  # "conservadora" | "estandar" | "exploratoria"

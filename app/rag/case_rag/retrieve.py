@@ -15,10 +15,16 @@ from app.core.variables import (
     RAG_HALLUCINATION_RISK_THRESHOLD,
     LEGAL_QUALITY_SCORE_BLOCK_THRESHOLD,
     LEGAL_QUALITY_SCORE_WARNING_THRESHOLD,
+    RAG_MIN_CHUNKS_REQUIRED,
+    RAG_TRACE_DECISIONS,
 )
 from app.services.embeddings_pipeline import (
     get_case_collection,
     build_embeddings_for_case,
+)
+from app.services.vectorstore_versioning import (
+    get_active_version,
+    get_active_version_path,
 )
 from app.services.document_chunk_pipeline import (
     build_document_chunks_for_case,
@@ -188,11 +194,11 @@ def rag_answer_internal(
     # --------------------------------------------------
     # 3️⃣ Validar / generar embeddings (PASO 3)
     # --------------------------------------------------
-    try:
-        collection = get_case_collection(case_id)
-        if collection.count() == 0:
-            raise ValueError("Vectorstore vacío")
-    except Exception:
+    # CAMBIO: Ahora verificamos que existe una versión ACTIVE válida
+    active_version = get_active_version(case_id)
+    
+    if not active_version:
+        # No existe versión activa
         if not RAG_AUTO_BUILD_EMBEDDINGS:
             return RAGInternalResult(
                 status="NO_EMBEDDINGS",
@@ -202,12 +208,65 @@ def rag_answer_internal(
                 warnings=warnings,
                 hallucination_risk=False,
             )
-
+        
+        # Generar embeddings automáticamente
         warnings.append(
             "El índice semántico no existía y se ha generado automáticamente."
         )
-        build_embeddings_for_case(db=db, case_id=case_id)
-        collection = get_case_collection(case_id)
+        try:
+            version_id = build_embeddings_for_case(db=db, case_id=case_id)
+            warnings.append(f"Nueva versión creada: {version_id}")
+        except Exception as e:
+            return RAGInternalResult(
+                status="NO_EMBEDDINGS",
+                context_text="",
+                sources=[],
+                confidence="baja",
+                warnings=warnings + [f"Error generando embeddings: {e}"],
+                hallucination_risk=False,
+            )
+    
+    # Obtener colección de la versión activa (o None para usar ACTIVE)
+    try:
+        collection = get_case_collection(case_id, version=None)  # None = usar ACTIVE
+        
+        # Validar que la colección no esté vacía
+        if collection.count() == 0:
+            warnings.append("La versión activa del vectorstore está vacía.")
+            if not RAG_AUTO_BUILD_EMBEDDINGS:
+                return RAGInternalResult(
+                    status="NO_EMBEDDINGS",
+                    context_text="",
+                    sources=[],
+                    confidence="baja",
+                    warnings=warnings,
+                    hallucination_risk=False,
+                )
+            
+            # Regenerar embeddings
+            warnings.append("Regenerando embeddings...")
+            try:
+                version_id = build_embeddings_for_case(db=db, case_id=case_id)
+                warnings.append(f"Nueva versión creada: {version_id}")
+                collection = get_case_collection(case_id, version=None)
+            except Exception as e:
+                return RAGInternalResult(
+                    status="NO_EMBEDDINGS",
+                    context_text="",
+                    sources=[],
+                    confidence="baja",
+                    warnings=warnings + [f"Error regenerando embeddings: {e}"],
+                    hallucination_risk=False,
+                )
+    except Exception as e:
+        return RAGInternalResult(
+            status="NO_EMBEDDINGS",
+            context_text="",
+            sources=[],
+            confidence="baja",
+            warnings=warnings + [f"Error accediendo al vectorstore: {e}"],
+            hallucination_risk=False,
+        )
 
     # --------------------------------------------------
     # 4️⃣ Búsqueda semántica
@@ -281,13 +340,21 @@ def rag_answer_internal(
             print(f"[WARN] Error procesando elemento en validación: {e}")
             continue
 
-    if not valid_pairs:
+    # REGLA 4: Umbral mínimo de contexto (BLOQUEANTE)
+    if len(valid_pairs) < RAG_MIN_CHUNKS_REQUIRED:
+        if RAG_TRACE_DECISIONS:
+            print(f"[RAG DECISIÓN] ❌ BLOQUEO: {len(valid_pairs)} chunks < {RAG_MIN_CHUNKS_REQUIRED} mínimo requerido")
+            print(f"[RAG DECISIÓN] Motivo: EVIDENCIA_INSUFICIENTE")
+        
         return RAGInternalResult(
             status="NO_RELEVANT_CONTEXT",
             context_text="",  # Sin contexto válido encontrado
             sources=[],
             confidence="baja",
-            warnings=warnings,
+            warnings=warnings + [
+                f"Se encontraron {len(valid_pairs)} fragmento(s) relevante(s), "
+                f"pero se requieren al menos {RAG_MIN_CHUNKS_REQUIRED} para generar una respuesta fundamentada."
+            ],
             hallucination_risk=False,
         )
 
@@ -320,22 +387,52 @@ def rag_answer_internal(
             "Se requiere verificación exhaustiva con la documentación original antes de usar esta respuesta."
         )
 
+    # REGLA 3: Evidencia obligatoria - enriquecer sources con metadata completa
     for text, meta, distance in valid_pairs:
         # Los tipos ya están validados y convertidos en el paso anterior
         document_id = meta["document_id"]
         chunk_index = meta["chunk_index"]
         
+        # Obtener chunk desde BD para metadata completa (chunk_id, page, offsets)
+        # ✅ SEGURIDAD: Filtrar por case_id para prevenir acceso cross-case
+        chunk = (
+            db.query(DocumentChunk)
+            .filter(
+                DocumentChunk.case_id == case_id,  # ✅ CRÍTICO: Aislamiento por expediente
+                DocumentChunk.document_id == document_id,
+                DocumentChunk.chunk_index == chunk_index,
+            )
+            .first()
+        )
+        
+        # ✅ SEGURIDAD: Si el chunk no pertenece a este case_id, skipear
+        if not chunk:
+            continue  # Chunk no encontrado o no pertenece a este caso
+        
+        # Construir fuente con TODA la metadata necesaria para citación
+        source = {
+            "document_id": document_id,
+            "chunk_index": chunk_index,
+            "content": text,
+            "similarity_score": round(distance, 4),
+        }
+        
+        if chunk:
+            # REGLA 3: Metadata obligatoria para citación precisa
+            source["chunk_id"] = chunk.chunk_id
+            source["page"] = chunk.page
+            source["start_char"] = chunk.start_char
+            source["end_char"] = chunk.end_char
+            source["section_hint"] = chunk.section_hint
+            
+            # Obtener filename para citación
+            if chunk.document:
+                source["filename"] = chunk.document.filename
+        
         context_blocks.append(
             f"[Documento {document_id} | Chunk {chunk_index}]\n{text}"
         )
-        sources.append(
-            {
-                "document_id": document_id,
-                "chunk_index": chunk_index,
-                "content": text,
-                "similarity_score": round(distance, 4),  # ✅ Incluir score de similitud
-            }
-        )
+        sources.append(source)
 
     context = "\n\n".join(context_blocks)
 
@@ -370,6 +467,23 @@ def rag_answer_internal(
     # 6️⃣ Devolver contexto crudo (sin LLM)
     # --------------------------------------------------
     # RAG solo recupera contexto, NO genera respuestas
+    
+    # REGLA 6: Decisión trazable
+    if RAG_TRACE_DECISIONS:
+        print(f"\n{'='*80}")
+        print(f"[RAG DECISIÓN] case_id={case_id}")
+        print(f"[RAG DECISIÓN] ✅ RESPUESTA_CON_EVIDENCIA")
+        print(f"[RAG DECISIÓN] Chunks recuperados: {len(sources)}")
+        print(f"[RAG DECISIÓN] Confianza: {confidence}")
+        print(f"[RAG DECISIÓN] Riesgo alucinación: {'SÍ' if hallucination_risk else 'NO'}")
+        print(f"[RAG DECISIÓN] Calidad documental: {quality_score:.1f}/100")
+        print(f"[RAG DECISIÓN] Chunks usados:")
+        for i, src in enumerate(sources, 1):
+            print(f"  {i}. chunk_id={src.get('chunk_id', 'N/A')[:16]}... | "
+                  f"doc={src['document_id'][:8]}... | "
+                  f"score={src['similarity_score']:.3f} | "
+                  f"page={src.get('page', 'N/A')}")
+        print(f"{'='*80}\n")
 
     return RAGInternalResult(
         status=status,

@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     CheckConstraint,
+    JSON,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -129,6 +130,26 @@ class Document(Base):
         default=datetime.utcnow,
     )
 
+    # --- Validación de parsing (HARD) ---
+    # REGLA 4: Estado explícito del documento
+    parsing_status: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,  # NULL hasta que se valide
+        index=True,
+    )
+    
+    # REGLA 5: Motivo de rechazo normalizado (enum cerrado)
+    parsing_rejection_reason: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    
+    # REGLA 2: Métricas objetivas de calidad de extracción
+    parsing_metrics: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
     # =====================================================
     # RELACIONES
     # =====================================================
@@ -165,6 +186,17 @@ class Document(Base):
             "'contrato','venta_activo','prestamo','nomina'"
             ")",
             name="ck_documents_doc_type",
+        ),
+        CheckConstraint(
+            "parsing_status IS NULL OR parsing_status IN ('PARSED_OK', 'PARSED_INVALID')",
+            name="ck_documents_parsing_status",
+        ),
+        CheckConstraint(
+            "parsing_rejection_reason IS NULL OR parsing_rejection_reason IN ("
+            "'NO_TEXT_EXTRACTED','TOO_FEW_CHARACTERS','TOO_FEW_PAGES',"
+            "'LOW_TEXT_DENSITY','LOW_EXTRACTION_RATIO','PARSER_ERROR'"
+            ")",
+            name="ck_documents_rejection_reason",
         ),
     )
 

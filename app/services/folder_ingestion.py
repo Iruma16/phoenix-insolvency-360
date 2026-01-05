@@ -1,6 +1,9 @@
 """
 Servicio para ingerir carpetas completas de documentos.
 Soporta PDF, DOCX, TXT, CSV, XLSX.
+
+VALIDACIÓN HARD: Los documentos DEBEN pasar validaciones de calidad de parsing.
+Si un documento NO cumple mínimos → NO se guarda en BD, NO entra en chunking.
 """
 
 from __future__ import annotations
@@ -14,8 +17,16 @@ from typing import List, Optional, Dict, Any, Tuple, Tuple
 from sqlalchemy.orm import Session
 
 from app.core.variables import DATA
+from app.core.logger import logger
 from app.models.document import Document
-from app.services.ingesta import ingerir_archivo
+from app.services.ingesta import ingerir_archivo, ParsingResult
+from app.services.document_parsing_validation import (
+    calculate_parsing_metrics,
+    validate_parsing_quality,
+    log_parsing_validation,
+    check_case_has_valid_documents,
+    ParsingStatus,
+)
 
 
 # Formatos soportados
@@ -259,7 +270,89 @@ def ingest_file_from_path(
         print(f"❌ [INGESTA] {warning}")
         return None, [warning]
     
-    # Crear registro en la base de datos
+    # --------------------------------------------------
+    # VALIDACIÓN HARD DE CALIDAD DE PARSING
+    # --------------------------------------------------
+    # REGLA 1: La ingesta NO es best-effort
+    # El pipeline NO puede continuar con texto parcial, dudoso o vacío
+    
+    logger.info(f"[INGESTA] Iniciando validación HARD de parsing para {filename}")
+    
+    try:
+        # Leer y parsear el archivo
+        result = ingerir_archivo(storage_path, filename)
+        
+        if result is None:
+            warning = "El sistema de ingesta no pudo procesar el archivo"
+            logger.error(f"[INGESTA] ❌ {warning}")
+            warnings.append(warning)
+            return None, warnings
+        
+        # Procesar resultado según el tipo
+        text = ""
+        parsing_result = None
+        
+        if isinstance(result, ParsingResult):
+            # Archivo de texto (PDF, DOCX, TXT, DOC)
+            text = result.texto
+            parsing_result = result
+        else:
+            # DataFrame (CSV/Excel) - convertir a texto
+            import pandas as pd
+            text = result.to_string()
+            logger.info(f"[INGESTA] Archivo CSV/Excel convertido a texto ({len(text)} caracteres)")
+            
+            # Crear ParsingResult para CSV/Excel
+            parsing_result = ParsingResult(
+                texto=text,
+                num_paginas=1,
+                tipo_documento=EXTENSION_TO_FORMAT.get(extension, "csv"),
+            )
+        
+    except Exception as e:
+        warning = f"Error leyendo/parseando archivo: {e}"
+        logger.error(f"[INGESTA] ❌ {warning}")
+        warnings.append(warning)
+        import traceback
+        traceback.print_exc()
+        return None, warnings
+    
+    # Calcular métricas de calidad de extracción
+    metrics = calculate_parsing_metrics(
+        texto_extraido=text,
+        file_path=Path(storage_path),
+        tipo_documento=parsing_result.tipo_documento,
+        num_paginas_detectadas=parsing_result.num_paginas,
+    )
+    
+    # Validar calidad usando umbrales HARD
+    validation_result = validate_parsing_quality(metrics)
+    
+    # Logging técnico obligatorio (REGLA 7)
+    log_parsing_validation(
+        case_id=case_id,
+        doc_id="PENDIENTE",  # Aún no tenemos doc_id
+        filename=filename,
+        validation_result=validation_result,
+    )
+    
+    # REGLA 3: Si falla validación → NO crear documento en BD
+    if validation_result.is_invalid():
+        warning = (
+            f"Documento rechazado por validación de parsing. "
+            f"Estado: {validation_result.status.value}, "
+            f"Motivo: {validation_result.rejection_reason.value if validation_result.rejection_reason else 'UNKNOWN'}"
+        )
+        logger.error(f"[INGESTA] ❌ {warning}")
+        warnings.append(warning)
+        
+        # NO crear registro en BD
+        # El archivo queda en storage pero sin registro
+        return None, warnings
+    
+    # ✅ Documento válido → crear registro en BD con métricas
+    logger.info(f"[INGESTA] ✅ Documento válido: {filename}")
+    
     file_format = EXTENSION_TO_FORMAT.get(extension, extension.lstrip("."))
     
     document = Document(
@@ -272,18 +365,22 @@ def ingest_file_from_path(
         reliability="original",
         file_format=file_format,
         storage_path=str(storage_path),
+        # Campos de validación de parsing
+        parsing_status=validation_result.status.value,
+        parsing_rejection_reason=None,  # Es válido, no hay rechazo
+        parsing_metrics=validation_result.metrics.to_dict(),
     )
     
     try:
         db.add(document)
         db.commit()
         db.refresh(document)
-        print(f"✅ [INGESTA] Documento creado: {document.document_id}")
+        logger.info(f"[INGESTA] ✅ Documento creado: {document.document_id}")
         return document, warnings
     except Exception as e:
         db.rollback()
         warning = f"Error creando documento en BD: {e}"
-        print(f"❌ [INGESTA] {warning}")
+        logger.error(f"[INGESTA] ❌ {warning}")
         return None, [warning]
 
 
@@ -370,6 +467,7 @@ def ingest_folder(
         "errors": 0,
         "documents": [],
         "warnings": [],  # ✅ Lista de todos los warnings acumulados
+        "validation_results": [],  # ✅ Lista de resultados de validación (para REGLA 6)
     }
     
     # Procesar cada archivo
@@ -420,6 +518,28 @@ def ingest_folder(
         if len(stats['warnings']) > 10:
             print(f"      ... y {len(stats['warnings']) - 10} warnings más")
     print("=" * 60)
+    
+    # --------------------------------------------------
+    # REGLA 6: Verificar que al menos un documento es válido
+    # --------------------------------------------------
+    if stats['processed'] > 0:
+        # Contar documentos PARSED_OK vs PARSED_INVALID
+        valid_docs = [d for d in stats['documents'] if d.parsing_status == ParsingStatus.PARSED_OK.value]
+        
+        logger.info(
+            f"[INGESTA CARPETA] case_id={case_id}: "
+            f"Documentos válidos (PARSED_OK): {len(valid_docs)}/{stats['processed']}"
+        )
+        
+        # Si ningún documento es válido → ABORTAR caso completo
+        if len(valid_docs) == 0 and stats['processed'] > 0:
+            error_msg = (
+                f"❌ INGESTA ABORTADA: case_id={case_id}. "
+                f"TODOS los documentos procesados ({stats['processed']}) resultaron PARSED_INVALID. "
+                f"No se puede continuar con un caso sin documentos válidos."
+            )
+            logger.error(f"[INGESTA CARPETA] {error_msg}")
+            raise RuntimeError(error_msg)
     
     return stats
 
