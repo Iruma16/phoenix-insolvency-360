@@ -1,23 +1,73 @@
-fastapi
-uvicorn
+# =========================================================
+# PHOENIX LEGAL - DEPENDENCIAS DE PRODUCCIÓN
+# =========================================================
+# Versiones fijas para reproducibilidad
+# Actualizado: 2026-01-06
+
+# API Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.1
+python-multipart==0.0.6  # Para upload de archivos
+
+# LangChain y LLM
 langchain==0.3.27
 langchain-openai==0.3.35
-langchain-core
-langchain-text-splitters
+langchain-core==0.3.43
+langchain-text-splitters==0.3.4
+langgraph==0.2.59
+openai==1.58.1
+
+# Database y ORM
+sqlalchemy==2.0.25
+alembic==1.13.1  # Migraciones de BD
+psycopg2-binary==2.9.9  # PostgreSQL driver
+
+# Configuración y Variables de Entorno
+python-dotenv==1.0.0
+pydantic[email]==2.5.3  # Con soporte para validación de emails
+
+# Seguridad y Autenticación
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+PyJWT==2.8.0
+cryptography==42.0.0
+
+# RAG y Vectorstore
+chromadb==0.4.22
+sentence-transformers==2.3.1  # Para embeddings alternativos
+
+# Procesamiento de Documentos
+pypdf==4.0.1
+pdfplumber==0.11.0
+python-docx==1.1.0
+extract-msg==0.48.5  # Parser de archivos .msg (Outlook)
+openpyxl==3.1.2  # Ya usado en excel_parser, asegurar versión
+
+# OCR (FASE 2A)
+pytesseract==0.3.10  # Wrapper de Tesseract OCR
+Pillow==10.2.0  # Procesamiento de imágenes
+pdf2image==1.17.0  # Conversión PDF → imágenes para OCR
+
+# Generación de Reportes
 reportlab==4.4.7
-passlib[bcrypt]
-python-jose[cryptography]
-PyJWT
-streamlit
-sqlalchemy
-psycopg2-binary
-python-dotenv
-pydantic
-langgraph
-pypdf
-pdfplumber
-python-docx
-openai
-pandas
-chromadb
+
+# Utilidades
+pandas==2.1.4
+python-dateutil==2.8.2
+numpy==1.24.3  # Para cálculo de similaridad coseno (deduplicación)
+
+# Observabilidad y Métricas
+prometheus-client==0.19.0
+opentelemetry-api==1.22.0
+opentelemetry-sdk==1.22.0
+opentelemetry-instrumentation-fastapi==0.43b0
+
+# Rate Limiting
+slowapi==0.1.9
+
+# Logging Estructurado
+structlog==24.1.0
+
+# UI (opcional para demo)
+streamlit==1.30.0
 

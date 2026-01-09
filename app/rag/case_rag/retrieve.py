@@ -32,6 +32,18 @@ from app.services.document_chunk_pipeline import (
 from app.services.document_quality import get_document_quality_summary
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
+from app.rag.evidence import (
+    build_retrieval_evidence,
+    apply_evidence_gates,
+    log_evidence_decision,
+    RetrievalEvidence,
+    NoResponseReasonCode,
+)
+from app.rag.evidence_enforcer import (
+    validate_chunks_exist,
+    validate_chunk_has_location,
+    validate_retrieval_result,
+)
 
 
 # =========================================================
@@ -58,6 +70,8 @@ class RAGInternalResult:
     confidence: ConfidenceLevel
     warnings: List[str]
     hallucination_risk: bool = False  # True si hay alto riesgo de alucinación
+    evidence: Optional[RetrievalEvidence] = None  # Evidencia verificable (Endurecimiento #4)
+    no_response_reason: Optional[NoResponseReasonCode] = None  # Código si NO_RESPONSE
 
 
 # =========================================================
@@ -124,7 +138,17 @@ def rag_answer_internal(
     # --------------------------------------------------
     # 1️⃣ Validar caso + documentos
     # --------------------------------------------------
-    query = db.query(Document).filter(Document.case_id == case_id)
+    from sqlalchemy import or_
+    
+    query = db.query(Document).filter(
+        Document.case_id == case_id,
+        # FASE 2A: Excluir documentos duplicados marcados para exclusión
+        or_(
+            Document.duplicate_action.is_(None),
+            Document.duplicate_action == "pending",
+            Document.duplicate_action == "keep_both"
+        )
+    )
 
     if doc_types:
         query = query.filter(Document.doc_type.in_(doc_types))
@@ -152,15 +176,13 @@ def rag_answer_internal(
     # --------------------------------------------------
     # 2️⃣ Validar / generar chunks (PASO 2)
     # --------------------------------------------------
-    chunks_count = (
-        db.query(DocumentChunk)
-        .filter(
-            DocumentChunk.case_id == case_id,
-            DocumentChunk.document_id.in_(document_ids),
-        )
-        .count()
-    )
-
+    # FASE 4: Validación DURA - no chunks → excepción
+    try:
+        chunks_count = validate_chunks_exist(db, case_id, document_ids)
+    except Exception:
+        # Si falla validación, intentar generar chunks automáticamente
+        chunks_count = 0
+    
     if chunks_count == 0:
         warnings.append(
             "No había chunks y se ha ejecutado el chunking automáticamente."
@@ -409,6 +431,15 @@ def rag_answer_internal(
         if not chunk:
             continue  # Chunk no encontrado o no pertenece a este caso
         
+        # FASE 4: Validar que el chunk tiene location obligatoria
+        try:
+            validate_chunk_has_location(chunk)
+        except Exception as e:
+            # Si el chunk no tiene location válida, skipear
+            if RAG_TRACE_DECISIONS:
+                print(f"[RAG] ⚠️ Chunk sin location válida skipeado: {e}")
+            continue
+        
         # Construir fuente con TODA la metadata necesaria para citación
         source = {
             "document_id": document_id,
@@ -436,6 +467,62 @@ def rag_answer_internal(
 
     context = "\n\n".join(context_blocks)
 
+    # --------------------------------------------------
+    # 🔒 FASE 4: VALIDAR EVIDENCIA ANTES DE CONTINUAR
+    # --------------------------------------------------
+    # FAIL HARD si no hay evidencia suficiente
+    try:
+        validate_retrieval_result(sources, case_id)
+    except Exception as validation_error:
+        if RAG_TRACE_DECISIONS:
+            print(f"[RAG] ❌ Validación de evidencia falló: {validation_error}")
+        
+        # Retornar NO_RELEVANT_CONTEXT con información del error
+        return RAGInternalResult(
+            status="NO_RELEVANT_CONTEXT",
+            context_text="",
+            sources=[],
+            confidence="baja",
+            warnings=warnings + [str(validation_error)],
+            hallucination_risk=False,
+            evidence=None,
+            no_response_reason=NoResponseReasonCode.EVIDENCE_INSUFFICIENT,
+        )
+
+    # --------------------------------------------------
+    # 🔒 ENDURECIMIENTO #4: VALIDAR EVIDENCIA (FAIL HARD)
+    # --------------------------------------------------
+    evidence = build_retrieval_evidence(sources)
+    reason_code = apply_evidence_gates(evidence)
+    
+    # Logging obligatorio
+    log_evidence_decision(
+        case_id=case_id,
+        evidence=evidence,
+        reason_code=reason_code,
+    )
+    
+    # GATE BLOQUEANTE: Si evidencia insuficiente → NO_RESPONSE
+    if reason_code:
+        if RAG_TRACE_DECISIONS:
+            print(f"[RAG DECISIÓN] ❌ NO_RESPONSE: {reason_code.value}")
+            print(f"[RAG DECISIÓN] Evidence stats: {evidence.get_stats()}")
+        
+        return RAGInternalResult(
+            status="NO_RELEVANT_CONTEXT",
+            context_text="",
+            sources=[],
+            confidence="baja",
+            warnings=warnings + [
+                f"NO_RESPONSE: {reason_code.value}",
+                f"Valid chunks: {evidence.valid_chunks}/{evidence.total_chunks}",
+                f"Avg similarity: {evidence.avg_similarity:.4f}",
+            ],
+            hallucination_risk=False,
+            evidence=evidence,
+            no_response_reason=reason_code,
+        )
+    
     # ✅ Determinar confianza basada en cantidad, calidad de similitud Y calidad documental
     if len(valid_pairs) < top_k:
         warnings.append(
@@ -492,5 +579,7 @@ def rag_answer_internal(
         confidence=confidence,
         warnings=warnings,
         hallucination_risk=hallucination_risk,  # ✅ Incluir flag de riesgo de alucinación
+        evidence=evidence,  # ✅ Evidencia verificable
+        no_response_reason=None,  # Sin bloqueo, evidencia válida
     )
 

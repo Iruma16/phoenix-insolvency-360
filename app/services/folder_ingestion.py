@@ -27,6 +27,11 @@ from app.services.document_parsing_validation import (
     check_case_has_valid_documents,
     ParsingStatus,
 )
+from app.services.document_pre_ingestion_validation import (
+    validate_document_pre_ingestion,
+    log_pre_ingestion_validation,
+    PreIngestionValidationResult,
+)
 
 
 # Formatos soportados
@@ -271,6 +276,45 @@ def ingest_file_from_path(
         return None, [warning]
     
     # --------------------------------------------------
+    # VALIDACIÓN PRE-INGESTA (ENDURECIMIENTO #2: FAIL FAST)
+    # --------------------------------------------------
+    # ANTES de extraer texto o parsear, validar:
+    # - Formato soportado
+    # - No encriptado
+    # - No PDF escaneado sin OCR
+    # - Encoding válido
+    # - Tamaño razonable
+    
+    logger.info(f"[INGESTA] Iniciando validación PRE-ingesta (FAIL FAST) para {filename}")
+    
+    # Ejecutar validación PRE-ingesta (sin texto todavía)
+    pre_validation_result = validate_document_pre_ingestion(
+        file_path=storage_path,
+        extracted_text=None,  # Aún no hemos extraído texto
+    )
+    
+    # Logging obligatorio
+    log_pre_ingestion_validation(
+        case_id=case_id,
+        result=pre_validation_result,
+    )
+    
+    # FAIL HARD si la validación PRE-ingesta falla
+    if not pre_validation_result.is_valid:
+        warning = (
+            f"Documento rechazado en validación PRE-ingesta. "
+            f"Código: {pre_validation_result.reject_code.value}, "
+            f"Motivo: {pre_validation_result.reject_message}"
+        )
+        logger.error(f"[INGESTA] ❌ {warning}")
+        warnings.append(warning)
+        
+        # NO continuar con parsing ni crear documento
+        return None, warnings
+    
+    logger.info(f"[INGESTA] ✅ Validación PRE-ingesta OK para {filename}")
+    
+    # --------------------------------------------------
     # VALIDACIÓN HARD DE CALIDAD DE PARSING
     # --------------------------------------------------
     # REGLA 1: La ingesta NO es best-effort
@@ -316,6 +360,28 @@ def ingest_file_from_path(
         import traceback
         traceback.print_exc()
         return None, warnings
+    
+    # --------------------------------------------------
+    # VALIDACIÓN PRE-INGESTA POST-EXTRACCIÓN
+    # --------------------------------------------------
+    # Ahora que tenemos el texto, ejecutar checks que requieren texto
+    pre_validation_with_text = validate_document_pre_ingestion(
+        file_path=Path(storage_path),
+        extracted_text=text,
+    )
+    
+    # Logging adicional con texto
+    if not pre_validation_with_text.is_valid:
+        warning = (
+            f"Documento rechazado en validación PRE-ingesta (post-extracción). "
+            f"Código: {pre_validation_with_text.reject_code.value}, "
+            f"Motivo: {pre_validation_with_text.reject_message}"
+        )
+        logger.error(f"[INGESTA] ❌ {warning}")
+        warnings.append(warning)
+        return None, warnings
+    
+    logger.info(f"[INGESTA] ✅ Validación PRE-ingesta (con texto) OK para {filename}")
     
     # Calcular métricas de calidad de extracción
     metrics = calculate_parsing_metrics(

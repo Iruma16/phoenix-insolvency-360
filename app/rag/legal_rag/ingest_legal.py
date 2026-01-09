@@ -17,7 +17,6 @@ from datetime import datetime
 import chromadb
 from openai import OpenAI
 import os
-from dotenv import load_dotenv
 
 from app.core.variables import (
     LEGAL_LEY_VECTORSTORE,
@@ -25,8 +24,6 @@ from app.core.variables import (
     EMBEDDING_MODEL,
     DATA,
 )
-
-load_dotenv()
 
 
 # =========================================================

@@ -1,8 +1,28 @@
 # Phoenix Legal — Sistema de Análisis Legal Automatizado
 
 **Versión**: 1.0.0  
-**Estado**: MVP Funcional  
-**Fecha**: 30 de diciembre de 2024
+**Estado**: MVP Funcional (Demo Técnica)  
+**Fecha**: 5 de enero de 2026
+
+---
+
+## ⚠️ IMPORTANTE — Naturaleza del Sistema
+
+**Phoenix Legal es una herramienta de ASISTENCIA TÉCNICA AUTOMATIZADA.**
+
+### ✅ QUÉ ES:
+- Sistema de análisis preliminar de riesgos legales concursales
+- Herramienta de apoyo para abogados y analistas legales
+- Motor de reglas deterministas + recuperación semántica (RAG)
+- Generador automatizado de informes preliminares
+
+### ❌ QUÉ NO ES:
+- **NO es asesoramiento legal ni dictamen jurídico**
+- **NO sustituye revisión por asesor legal cualificado**
+- **NO toma decisiones legales finales**
+- **NO garantiza interpretación jurídica definitiva**
+
+**Todos los outputs de Phoenix Legal requieren validación por profesional legal antes de tomar decisiones.**
 
 ---
 
@@ -16,6 +36,7 @@ Combina:
 - **Agentes LLM** (GPT-4) para razonamiento contextualizado
 - **Rule Engine** con reglas legales automatizadas
 - **Generación de informes PDF** profesionales con trazabilidad
+- **Gestión de errores resiliente** (funciona sin LLM en modo degradado)
 
 ---
 
@@ -74,10 +95,14 @@ Combina:
 
 ## ¿Qué NO hace?
 
-### ⚠️ Limitaciones Actuales
+### ⚠️ Limitaciones Técnicas
 
-1. **No es un sistema de gestión de casos**  
-   No incluye UI, autenticación, ni gestión de usuarios.
+1. **UI es DEMO técnica únicamente**  
+   La interfaz Streamlit es una demostración de capacidades, no un producto UI completo.
+   No incluye autenticación robusta ni gestión multiusuario empresarial.
+
+2. **No es un sistema de gestión de casos**  
+   No incluye workflows complejos, aprobaciones, o gestión documental empresarial.
 
 2. **No sustituye criterio profesional**  
    Es una herramienta de apoyo, no un dictamen legal vinculante.

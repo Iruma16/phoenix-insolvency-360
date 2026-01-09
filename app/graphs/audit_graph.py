@@ -1,22 +1,26 @@
 from langgraph.graph import StateGraph, END
 
 from app.graphs.state import AuditState
-from app.graphs.nodes import (
+from app.graphs.state_schema import PhoenixState, CURRENT_STATE_SCHEMA_VERSION
+
+# ⚠️ IMPORTANTE: Usar nodos validados con contrato de estado HARD
+from app.graphs.validated_nodes import (
     ingest_documents,
     analyze_timeline,
     detect_risks,
     legal_hardening,
     legal_article_mapper,
     build_report,
-)
-from app.graphs.nodes_llm import (
     auditor_llm_node,
     prosecutor_llm_node,
+    apply_rule_engine,
+    log_graph_execution_start
 )
-from app.graphs.nodes_rule_engine import apply_rule_engine
 
 
 def build_audit_graph():
+    # ⚠️ NOTA: Aún usa AuditState para compatibilidad con LangGraph
+    # Los nodos validados manejan la conversión interna
     graph = StateGraph(AuditState)
 
     # Nodos heurísticos (existentes)

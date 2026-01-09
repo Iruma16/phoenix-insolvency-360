@@ -18,10 +18,19 @@ from app.core.database import get_session_factory
 from .schema import (
     ProsecutorResult,
     AcusacionProbatoria,
+    AcusacionBloqueada,
     ObligacionLegal,
     EvidenciaDocumental,
+    EvidenciaFaltante,
     SolicitudEvidencia,
     Severidad,
+)
+from .audit_trace import (
+    AuditTrace,
+    RAGSnapshot,
+    ProsecutorSnapshot,
+    GateCheck,
+    compute_result_hash,
 )
 
 
@@ -252,7 +261,13 @@ def ejecutar_analisis_prosecutor(
     db: Session = SessionLocal()
     
     acusaciones: List[AcusacionProbatoria] = []
+    acusaciones_bloqueadas: List[AcusacionBloqueada] = []
     evidencia_faltante_global: set[str] = set()
+    
+    # ENDURECIMIENTO #6: Captura de trace para replay determinista
+    rag_snapshots: List[RAGSnapshot] = []
+    gate_checks: List[GateCheck] = []
+    rules_evaluated: List[str] = []
     
     # ========================================
     # OPTIMIZACIÓN: Consolidar consultas legales
@@ -288,6 +303,7 @@ def ejecutar_analisis_prosecutor(
     try:
         for ground, config in PREGUNTAS_PROBATORIAS.items():
             pregunta = config["pregunta"]
+            rules_evaluated.append(ground)
             
             # Recuperar contexto crudo
             rag_result = rag_answer_internal(
@@ -296,6 +312,65 @@ def ejecutar_analisis_prosecutor(
                 question=pregunta,
                 top_k=10,
             )
+            
+            # ENDURECIMIENTO #6: Capturar RAG snapshot
+            if rag_result.retrieval_evidence:
+                rag_snapshots.append(
+                    RAGSnapshot(
+                        case_id=case_id,
+                        question=pregunta,
+                        total_chunks=rag_result.retrieval_evidence.total_chunks,
+                        valid_chunks=rag_result.retrieval_evidence.valid_chunks,
+                        min_similarity=rag_result.retrieval_evidence.min_similarity,
+                        avg_similarity=rag_result.retrieval_evidence.avg_similarity,
+                        retrieval_version=rag_result.retrieval_evidence.retrieval_version,
+                        no_response_reason=rag_result.no_response_reason.value if rag_result.no_response_reason else None,
+                        chunks_data=[
+                            {
+                                "chunk_id": chunk.chunk_id,
+                                "document_id": chunk.document_id,
+                                "content": chunk.content[:200],  # Truncar para no hacer trace gigante
+                            }
+                            for chunk in rag_result.retrieval_evidence.chunks[:5]  # Solo primeros 5
+                        ]
+                    )
+                )
+            
+            # GATE ENDURECIMIENTO #4: Verificar NO_RESPONSE por evidencia insuficiente
+            if rag_result.no_response_reason:
+                # Sistema bloqueado por falta de evidencia verificable
+                print(f"[CERT] PROSECUTOR_NO_ACCUSATION reason={rag_result.no_response_reason.value} ground={ground}")
+                
+                # ENDURECIMIENTO #6: Registrar gate check
+                gate_checks.append(
+                    GateCheck(
+                        gate_id=f"evidence_gate_{ground}",
+                        passed=False,
+                        reason=f"NO_RESPONSE: {rag_result.no_response_reason.value}"
+                    )
+                )
+                
+                # ENDURECIMIENTO #5: Registrar acusación BLOQUEADA con evidencia faltante estructurada
+                evidencias_faltantes = [
+                    EvidenciaFaltante(
+                        rule_id=ground,
+                        required_evidence=doc_requerido,
+                        present_evidence="NONE",
+                        blocking_reason=f"RAG retornó NO_RESPONSE: {rag_result.no_response_reason.value}"
+                    )
+                    for doc_requerido in config["evidencia_minima"]
+                ]
+                
+                acusaciones_bloqueadas.append(
+                    AcusacionBloqueada(
+                        rule_id=ground,
+                        blocked_reason=f"NO_RESPONSE del RAG: {rag_result.no_response_reason.value}",
+                        evidencia_faltante=evidencias_faltantes,
+                    )
+                )
+                
+                evidencia_faltante_global.update(config["evidencia_minima"])
+                continue
             
             # VALIDACIÓN PREVIA: Si RAG ya señala problemas graves → skip
             if not rag_result.sources or not rag_result.context_text:
@@ -313,7 +388,9 @@ def ejecutar_analisis_prosecutor(
             # ========================================
             obligacion = gate_1_obligacion_legal(ground, legal_results)
             if not obligacion:
+                gate_checks.append(GateCheck(gate_id=f"gate_1_{ground}", passed=False, reason="No obligación legal"))
                 continue
+            gate_checks.append(GateCheck(gate_id=f"gate_1_{ground}", passed=True))
             
             # ========================================
             # GATE 2: Evidencia documental trazable
@@ -322,8 +399,10 @@ def ejecutar_analisis_prosecutor(
             if not evidencias:
                 # [CERT] NO_EVIDENCE: Evidencias no trazables (faltan chunk_id/offsets)
                 print(f"[CERT] PROSECUTOR_NO_ACCUSATION reason=NO_EVIDENCE ground={ground}")
+                gate_checks.append(GateCheck(gate_id=f"gate_2_{ground}", passed=False, reason="Evidencia no trazable"))
                 evidencia_faltante_global.update(config["evidencia_minima"])
                 continue
+            gate_checks.append(GateCheck(gate_id=f"gate_2_{ground}", passed=True))
             
             # ========================================
             # GATE 3: Evidencia suficiente (no parcial)
@@ -336,8 +415,32 @@ def ejecutar_analisis_prosecutor(
             if not es_suficiente:
                 # [CERT] PARTIAL_EVIDENCE: Evidencia insuficiente, faltan documentos clave
                 print(f"[CERT] PROSECUTOR_NO_ACCUSATION reason=PARTIAL_EVIDENCE ground={ground} missing={faltante}")
+                
+                gate_checks.append(GateCheck(gate_id=f"gate_3_{ground}", passed=False, reason=f"Faltan: {faltante}"))
+                
+                # ENDURECIMIENTO #5: Registrar acusación BLOQUEADA con detalles
+                evidencias_faltantes = [
+                    EvidenciaFaltante(
+                        rule_id=ground,
+                        required_evidence=doc_faltante,
+                        present_evidence=",".join([ev.doc_id for ev in evidencias]),
+                        blocking_reason="Documentos clave faltantes para verificar cumplimiento legal"
+                    )
+                    for doc_faltante in faltante
+                ]
+                
+                acusaciones_bloqueadas.append(
+                    AcusacionBloqueada(
+                        rule_id=ground,
+                        blocked_reason=f"PARTIAL_EVIDENCE: Faltan {len(faltante)} documento(s) clave",
+                        evidencia_faltante=evidencias_faltantes,
+                    )
+                )
+                
                 evidencia_faltante_global.update(faltante)
                 continue
+            
+            gate_checks.append(GateCheck(gate_id=f"gate_3_{ground}", passed=True))
             
             # ========================================
             # GATE 4: Nivel de confianza calculable
@@ -386,6 +489,17 @@ def ejecutar_analisis_prosecutor(
                 print(f"[CERT] PROSECUTOR_NARRATIVE_DETECTED = FAIL")
                 raise RuntimeError("NARRATIVE DETECTED IN FACTUAL DESCRIPTION")
             
+            # ENDURECIMIENTO #5: Convertir evidencia_faltante a estructura
+            evidencias_faltantes_estructuradas = [
+                EvidenciaFaltante(
+                    rule_id=ground,
+                    required_evidence=doc_faltante,
+                    present_evidence="PARTIAL",
+                    blocking_reason="Documento recomendado pero no bloqueante"
+                )
+                for doc_faltante in faltante
+            ]
+            
             acusacion = AcusacionProbatoria(
                 accusation_id=f"{case_id}-{ground}",
                 obligacion_legal=obligacion,
@@ -393,7 +507,7 @@ def ejecutar_analisis_prosecutor(
                 descripcion_factica=descripcion_factica,
                 severidad=severidad,
                 nivel_confianza=nivel_confianza,
-                evidencia_faltante=faltante,
+                evidencia_faltante=evidencias_faltantes_estructuradas,
             )
             
             # [CERT] EVENTO 4: Validar estructura completa de acusación
@@ -455,12 +569,56 @@ def ejecutar_analisis_prosecutor(
               f"reduction_latency_pct={int((1 - after_latency_ms/before_latency_ms) * 100)} "
               f"reduction_tokens_pct={int((1 - after_tokens_estimate/before_tokens_estimate) * 100)}")
         
-        return ProsecutorResult(
+        # ========================================
+        # ENDURECIMIENTO #6: Crear audit trace
+        # ========================================
+        result = ProsecutorResult(
             case_id=case_id,
             acusaciones=acusaciones,
+            acusaciones_bloqueadas=acusaciones_bloqueadas,
             solicitud_evidencia=solicitud,
             total_acusaciones=len(acusaciones),
+            total_bloqueadas=len(acusaciones_bloqueadas),
         )
+        
+        # Determinar decision_state
+        if len(acusaciones) > 0 and len(acusaciones_bloqueadas) == 0:
+            decision_state = "COMPLETE"
+        elif len(acusaciones) > 0 and len(acusaciones_bloqueadas) > 0:
+            decision_state = "PARTIAL"
+        else:
+            decision_state = "BLOCKED"
+        
+        # Crear prosecutor snapshot
+        prosecutor_snapshot = ProsecutorSnapshot(
+            case_id=case_id,
+            total_acusaciones=len(acusaciones),
+            total_bloqueadas=len(acusaciones_bloqueadas),
+            acusaciones_data=[acc.model_dump() for acc in acusaciones],
+            bloqueadas_data=[bloc.model_dump() for bloc in acusaciones_bloqueadas],
+            solicitud_evidencia=solicitud.model_dump() if solicitud else None,
+        )
+        
+        # Crear audit trace
+        import uuid
+        trace = AuditTrace(
+            trace_id=f"trace_{case_id}_{uuid.uuid4().hex[:8]}",
+            pipeline_version="1.0.0",
+            manifest_snapshot={},  # TODO: capturar manifest si existe
+            config_snapshot={"preguntas_probatorias": list(PREGUNTAS_PROBATORIAS.keys())},
+            case_id=case_id,
+            rules_evaluated=rules_evaluated,
+            rag_snapshots=rag_snapshots,
+            prosecutor_snapshot=prosecutor_snapshot,
+            result_hash=compute_result_hash(result),
+            decision_state=decision_state,
+            invariants_checked=gate_checks,
+        )
+        
+        # Adjuntar trace serializado al resultado
+        result.audit_trace_data = trace.to_dict()
+        
+        return result
     
     finally:
         db.close()

@@ -1,0 +1,52 @@
+# =========================================================
+# PHOENIX LEGAL - DEPENDENCIAS DE DESARROLLO
+# =========================================================
+# Herramientas para desarrollo, testing y CI/CD
+# Actualizado: 2026-01-06
+
+# Incluir todas las dependencias de producción
+-r requirements.txt
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-timeout==2.2.0
+pytest-xdist==3.5.0  # Tests paralelos
+
+# Code Quality
+black==23.12.1  # Formatter
+ruff==0.1.15  # Linter rápido (reemplaza flake8, isort, etc)
+mypy==1.8.0  # Type checker
+bandit==1.7.6  # Security linter
+
+# Type Stubs
+types-python-dateutil==2.8.19.14
+types-python-jose==3.3.4.8
+types-passlib==1.7.7.13
+
+# Development Tools
+ipython==8.20.0  # REPL mejorado
+ipdb==0.13.13  # Debugger
+watchdog==3.0.0  # File watcher para hot reload
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.5.3
+mkdocstrings[python]==0.24.0
+
+# Database Tools
+sqlalchemy-utils==0.41.1  # Utilidades extras para SQLAlchemy
+
+# HTTP Testing
+httpx==0.26.0  # Cliente HTTP para tests
+responses==0.24.1  # Mock de HTTP requests
+
+# Profiling
+py-spy==0.3.14  # Profiler
+memory-profiler==0.61.0
+
+# Pre-commit (opcional, no obligatorio)
+pre-commit==3.6.0
+

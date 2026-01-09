@@ -1,5 +1,4 @@
 from typing import Optional, List
-from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -8,6 +7,16 @@ from app.core.database import get_engine, get_db
 from app.rag.case_rag.rag import router as rag_router
 from app.api.documents import router as documents_router
 from app.api.reports import router as reports_router
+from app.api.v2_auditor import router as v2_auditor_router
+from app.api.v2_prosecutor import router as v2_prosecutor_router
+from app.api.cases import router as cases_router
+from app.api.chunks import router as chunks_router
+from app.api.analysis_alerts import router as analysis_alerts_router
+from app.api.legal_report import router as legal_report_router
+from app.api.trace import router as trace_router
+from app.api.manifest import router as manifest_router
+from app.api.pdf_report import router as pdf_report_router
+from app.api.balance_concursal import router as balance_concursal_router
 
 # 👉 IMPORT DEL AGENTE 1 (AUDITOR)
 from app.agents.agent_1_auditor.runner import run_auditor
@@ -23,22 +32,49 @@ from app.agents.handoff import build_agent2_payload, HandoffPayload
 
 
 # =========================================================
-# CARGA DE ENTORNO
-# =========================================================
-
-load_dotenv()
-
-
-# =========================================================
 # FASTAPI APP (ENTRYPOINT ASGI)
 # =========================================================
 
 app = FastAPI(title="Phoenix Insolvency")
 
+# Endpoint raíz
+@app.get("/")
+def root():
+    """Endpoint raíz con información del sistema"""
+    return {
+        "service": "Phoenix Legal API",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/docs",
+        "endpoints": {
+            "cases": "/api/cases",
+            "chunks": "/api/cases/{case_id}/chunks",
+            "analysis": "/api/cases/{case_id}/analysis/alerts",
+            "legal_report": "/api/cases/{case_id}/legal-report",
+            "trace": "/api/cases/{case_id}/trace",
+            "manifest": "/api/cases/{case_id}/manifest",
+            "pdf_report": "/api/cases/{case_id}/legal-report/pdf"
+        }
+    }
+
 # Routers existentes
 app.include_router(rag_router)
-app.include_router(documents_router)
+app.include_router(documents_router, prefix="/api")  # ✅ FIXED: Añadido prefix
 app.include_router(reports_router)
+app.include_router(cases_router, prefix="/api")
+app.include_router(chunks_router, prefix="/api")
+app.include_router(analysis_alerts_router, prefix="/api")
+app.include_router(legal_report_router, prefix="/api")
+app.include_router(trace_router, prefix="/api")
+app.include_router(manifest_router, prefix="/api")
+app.include_router(pdf_report_router, prefix="/api")
+
+# Routers v2
+app.include_router(v2_auditor_router)
+app.include_router(v2_prosecutor_router)
+
+# FASE 1.3: Balance Concursal
+app.include_router(balance_concursal_router, prefix="/api")
 
 
 # =========================================================

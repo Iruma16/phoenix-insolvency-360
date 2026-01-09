@@ -17,8 +17,6 @@ from typing import List, Optional
 import chromadb
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from dotenv import load_dotenv
-
 from openai import OpenAI
 
 from app.core.variables import (
@@ -40,13 +38,6 @@ from app.services.vectorstore_versioning import (
     ManifestData,
     calculate_file_sha256,
 )
-
-
-# =========================================================
-# INIT — cargar entorno SIEMPRE
-# =========================================================
-
-load_dotenv()
 
 
 # =========================================================

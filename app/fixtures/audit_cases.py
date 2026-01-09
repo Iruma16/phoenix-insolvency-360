@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from app.graphs.state import AuditState
+from app.graphs.state_factory import create_initial_state
+from app.graphs.state_schema import PhoenixState
 
-CASE_RETAIL_001: AuditState = {
-    "case_id": "CASE_RETAIL_001",
-    "company_profile": {
+# ═══════════════════════════════════════════════════════════════════════════════
+# FIXTURES USANDO STATE FACTORY (ARQUITECTURA LIMPIA)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CASE_RETAIL_001: PhoenixState = create_initial_state(
+    case_id="CASE_RETAIL_001",
+    company_name="Retail Demo SL",
+    industry="retail",
+    company_profile={
         "type": "SL",
         "sector": "retail",
         "size": "pyme",
@@ -12,7 +20,7 @@ CASE_RETAIL_001: AuditState = {
         "years_active": 10,
         "issue_start_year": 2023,
     },
-    "documents": [
+    documents=[
         {
             "doc_id": "DOC_BALANCE_2023",
             "doc_type": "balance_pyg",
@@ -37,21 +45,14 @@ CASE_RETAIL_001: AuditState = {
             "content": "Informe tesorería (enero 2024): se constata insolvencia inminente tras fracasar financiación.",
             "date": "2024-01-20",
         },
-    ],
-    "timeline": [],
-    "risks": [],
-    "missing_documents": [],
-    "legal_findings": [],
-    "auditor_llm": None,
-    "prosecutor_llm": None,
-    "rule_based_findings": [],
-    "notes": None,
-    "report": None,
-}
+    ]
+)
 
-CASE_RETAIL_002: AuditState = {
-    "case_id": "CASE_RETAIL_002",
-    "company_profile": {
+CASE_RETAIL_002: PhoenixState = create_initial_state(
+    case_id="CASE_RETAIL_002",
+    company_name="Retail Grey Case SL",
+    industry="retail",
+    company_profile={
         "type": "SL",
         "sector": "retail",
         "size": "pyme",
@@ -59,7 +60,7 @@ CASE_RETAIL_002: AuditState = {
         "years_active": 7,
         "issue_start_year": 2023,
     },
-    "documents": [
+    documents=[
         {
             "doc_id": "DOC_BALANCE_2023_002",
             "doc_type": "balance_pyg",
@@ -90,21 +91,14 @@ CASE_RETAIL_002: AuditState = {
             "content": "Informe tesorería (enero 2024): se constata insolvencia actual tras fracasar negociaciones con banco y proveedores.",
             "date": "2024-01-25",
         },
-    ],
-    "timeline": [],
-    "risks": [],
-    "missing_documents": [],
-    "legal_findings": [],
-    "auditor_llm": None,
-    "prosecutor_llm": None,
-    "rule_based_findings": [],
-    "notes": None,
-    "report": None,
-}
+    ]
+)
 
-CASE_RETAIL_003: AuditState = {
-    "case_id": "CASE_RETAIL_003",
-    "company_profile": {
+CASE_RETAIL_003: PhoenixState = create_initial_state(
+    case_id="CASE_RETAIL_003",
+    company_name="Retail Culpable SL",
+    industry="retail",
+    company_profile={
         "type": "SL",
         "sector": "retail",
         "size": "pyme",
@@ -112,7 +106,7 @@ CASE_RETAIL_003: AuditState = {
         "years_active": 5,
         "issue_start_year": 2022,
     },
-    "documents": [
+    documents=[
         {
             "doc_id": "DOC_BALANCE_2023_003",
             "doc_type": "balance_pyg",
@@ -149,14 +143,5 @@ CASE_RETAIL_003: AuditState = {
             "content": "Informe tesorería (febrero 2024): Se reconoce insolvencia grave desde al menos 8 meses. Imposibilidad de atender obligaciones corrientes.",
             "date": "2024-02-15",
         },
-    ],
-    "timeline": [],
-    "risks": [],
-    "missing_documents": [],
-    "legal_findings": [],
-    "auditor_llm": None,
-    "prosecutor_llm": None,
-    "rule_based_findings": [],
-    "notes": None,
-    "report": None,
-}
+    ]
+)

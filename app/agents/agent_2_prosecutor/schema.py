@@ -5,8 +5,8 @@ PRINCIPIO: NO EXISTE ACUSACIÓN SIN PRUEBA COMPLETA.
 """
 from __future__ import annotations
 
-from typing import List, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
+from pydantic import BaseModel, Field, validator
 
 
 # ============================
@@ -45,16 +45,29 @@ class EvidenciaDocumental(BaseModel):
 # ACUSACIÓN PROBATORIA
 # ============================
 
+class EvidenciaFaltante(BaseModel):
+    """
+    Evidencia requerida pero ausente que bloquea una acusación completa.
+    
+    ENDURECIMIENTO #5: Explicitación de qué falta y por qué bloquea.
+    """
+    rule_id: str = Field(..., description="ID de la regla que requiere esta evidencia")
+    required_evidence: str = Field(..., description="Tipo de evidencia requerida")
+    present_evidence: str = Field(..., description="Evidencia presente (o 'NONE')")
+    blocking_reason: str = Field(..., description="Por qué esto bloquea la acusación")
+
+
 class AcusacionProbatoria(BaseModel):
     """
     Acusación SOLO si cumple los 5 requisitos obligatorios.
     
-    GATES BLOQUEANTES:
+    GATES BLOQUEANTES (ENDURECIMIENTO #5):
     1. Obligación legal definida
     2. Evidencia documental trazable
     3. Evidencia suficiente (no parcial)
     4. Nivel de confianza calculable
     5. Evidencia faltante listada si aplica
+    6. Evidencia verificable del RAG (no_response_reason == None)
     """
     accusation_id: str = Field(..., description="ID único de acusación")
     
@@ -92,10 +105,17 @@ class AcusacionProbatoria(BaseModel):
     )
     
     # REQUISITO 6: Evidencia faltante explícita
-    evidencia_faltante: List[str] = Field(
+    evidencia_faltante: List[EvidenciaFaltante] = Field(
         default_factory=list,
-        description="Documentos específicos que faltan para concluir"
+        description="Evidencias específicas que faltan (estructurado)"
     )
+    
+    @validator("evidencia_documental")
+    def validate_evidencia_not_empty(cls, v):
+        """GATE: Toda acusación DEBE tener al menos 1 evidencia."""
+        if not v or len(v) == 0:
+            raise ValueError("Acusación sin evidencia documental: PROHIBIDO")
+        return v
 
 
 # ============================
@@ -119,13 +139,30 @@ class SolicitudEvidencia(BaseModel):
 # RESULTADO PROSECUTOR
 # ============================
 
+class AcusacionBloqueada(BaseModel):
+    """
+    Acusación BLOQUEADA por falta de evidencia verificable.
+    
+    ENDURECIMIENTO #5: Explicitación de bloqueo.
+    """
+    rule_id: str = Field(..., description="Regla que intentó aplicarse")
+    blocked_reason: str = Field(..., description="Motivo del bloqueo")
+    evidencia_faltante: List[EvidenciaFaltante] = Field(
+        ...,
+        description="Lista estructurada de evidencia faltante"
+    )
+
+
 class ProsecutorResult(BaseModel):
     """
     Resultado del agente Prosecutor.
     
-    SOLO contiene:
-    - Lista de acusaciones probatorias (si las hay)
-    - Solicitud de evidencia (si NO puede acusar)
+    ENDURECIMIENTO #5: Puede contener:
+    - acusaciones (completas)
+    - acusaciones_bloqueadas (parciales, con evidencia_faltante)
+    - solicitud_evidencia (si TODO está bloqueado)
+    
+    ENDURECIMIENTO #6: Incluye audit_trace (opcional) para replay determinista.
     
     PROHIBIDO: summaries, narrativa, texto libre.
     """
@@ -133,16 +170,32 @@ class ProsecutorResult(BaseModel):
     
     acusaciones: List[AcusacionProbatoria] = Field(
         default_factory=list,
-        description="Acusaciones probatorias (vacío si no hay evidencia suficiente)"
+        description="Acusaciones probatorias completas"
+    )
+    
+    acusaciones_bloqueadas: List[AcusacionBloqueada] = Field(
+        default_factory=list,
+        description="Acusaciones bloqueadas por evidencia insuficiente"
     )
     
     solicitud_evidencia: SolicitudEvidencia | None = Field(
         None,
-        description="Solicitud explícita si no se puede acusar"
+        description="Solicitud explícita si TODO está bloqueado"
     )
     
     # Contador (NO narrativa)
     total_acusaciones: int = Field(
         ...,
-        description="Número total de acusaciones formuladas"
+        description="Número total de acusaciones completas formuladas"
+    )
+    
+    total_bloqueadas: int = Field(
+        default=0,
+        description="Número de acusaciones bloqueadas por evidencia insuficiente"
+    )
+    
+    # ENDURECIMIENTO #6: Audit trace para replay determinista
+    audit_trace_data: Optional[dict] = Field(
+        None,
+        description="Audit trace serializado para replay determinista (opcional)"
     )

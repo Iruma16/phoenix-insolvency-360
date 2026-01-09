@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime
+from enum import Enum
+from typing import Optional
 
 from sqlalchemy import (
     String,
@@ -9,10 +11,104 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Enum as SQLEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.database import Base
+from app.core.exceptions import ChunkContractViolationError
+
+
+# =========================================================
+# CONTRATO FUNDACIONAL DE CHUNK (ENDURECIMIENTO 3.0)
+# =========================================================
+
+class ExtractionMethod(str, Enum):
+    """
+    Método de extracción del texto del chunk.
+    
+    OBLIGATORIO: Todo chunk DEBE declarar cómo fue extraído.
+    """
+    PDF_TEXT = "pdf_text"       # Texto nativo del PDF
+    OCR = "ocr"                  # OCR (PDF escaneado)
+    TABLE = "table"              # Extracción de tabla
+    DOCX_TEXT = "docx_text"      # Texto de DOCX
+    TXT = "txt"                  # Archivo de texto plano
+    UNKNOWN = "unknown"          # Fallback (debe evitarse)
+
+
+class ChunkLocation(BaseModel):
+    """
+    Ubicación OBLIGATORIA de un chunk en el documento original.
+    
+    CONTRATO DURO (ENDURECIMIENTO 3.0):
+    - char_start < char_end (SIEMPRE)
+    - page_start <= page_end (si ambos existen)
+    - extraction_method SIEMPRE informado
+    - NO se permiten offsets implícitos o asumidos
+    
+    Este contrato es PREREQUISITO para:
+    - Offsets reales (Endurecimiento 3.1)
+    - RAG con evidencia obligatoria (Endurecimiento 4)
+    - Plantilla formal legal (Endurecimiento 5)
+    """
+    
+    char_start: int = Field(
+        ...,
+        description="Offset de inicio en texto original (OBLIGATORIO)",
+        ge=0
+    )
+    
+    char_end: int = Field(
+        ...,
+        description="Offset de fin en texto original (OBLIGATORIO)",
+        ge=0
+    )
+    
+    extraction_method: ExtractionMethod = Field(
+        ...,
+        description="Método de extracción (OBLIGATORIO)"
+    )
+    
+    page_start: Optional[int] = Field(
+        None,
+        description="Página de inicio (1-indexed, opcional)",
+        ge=1
+    )
+    
+    page_end: Optional[int] = Field(
+        None,
+        description="Página de fin (1-indexed, opcional)",
+        ge=1
+    )
+    
+    @field_validator('char_end')
+    @classmethod
+    def validate_char_range(cls, v: int, info) -> int:
+        """REGLA DURA: char_start < char_end"""
+        char_start = info.data.get('char_start')
+        if char_start is not None and v <= char_start:
+            raise ChunkContractViolationError(
+                rule_violated=f"char_end ({v}) debe ser > char_start ({char_start})"
+            )
+        return v
+    
+    @field_validator('page_end')
+    @classmethod
+    def validate_page_range(cls, v: Optional[int], info) -> Optional[int]:
+        """REGLA DURA: page_start <= page_end (si ambos existen)"""
+        if v is None:
+            return v
+        
+        page_start = info.data.get('page_start')
+        if page_start is not None and v < page_start:
+            raise ChunkContractViolationError(
+                rule_violated=f"page_end ({v}) debe ser >= page_start ({page_start})"
+            )
+        return v
+    
+    model_config = {"extra": "forbid", "validate_assignment": True}
 
 
 def generate_deterministic_chunk_id(
@@ -35,8 +131,12 @@ def generate_deterministic_chunk_id(
 
 class DocumentChunk(Base):
     """
-    MODELO SQL.
-    Representa un fragmento (chunk) de un documento.
+    MODELO SQL - Fragmento (chunk) de documento.
+    
+    CONTRATO FUNDACIONAL (ENDURECIMIENTO 3.0):
+    - chunk_id DEBE ser determinista
+    - location OBLIGATORIA (char_start, char_end, extraction_method)
+    - NO se permite creación sin contrato válido
 
     NO hace chunking.
     NO lee archivos.
@@ -81,43 +181,118 @@ class DocumentChunk(Base):
         default=datetime.utcnow,
     )
     
-    # --- METADATA OBLIGATORIA DE TRAZABILIDAD (REGLA 1) ---
-    # Offsets reales en texto original (REGLA 2)
+    # =========================================================
+    # LOCATION (OBLIGATORIO - ENDURECIMIENTO 3.0)
+    # =========================================================
+    
+    # Offsets reales en texto original (OBLIGATORIO)
     start_char: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
-        comment="Offset de inicio en texto original",
+        comment="Offset de inicio en texto original (OBLIGATORIO)",
     )
     
     end_char: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
-        comment="Offset de fin en texto original",
+        comment="Offset de fin en texto original (OBLIGATORIO)",
     )
     
-    # Página de origen (NULL si no aplica - ej: TXT)
-    page: Mapped[int | None] = mapped_column(
+    # Método de extracción (OBLIGATORIO)
+    extraction_method: Mapped[str] = mapped_column(
+        SQLEnum(ExtractionMethod),
+        nullable=False,
+        comment="Método de extracción del texto (OBLIGATORIO)",
+    )
+    
+    # Páginas de origen (OPCIONAL - NULL si no aplica)
+    page_start: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
-        comment="Número de página del documento o NULL",
+        comment="Página de inicio (1-indexed) o NULL",
     )
     
-    # Section hint controlado (NULL si no se puede inferir - REGLA 4)
-    section_hint: Mapped[str | None] = mapped_column(
+    page_end: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Página de fin (1-indexed) o NULL",
+    )
+    
+    # =========================================================
+    # METADATA ADICIONAL (OPCIONAL)
+    # =========================================================
+    
+    # Section hint controlado (NULL si no se puede inferir)
+    section_hint: Mapped[Optional[str]] = mapped_column(
         String(255),
         nullable=True,
         comment="Sección/encabezado inferido o NULL",
     )
     
-    # Estrategia de chunking aplicada (REGLA 3)
-    chunking_strategy: Mapped[str | None] = mapped_column(
+    # Estrategia de chunking aplicada
+    chunking_strategy: Mapped[Optional[str]] = mapped_column(
         String(100),
         nullable=True,
         comment="Estrategia de chunking aplicada",
+    )
+    
+    # Hash de contenido (opcional)
+    content_hash: Mapped[Optional[str]] = mapped_column(
+        String(64),  # SHA256 hex = 64 caracteres
+        nullable=True,
+        comment="SHA256 del contenido del chunk (opcional)",
     )
 
     # Relación inversa con Document
     document = relationship(
         "Document",
         back_populates="chunks",
+    )
+    
+    def get_location(self) -> ChunkLocation:
+        """
+        Retorna ChunkLocation validado del chunk.
+        
+        Aplica validaciones del contrato HARD.
+        """
+        return ChunkLocation(
+            char_start=self.start_char,
+            char_end=self.end_char,
+            extraction_method=ExtractionMethod(self.extraction_method),
+            page_start=self.page_start,
+            page_end=self.page_end,
+        )
+    
+    def validate_contract(self) -> None:
+        """
+        Valida que el chunk cumpla el contrato fundacional.
+        
+        REGLAS DURAS:
+        - char_start < char_end
+        - page_start <= page_end (si ambos existen)
+        - extraction_method informado
+        
+        Raises:
+            ChunkContractViolationError: Si alguna regla falla
+        """
+        # Validar offsets
+        if self.end_char <= self.start_char:
+            raise ChunkContractViolationError(
+                rule_violated=f"end_char ({self.end_char}) debe ser > start_char ({self.start_char})",
+                chunk_id=self.chunk_id
+            )
+        
+        # Validar páginas (si existen)
+        if self.page_start is not None and self.page_end is not None:
+            if self.page_end < self.page_start:
+                raise ChunkContractViolationError(
+                    rule_violated=f"page_end ({self.page_end}) debe ser >= page_start ({self.page_start})",
+                    chunk_id=self.chunk_id
+                )
+        
+        # Validar extraction_method
+        if not self.extraction_method:
+            raise ChunkContractViolationError(
+                rule_violated="extraction_method es obligatorio",
+                chunk_id=self.chunk_id
     )

@@ -33,6 +33,9 @@ from app.core.monitoring import get_monitor
 logger = get_logger()
 monitor = get_monitor()
 
+# Disclaimer legal
+from app.services.legal_disclaimer import DISCLAIMER_UI_DEMO
+
 # Configuración
 CASES_DIR = Path("clients_data/cases")
 CASES_DIR.mkdir(parents=True, exist_ok=True)
@@ -157,6 +160,11 @@ def get_latest_report(case_id: str):
 
 st.title("⚖️ Phoenix Legal")
 st.subheader("Sistema de Análisis Legal Automatizado")
+
+# ════════════════════════════════════════════════════════════════
+# DISCLAIMER DEMO (OBLIGATORIO)
+# ════════════════════════════════════════════════════════════════
+st.warning(DISCLAIMER_UI_DEMO)
 
 # Sidebar
 with st.sidebar:

@@ -1,16 +1,5 @@
-from pathlib import Path
-from dotenv import load_dotenv
 from app.core.database import Base, get_engine
-from app.models.case import Case  # noqa: F401, E402
-from app.models.document import Document  # noqa: F401, E402
-from app.models.document_chunk import DocumentChunk  # noqa: F401, E402
-from app.models.event import Event  # noqa: F401, E402
-from app.models.risk import Risk  # noqa: F401, E402
-from app.models.fact import Fact  # noqa: F401, E402
-from app.models.fact_evidence import FactEvidence  # noqa: F401, E402
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-load_dotenv(BASE_DIR / ".env")
+import app.models  # noqa: F401
 # =========================================================
 # INIT DB
 # =========================================================
