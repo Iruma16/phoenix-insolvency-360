@@ -12,11 +12,13 @@ from app.api.v2_prosecutor import router as v2_prosecutor_router
 from app.api.cases import router as cases_router
 from app.api.chunks import router as chunks_router
 from app.api.analysis_alerts import router as analysis_alerts_router
-from app.api.legal_report import router as legal_report_router
+from app.api.legal_report import router as legal_report_router  # ✅ RE-HABILITADO (imports corregidos)
 from app.api.trace import router as trace_router
 from app.api.manifest import router as manifest_router
 from app.api.pdf_report import router as pdf_report_router
 from app.api.balance_concursal import router as balance_concursal_router
+from app.api.financial_analysis import router as financial_analysis_router
+from app.api.auth import router as auth_router
 
 # 👉 IMPORT DEL AGENTE 1 (AUDITOR)
 from app.agents.agent_1_auditor.runner import run_auditor
@@ -64,7 +66,7 @@ app.include_router(reports_router)
 app.include_router(cases_router, prefix="/api")
 app.include_router(chunks_router, prefix="/api")
 app.include_router(analysis_alerts_router, prefix="/api")
-app.include_router(legal_report_router, prefix="/api")
+app.include_router(legal_report_router, prefix="/api")  # ✅ RE-HABILITADO
 app.include_router(trace_router, prefix="/api")
 app.include_router(manifest_router, prefix="/api")
 app.include_router(pdf_report_router, prefix="/api")
@@ -75,6 +77,12 @@ app.include_router(v2_prosecutor_router)
 
 # FASE 1.3: Balance Concursal
 app.include_router(balance_concursal_router, prefix="/api")
+
+# FASE 2B: Análisis Financiero Concursal
+app.include_router(financial_analysis_router, prefix="/api")
+
+# Autenticación JWT
+app.include_router(auth_router, prefix="/api")
 
 
 # =========================================================

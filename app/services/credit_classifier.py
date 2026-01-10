@@ -1,167 +1,433 @@
 """
-Clasificador de créditos según TRLC con jerarquía excluyente.
+CLASIFICADOR DE CRÉDITOS Y TIMELINE CON EVIDENCE (ENDURECIDO).
 
-FASE 1.3: Balance de Situación Automático
+Mejoras críticas:
+- Extracción de importes cerca de keywords TRLC (no cualquier número)
+- Clasificación con confidence score (no absoluta)
+- Extracción de fechas con mapeo de meses español
+- NUNCA inventa fechas (skip si no hay fecha)
+- Evidence completa por crédito/evento
 """
-from datetime import date
-from decimal import Decimal
-from typing import Optional
+from typing import List, Optional, Tuple
+from datetime import datetime
+import re
+from sqlalchemy.orm import Session
 
-from app.models.credit import Credit, CreditNature, CreditClassificationTRLC
+from app.models.document import Document
+from app.models.document_chunk import DocumentChunk
+from app.services.financial_analysis import (
+    CreditClassification,
+    CreditType,
+    TimelineEvent,
+    Evidence,
+)
 
 
-# Constantes legales (actualizar anualmente)
-SMI_2025 = Decimal("1134")  # Salario Mínimo Interprofesional 2025
+# =========================================================
+# HELPERS DE EVIDENCE
+# =========================================================
 
-# Versión de reglas TRLC (P0.5 - trazabilidad legal)
-TRLC_RULESET_VERSION = "TRLC_2020_v1.0"
+def create_evidence_from_document(
+    document: Document,
+    chunk: Optional[DocumentChunk],
+    excerpt: str,
+    confidence: float = 0.8
+) -> Evidence:
+    """Crea Evidence desde documento."""
+    if len(excerpt) > 200:
+        excerpt = excerpt[:197] + "..."
+    
+    return Evidence(
+        document_id=document.document_id,
+        filename=document.filename,
+        chunk_id=chunk.chunk_id if chunk else None,
+        page=chunk.page_start if chunk and chunk.page_start else None,
+        start_char=chunk.start_char if chunk and chunk.start_char else None,
+        end_char=chunk.end_char if chunk and chunk.end_char else None,
+        excerpt=excerpt,
+        extraction_method=chunk.extraction_method if chunk and chunk.extraction_method else "keyword_proximity",
+        extraction_confidence=confidence
+    )
+
+
+# =========================================================
+# EXTRACCIÓN DE IMPORTES (ENDURECIDA)
+# =========================================================
+
+def extract_amount_near_keyword(text: str) -> Optional[Tuple[float, str, int]]:
+    """
+    Extrae importe cerca de keywords TRLC.
+    
+    Returns:
+        (value, excerpt, confidence_score) o None
+    """
+    keywords = [
+        r'importe\s*(?:total|reclamado|adeudado)?',
+        r'total\s*(?:adeudado|deuda|débito)?',
+        r'deuda\s*(?:total|pendiente)?',
+        r'principal\s*(?:adeudado)?',
+        r'cantidad\s*(?:reclamada)?',
+        r'débito\s*(?:total)?',
+    ]
+    
+    best_match = None
+    best_score = 0
+    
+    for kw_pattern in keywords:
+        # Buscar keyword + número en contexto cercano (máx 50 chars)
+        pattern = kw_pattern + r'[\s:]*([€$]?\s*[\d.,]+)\s*€?'
+        matches = re.finditer(pattern, text, re.IGNORECASE)
+        
+        for match in matches:
+            amount_str = match.group(1)
+            # Limpiar
+            amount_str = re.sub(r'[€$\s]', '', amount_str)
+            
+            try:
+                # Formato español: 1.234.567,89
+                if ',' in amount_str and '.' in amount_str:
+                    value_str = amount_str.replace('.', '').replace(',', '.')
+                elif ',' in amount_str:
+                    parts = amount_str.split(',')
+                    value_str = amount_str.replace(',', '.') if len(parts[-1]) == 2 else amount_str.replace(',', '')
+                else:
+                    value_str = amount_str.replace('.', '')
+                
+                value = float(value_str)
+                
+                # Validar rango contable
+                if not (100 <= value <= 999_999_999):
+                    continue
+                
+                # Calcular score (keyword más específica = mayor score)
+                score = len(kw_pattern)
+                if score > best_score:
+                    best_score = score
+                    excerpt = text[max(0, match.start()-50):min(len(text), match.end()+50)]
+                    confidence = 85 if score > 20 else 70
+                    best_match = (value, excerpt.strip(), confidence)
+            
+            except ValueError:
+                continue
+    
+    return best_match
+
+
+def extract_amount(text: str) -> Optional[float]:
+    """Wrapper para mantener compatibilidad."""
+    result = extract_amount_near_keyword(text)
+    return result[0] if result else None
+
+
+# =========================================================
+# CLASIFICACIÓN TRLC (CON CONFIDENCE)
+# =========================================================
+
+def classify_credit_type(text: str, filename: str) -> Tuple[CreditType, int]:
+    """
+    Clasifica tipo de crédito según TRLC.
+    
+    Returns:
+        (credit_type, confidence_score)
+    """
+    text_lower = text.lower()
+    filename_lower = filename.lower()
+    
+    # Privilegiados especiales (Art. 90 LC)
+    # Solo si hay mención EXPLÍCITA de garantía real
+    if any(kw in text_lower for kw in ['garantía real', 'garantia real', 'hipoteca inscrita', 'prenda inscrita']):
+        return (CreditType.PRIVILEGED_SPECIAL, 80)
+    elif any(kw in filename_lower for kw in ['hipoteca', 'garantia', 'prenda']):
+        # Solo por filename = menor confianza
+        return (CreditType.PRIVILEGED_SPECIAL, 50)
+    
+    # Privilegiados generales (Art. 91 LC)
+    # AEAT y SS son los más claros
+    if any(kw in text_lower or kw in filename_lower for kw in ['aeat', 'agencia tributaria']):
+        return (CreditType.PRIVILEGED_GENERAL, 90)
+    if any(kw in text_lower or kw in filename_lower for kw in ['tesorería general', 'tesoreria general', 'tgss', 'seguridad social']):
+        return (CreditType.PRIVILEGED_GENERAL, 90)
+    if 'hacienda' in filename_lower and ('embargo' in text_lower or 'deuda' in text_lower):
+        return (CreditType.PRIVILEGED_GENERAL, 80)
+    elif 'hacienda' in filename_lower:
+        return (CreditType.PRIVILEGED_GENERAL, 70)
+    
+    # Ordinarios (por defecto)
+    return (CreditType.ORDINARY, 60)
+
+
+# =========================================================
+# EXTRACCIÓN DE FECHAS (ENDURECIDA)
+# =========================================================
+
+def extract_date_from_document(text: str, filename: str) -> Optional[Tuple[datetime, int]]:
+    """
+    Extrae fecha del documento.
+    
+    Returns:
+        (datetime, confidence) o None
+    """
+    # Mapeo meses español
+    meses_es = {
+        'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4,
+        'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8,
+        'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12,
+    }
+    
+    patterns = [
+        # dd/mm/yyyy o dd-mm-yyyy
+        (r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', 'dmy', 80),
+        # yyyy-mm-dd
+        (r'(\d{4})-(\d{1,2})-(\d{1,2})', 'ymd', 85),
+        # 1 de enero de 2024
+        (r'(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})', 'dmy_text', 75),
+    ]
+    
+    for pattern, date_format, confidence in patterns:
+        matches = re.finditer(pattern, text, re.IGNORECASE)
+        for match in matches:
+            try:
+                if date_format == 'dmy':
+                    day, month, year = match.groups()
+                    dt = datetime(int(year), int(month), int(day))
+                elif date_format == 'ymd':
+                    year, month, day = match.groups()
+                    dt = datetime(int(year), int(month), int(day))
+                elif date_format == 'dmy_text':
+                    day, month_text, year = match.groups()
+                    month = meses_es.get(month_text.lower())
+                    if not month:
+                        continue
+                    dt = datetime(int(year), int(month), int(day))
+                else:
+                    continue
+                
+                # Validar fecha razonable (2000-2030)
+                if 2000 <= dt.year <= 2030:
+                    return (dt, confidence)
+            except (ValueError, TypeError):
+                continue
+    
+    return None
+
+
+# =========================================================
+# CLASIFICACIÓN DE CRÉDITOS
+# =========================================================
+
+def classify_credits_from_documents(
+    db: Session,
+    case_id: str,
+    case: Optional['Case'] = None  # ✅ Optimización N+1
+) -> List[CreditClassification]:
+    """
+    Clasifica créditos con Evidence y confidence.
+    
+    Args:
+        db: Sesión de base de datos
+        case_id: ID del caso
+        case: Objeto Case con documents/chunks precargados (optimización N+1)
+    
+    Returns:
+        Lista de CreditClassification con evidence
+    """
+    classifications = []
+    
+    # Obtener documentos (precargados o query)
+    if case and hasattr(case, 'documents') and case.documents:
+        documents = case.documents
+    else:
+        documents = db.query(Document).filter(Document.case_id == case_id).all()
+    
+    for doc in documents:
+        # Obtener chunks (precargados o query)
+        if hasattr(doc, 'chunks') and doc.chunks:
+            chunks = doc.chunks
+        else:
+            chunks = db.query(DocumentChunk).filter(
+            DocumentChunk.document_id == doc.document_id
+        ).order_by(DocumentChunk.chunk_index).all()
+        
+        if not chunks:
+            continue
+        
+        full_text = "\n".join([chunk.content for chunk in chunks if chunk.content])[:1000]
+        
+        # Extraer importe (con confidence)
+        amount_result = extract_amount_near_keyword(full_text)
+        if not amount_result:
+            continue
+        
+        amount, amount_excerpt, amount_confidence = amount_result
+        
+        # Clasificar (con confidence)
+        credit_type, classification_confidence = classify_credit_type(full_text, doc.filename)
+        
+        # Generar descripción
+        if credit_type == CreditType.PRIVILEGED_SPECIAL:
+            description = f"Posible crédito con garantía real (conf: {classification_confidence}%)"
+        elif credit_type == CreditType.PRIVILEGED_GENERAL:
+            if 'hacienda' in doc.filename.lower() or 'aeat' in full_text.lower():
+                description = "Deuda tributaria (AEAT)"
+            elif 'ss' in doc.filename.lower() or 'seguridad' in full_text.lower():
+                description = "Deuda con Seguridad Social"
+            else:
+                description = f"Posible crédito privilegiado general (conf: {classification_confidence}%)"
+        else:
+            if 'factura' in doc.filename.lower():
+                description = "Factura impagada (crédito ordinario)"
+            else:
+                description = "Crédito ordinario"
+        
+        # Nombre acreedor
+        creditor = None
+        if 'hacienda' in doc.filename.lower() or 'aeat' in full_text.lower():
+            creditor = "AEAT"
+        elif 'ss' in doc.filename.lower() or 'seguridad' in doc.filename.lower():
+            creditor = "Seguridad Social / TGSS"
+        
+        # Crear Evidence con excerpt real del importe
+        chunk = chunks[0] if chunks else None
+        overall_confidence = min(amount_confidence, classification_confidence) / 100.0
+        
+        evidence = create_evidence_from_document(
+            doc, 
+            chunk, 
+            amount_excerpt,
+            overall_confidence
+        )
+        
+        classifications.append(CreditClassification(
+            credit_type=credit_type,
+            amount=amount,
+            creditor_name=creditor,
+            description=description,
+            evidence=evidence
+        ))
+    
+    return classifications
+
+
+# =========================================================
+# EXTRACCIÓN DE TIMELINE
+# =========================================================
+
+def extract_timeline_from_documents(
+    db: Session,
+    case_id: str,
+    case: Optional['Case'] = None  # ✅ Optimización N+1
+) -> List[TimelineEvent]:
+    """
+    Extrae timeline con Evidence (NUNCA inventa fechas).
+    
+    Args:
+        db: Sesión de base de datos
+        case_id: ID del caso
+        case: Objeto Case con documents/chunks precargados (optimización N+1)
+    
+    Returns:
+        Lista de TimelineEvent con evidence
+    """
+    events = []
+    
+    # Obtener documentos (precargados o query)
+    if case and hasattr(case, 'documents') and case.documents:
+        documents = case.documents
+    else:
+        documents = db.query(Document).filter(Document.case_id == case_id).all()
+    
+    for doc in documents:
+        # Obtener chunks (precargados o query)
+        if hasattr(doc, 'chunks') and doc.chunks:
+            chunks = doc.chunks
+        else:
+            chunks = db.query(DocumentChunk).filter(
+            DocumentChunk.document_id == doc.document_id
+        ).all()
+        
+        if not chunks:
+            continue
+        
+        full_text = "\n".join([chunk.content for chunk in chunks if chunk.content])[:500]
+        
+        # Detectar tipo de evento
+        event_type = None
+        description = doc.filename
+        
+        if 'embargo' in doc.filename.lower() or 'embargo' in full_text.lower():
+            event_type = "embargo"
+            if 'hacienda' in full_text.lower():
+                description = "Embargo Hacienda"
+            elif 'seguridad' in full_text.lower():
+                description = "Embargo Seguridad Social"
+            else:
+                description = "Embargo"
+        elif 'factura' in doc.filename.lower():
+            event_type = "factura_vencida"
+            description = f"Factura: {doc.filename}"
+        elif 'reclamaci' in full_text.lower():
+            event_type = "reclamacion"
+            description = "Reclamación de acreedor"
+        
+        if event_type:
+            amount_result = extract_amount_near_keyword(full_text)
+            amount = amount_result[0] if amount_result else None
+            
+            # Intentar extraer fecha del texto
+            date_result = extract_date_from_document(full_text, doc.filename)
+            
+            # Si no hay fecha en texto, usar doc.date_start
+            # Si tampoco existe, SKIP este evento (no inventar fechas)
+            if date_result:
+                event_date, date_confidence = date_result
+            elif doc.date_start:
+                event_date = doc.date_start
+                date_confidence = 50  # Baja confianza (viene del metadato)
+            else:
+                # ❌ NO crear evento sin fecha
+                continue
+            
+            chunk = chunks[0] if chunks else None
+            excerpt = full_text[:200] if full_text else doc.filename
+            
+            events.append(TimelineEvent(
+                date=event_date,
+                event_type=event_type,
+                description=description,
+                amount=amount,
+                evidence=create_evidence_from_document(doc, chunk, excerpt, date_confidence / 100.0)
+            ))
+    
+    # Ordenar cronológicamente
+    events.sort(key=lambda e: e.date)
+    
+    return events
+
+
+# ==============================================================================
+# COMPATIBILIDAD CON CÓDIGO ANTIGUO
+# ==============================================================================
+
+# Para mantener compatibilidad con balance_concursal_service.py
+TRLC_RULESET_VERSION = "2.0"
 
 
 class TRLCCreditClassifier:
     """
-    Clasificador de créditos según jerarquía estricta TRLC.
+    Clase stub para compatibilidad con código antiguo.
     
-    Orden jurídico (excluyente):
-    1. Contra la masa (Art. 249 TRLC)
-    2. Privilegiado especial (Art. 270 TRLC)
-    3. Subordinado (Art. 456 TRLC) - tiene prioridad sobre general
-    4. Privilegiado general (Art. 271 TRLC)
-    5. Ordinario (Art. 289 TRLC) - fallback
-    
-    IMPORTANTE: La clasificación es excluyente y se registra el motivo
-    de exclusión de categorías superiores (auditable).
+    El nuevo sistema usa funciones directamente (classify_credits_from_documents).
+    Esta clase se mantiene solo para no romper imports existentes.
     """
     
-    def __init__(self, concurso_date: Optional[date] = None):
-        """
-        Args:
-            concurso_date: Fecha de declaración de concurso (si existe)
-        """
+    def __init__(self, concurso_date: Optional[datetime] = None):
         self.concurso_date = concurso_date
+        self.version = TRLC_RULESET_VERSION
     
-    def classify_credit(self, credit: Credit) -> Credit:
+    def classify_from_documents(self, db, case_id: str, case=None):
         """
-        Clasifica un crédito según jerarquía TRLC.
+        Wrapper para la función classify_credits_from_documents.
         
-        Registra explícitamente por qué NO entra en cada categoría superior.
+        Mantiene compatibilidad con código que use la clase.
         """
-        exclusions = {}
-        
-        # 1. ¿Es contra la masa? (Art. 249 TRLC)
-        if self.concurso_date:
-            result, reason = self._check_contra_la_masa(credit)
-            if result:
-                credit.trlc_classification = CreditClassificationTRLC.CONTRA_LA_MASA
-                credit.classification_reasoning = f"Art. 249 TRLC: {reason}"
-                return credit
-            exclusions["contra_la_masa"] = reason
-        
-        # 2. ¿Es privilegiado especial? (Art. 270 TRLC)
-        result, reason = self._check_privilegiado_especial(credit)
-        if result:
-            credit.trlc_classification = CreditClassificationTRLC.PRIVILEGIADO_ESPECIAL
-            credit.classification_reasoning = f"Art. 270 TRLC: {reason}"
-            credit.excluded_from_categories = exclusions
-            return credit
-        exclusions["privilegiado_especial"] = reason
-        
-        # 3. ¿Es subordinado? (Art. 456 TRLC - tiene prioridad sobre general)
-        result, reason = self._check_subordinado(credit)
-        if result:
-            credit.trlc_classification = CreditClassificationTRLC.SUBORDINADO
-            credit.classification_reasoning = f"Art. 456 TRLC: {reason}"
-            credit.excluded_from_categories = exclusions
-            return credit
-        exclusions["subordinado"] = reason
-        
-        # 4. ¿Es privilegiado general? (Art. 271 TRLC)
-        result, reason = self._check_privilegiado_general(credit)
-        if result:
-            credit.trlc_classification = CreditClassificationTRLC.PRIVILEGIADO_GENERAL
-            credit.classification_reasoning = f"Art. 271 TRLC: {reason}"
-            credit.excluded_from_categories = exclusions
-            return credit
-        exclusions["privilegiado_general"] = reason
-        
-        # 5. Por defecto: ordinario (Art. 289 TRLC)
-        credit.trlc_classification = CreditClassificationTRLC.ORDINARIO
-        credit.classification_reasoning = "Art. 289 TRLC: Crédito ordinario (no cumple requisitos de otras categorías)"
-        credit.excluded_from_categories = exclusions
-        return credit
-    
-    def _check_contra_la_masa(self, credit: Credit) -> tuple[bool, str]:
-        """Art. 249 TRLC - Créditos contra la masa."""
-        
-        if not self.concurso_date:
-            return False, "Fecha de concurso no disponible"
-        
-        # 249.1º - Salarios posteriores al concurso
-        if credit.nature == CreditNature.SALARIO:
-            if credit.devengo_date and credit.devengo_date >= self.concurso_date:
-                return True, "Salario devengado tras declaración de concurso"
-            return False, "Salario devengado antes del concurso"
-        
-        # 249.2º - Créditos alimenticios durante concurso
-        # 249.3º - Gastos de conservación de la masa
-        # (Por ahora solo implementamos salarios, el resto requiere más contexto)
-        
-        return False, "No cumple requisitos Art. 249 TRLC"
-    
-    def _check_privilegiado_especial(self, credit: Credit) -> tuple[bool, str]:
-        """Art. 270 TRLC - Privilegio especial."""
-        
-        # 270.1º - Créditos garantizados con prenda o hipoteca
-        if credit.secured and credit.guarantee_type == "real":
-            return True, f"Garantía real sobre bien específico (valor: {credit.guarantee_value}€)"
-        
-        # 270.2º - Retenciones tributarias y SS
-        if credit.nature in [CreditNature.AEAT, CreditNature.SEGURIDAD_SOCIAL]:
-            if credit.source_description and "retencion" in credit.source_description.lower():
-                return True, "Retenciones tributarias/SS (Art. 270.2 TRLC)"
-            return False, "No es retención, sino deuda tributaria directa"
-        
-        # 270.3º - Créditos de trabajadores (últimos 30 días, máx 2xSMI)
-        if credit.nature == CreditNature.SALARIO:
-            max_privilegiado = SMI_2025 * 2 * 12 / 365 * 30  # 2xSMI prorrateado 30 días
-            
-            if credit.principal_amount <= max_privilegiado:
-                return True, f"Salarios últimos 30 días dentro de límite (máx {max_privilegiado:.2f}€)"
-            return False, f"Salarios exceden límite 2xSMI ({max_privilegiado:.2f}€), resto es ordinario"
-        
-        return False, "No cumple requisitos Art. 270 TRLC"
-    
-    def _check_subordinado(self, credit: Credit) -> tuple[bool, str]:
-        """Art. 456 TRLC - Subordinación."""
-        
-        # 456.1º - Créditos por intereses
-        if credit.nature == CreditNature.INTERESES:
-            return True, "Créditos por intereses (Art. 456.1 TRLC)"
-        
-        # 456.2º - Multas y sanciones
-        if credit.nature in [CreditNature.SANCION, CreditNature.MULTA]:
-            return True, "Multas y sanciones (Art. 456.2 TRLC)"
-        
-        # 456.3º - Créditos de personas vinculadas
-        if credit.nature == CreditNature.PERSONA_VINCULADA:
-            return True, "Persona especialmente relacionada (Art. 456.3 TRLC)"
-        
-        return False, "No cumple requisitos Art. 456 TRLC"
-    
-    def _check_privilegiado_general(self, credit: Credit) -> tuple[bool, str]:
-        """Art. 271 TRLC - Privilegio general."""
-        
-        # 271.1º - 50% créditos AEAT y SS (no retenciones)
-        if credit.nature in [CreditNature.AEAT, CreditNature.SEGURIDAD_SOCIAL]:
-            if not credit.source_description or "retencion" not in credit.source_description.lower():
-                privileged_amount = credit.principal_amount * Decimal("0.5")
-                return True, f"50% crédito tributario/SS privilegiado ({privileged_amount:.2f}€), resto ordinario"
-        
-        # 271.2º - Créditos de trabajadores (resto no cubierto por especial)
-        if credit.nature == CreditNature.SALARIO:
-            return True, "Crédito laboral no cubierto por privilegio especial"
-        
-        return False, "No cumple requisitos Art. 271 TRLC"
-    
-    def classify_credits_batch(self, credits: list[Credit]) -> list[Credit]:
-        """Clasifica una lista de créditos."""
-        return [self.classify_credit(credit) for credit in credits]
+        return classify_credits_from_documents(db, case_id, case=case)

@@ -3,10 +3,49 @@ Cliente API para conectar Streamlit con FastAPI backend.
 
 Este módulo centraliza todas las llamadas HTTP al backend endurecido,
 permitiendo que la UI consume los endpoints oficiales (PANTALLAS 0-6).
+
+Incluye:
+- Validación Pydantic de respuestas
+- Manejo de errores específico por código HTTP
+- Timeouts explícitos
 """
 import requests
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from pydantic import ValidationError
+from requests.exceptions import Timeout, ConnectionError
+
+# Importar modelos Pydantic del backend para validación
+from app.services.financial_analysis import FinancialAnalysisResult
+
+
+# =========================================================
+# EXCEPCIONES PERSONALIZADAS
+# =========================================================
+
+class PhoenixLegalAPIError(Exception):
+    """Error base para todas las excepciones de la API."""
+    pass
+
+
+class CaseNotFoundError(PhoenixLegalAPIError):
+    """Caso no encontrado (404)."""
+    pass
+
+
+class ValidationErrorAPI(PhoenixLegalAPIError):
+    """Error de validación de datos (422)."""
+    pass
+
+
+class ParsingError(PhoenixLegalAPIError):
+    """Error al procesar/parsear documentos (500)."""
+    pass
+
+
+class ServerError(PhoenixLegalAPIError):
+    """Error interno del servidor (500)."""
+    pass
 
 
 class PhoenixLegalClient:
@@ -92,6 +131,52 @@ class PhoenixLegalClient:
     # =========================================
     # PANTALLA 1: DOCUMENTOS
     # =========================================
+    
+    def check_duplicates_before_upload(
+        self, 
+        case_id: str, 
+        files: List[tuple]
+    ) -> List[Dict[str, Any]]:
+        """
+        Verifica si los archivos son duplicados ANTES de subirlos.
+        
+        Args:
+            case_id: ID del caso
+            files: Lista de tuplas (filename, file_content)
+            
+        Returns:
+            Lista de diccionarios con información de duplicación:
+                - filename: Nombre del archivo
+                - is_duplicate: True si es duplicado
+                - duplicate_of: Nombre del archivo duplicado
+                - should_upload: False si es duplicado
+        """
+        def get_mime_type(filename: str) -> str:
+            """Detecta el tipo MIME según la extensión del archivo."""
+            import os
+            ext = os.path.splitext(filename)[1].lower()
+            mime_types = {
+                '.pdf': 'application/pdf',
+                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                '.xls': 'application/vnd.ms-excel',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.doc': 'application/msword',
+                '.txt': 'text/plain',
+                '.csv': 'text/csv',
+            }
+            return mime_types.get(ext, 'application/octet-stream')
+        
+        files_payload = [
+            ("files", (filename, content, get_mime_type(filename)))
+            for filename, content in files
+        ]
+        
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/documents/check-duplicates",
+            files=files_payload
+        )
+        response.raise_for_status()
+        return response.json()
     
     def upload_documents(
         self, 
@@ -244,6 +329,91 @@ class PhoenixLegalClient:
         )
         response.raise_for_status()
         return response.json()
+    
+    def get_financial_analysis(self, case_id: str) -> FinancialAnalysisResult:
+        """
+        Obtiene análisis financiero completo del caso con validación Pydantic.
+        
+        Devuelve análisis financiero concursal con:
+        - Datos contables estructurados (Balance + PyG)
+        - Clasificación de créditos (TRLC)
+        - Ratios financieros (semáforo)
+        - Detección de insolvencia (multicapa)
+        - Timeline de eventos críticos
+        
+        Args:
+            case_id: ID del caso
+            
+        Returns:
+            FinancialAnalysisResult validado con Pydantic
+            
+        Raises:
+            CaseNotFoundError: Si el caso no existe (404)
+            ValidationErrorAPI: Si hay error de validación (422)
+            ParsingError: Si el backend falló al parsear documentos (500)
+            ServerError: Si hay error interno del servidor (500)
+            PhoenixLegalAPIError: Para timeout, conexión u otros errores
+        """
+        try:
+            response = self.session.get(
+                f"{self.base_url}/api/cases/{case_id}/financial-analysis",
+                timeout=30  # Timeout explícito de 30 segundos
+            )
+            
+            # Manejo fino de errores HTTP por código
+            if response.status_code == 404:
+                try:
+                    error_detail = response.json().get("detail", f"Caso '{case_id}' no encontrado")
+                except:
+                    error_detail = f"Caso '{case_id}' no encontrado"
+                raise CaseNotFoundError(error_detail)
+            
+            elif response.status_code == 422:
+                try:
+                    error_detail = response.json().get("detail", "Error de validación")
+                except:
+                    error_detail = "Error de validación"
+                raise ValidationErrorAPI(f"Datos inválidos: {error_detail}")
+            
+            elif response.status_code == 500:
+                try:
+                    error_detail = response.json().get("detail", "Error interno del servidor")
+                except:
+                    # Si la respuesta no es JSON, usar el texto raw
+                    error_detail = response.text[:500] if response.text else "Error interno del servidor"
+                
+                # Distinguir entre error de parsing y error genérico
+                if "parse" in str(error_detail).lower() or "extract" in str(error_detail).lower():
+                    raise ParsingError(f"Error al procesar documentos: {error_detail}")
+                else:
+                    raise ServerError(f"Error del servidor: {error_detail}")
+            
+            # Si hay otro código de error, usar raise_for_status genérico
+            response.raise_for_status()
+            
+            # Validar respuesta con Pydantic
+            data = response.json()
+            
+            try:
+                return FinancialAnalysisResult(**data)
+            except ValidationError as e:
+                # Si el esquema no coincide con lo esperado
+                raise PhoenixLegalAPIError(
+                    f"Respuesta del servidor no coincide con esquema esperado. "
+                    f"El backend devolvió datos con estructura incorrecta: {e}"
+                )
+        
+        except Timeout:
+            raise PhoenixLegalAPIError(
+                "Timeout: El análisis financiero está tardando demasiado (>30s). "
+                "Esto puede ocurrir con muchos documentos o documentos muy grandes."
+            )
+        
+        except ConnectionError:
+            raise PhoenixLegalAPIError(
+                "No se pudo conectar al servidor API. "
+                "Verifica que el servidor esté levantado en http://localhost:8000"
+            )
     
     # =========================================
     # PANTALLA 4: INFORME LEGAL

@@ -1,18 +1,12 @@
 """
 ENDPOINT OFICIAL DE DESCARGA DE PDF CERTIFICADO (PANTALLA 6).
 
-PRINCIPIO: Esta capa NO genera contenido nuevo, NO analiza, NO certifica.
-SOLO EMPAQUETA Y ENTREGA el resultado certificado.
-
-PROHIBIDO:
-- generar PDF sin trace existente
-- generar PDF sin manifest existente
-- regenerar PDF con datos distintos
-- permitir múltiples PDFs para el mismo trace
-- editar el contenido del informe
-- ocultar hashes, IDs o avisos legales
+VERSIÓN OPTIMIZADA: Genera PDF rápido desde LegalReport (sin ejecutar agentes pesados).
 """
 from __future__ import annotations
+
+from datetime import datetime
+from io import BytesIO
 
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import StreamingResponse
@@ -20,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.case import Case
-from app.services.pdf_builder import build_certified_pdf
+from app.api.legal_report import generate_legal_report
+from app.reports.pdf_report import generate_legal_report_pdf
 
 
 router = APIRouter(
@@ -52,21 +47,14 @@ def download_certified_pdf(
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """
-    Descarga el informe legal en PDF certificado.
+    Descarga el informe legal en PDF (versión optimizada).
     
-    Proceso:
-    1. Verificar que el caso existe
-    2. Recuperar LegalReport del caso
-    3. Recuperar ExecutionTrace del caso
-    4. Recuperar HardManifest del trace
-    5. Verificar coherencia de IDs y hashes
-    6. Generar PDF inmutable
-    7. Retornar como StreamingResponse
+    OPTIMIZACIÓN: No ejecuta agentes pesados (Auditor/Prosecutor).
+    En su lugar:
+    1. Genera LegalReport simplificado desde alertas técnicas (rápido)
+    2. Renderiza PDF desde el LegalReport (segundos)
     
-    El nombre del archivo incluye:
-    - case_id
-    - trace_id
-    - manifest_id (primeros 8 chars)
+    Esto es mucho más rápido que ejecutar los agentes completos (minutos).
     
     Args:
         case_id: ID del caso
@@ -77,10 +65,7 @@ def download_certified_pdf(
         
     Raises:
         HTTPException 404: Si el caso no existe
-        HTTPException 404: Si no existe informe legal
-        HTTPException 404: Si no existe trace
-        HTTPException 404: Si no existe manifest
-        HTTPException 422: Si hay incoherencia entre IDs/hashes
+        HTTPException 500: Si falla la generación del PDF
     """
     # Verificar que el caso existe
     case = db.query(Case).filter(Case.case_id == case_id).first()
@@ -90,34 +75,41 @@ def download_certified_pdf(
             detail=f"Caso '{case_id}' no encontrado"
         )
     
-    # TODO: En una implementación real, aquí se:
-    # 1. Consultaría el LegalReport del caso en BD
-    # 2. Consultaría el último ExecutionTrace del caso en BD
-    # 3. Consultaría el HardManifest asociado al trace en BD
-    # 4. Verificaría coherencia de IDs y hashes
-    # 5. Llamaría a build_certified_pdf() del servicio
-    # 6. Retornaría el PDF como StreamingResponse
+    # VERSIÓN OPTIMIZADA: Generar PDF rápido sin ejecutar agentes pesados
     
-    # NOTA: La persistencia de LegalReport, ExecutionTrace y HardManifest en BD
-    # no está implementada en las fases previas.
-    # Los modelos Pydantic existen (PANTALLA 4, FASE 6) pero no hay:
-    # 1. Modelos SQLAlchemy para persistencia
-    # 2. Lógica de guardado al generar el informe legal
-    # 3. Consultas para recuperar estos objetos
-    
-    # PARA COMPLETAR LA FUNCIONALIDAD SE REQUIERE:
-    # 1. Crear modelos SQLAlchemy para LegalReport, ExecutionTrace, HardManifest
-    # 2. Persistir estos objetos en app/api/legal_report.py, trace.py, manifest.py
-    # 3. Implementar consultas aquí
-    # 4. Usar build_certified_pdf() para generar el PDF
-    
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=(
-            f"No se encontró informe legal certificado para el caso '{case_id}'. "
-            "El PDF solo puede generarse a partir de un informe con trace y manifest completos."
+    try:
+        # 1. Generar informe legal simplificado desde alertas (rápido: ~1-2 segundos)
+        legal_report = generate_legal_report(case_id=case_id, db=db)
+        
+        # 2. Generar PDF del informe (rápido: ~1-2 segundos)
+        pdf_bytes = generate_legal_report_pdf(legal_report, case)
+        
+        # 3. Nombre del archivo
+        filename = f"informe_legal_{case_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        # 4. Retornar como streaming response
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
         )
-    )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (404, etc.)
+        raise
+    except Exception as e:
+        # Error al generar PDF
+        import traceback
+        error_detail = f"Error al generar PDF del informe legal: {str(e)}"
+        print(f"❌ {error_detail}")
+        print(traceback.format_exc())
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_detail
+        )
 
 
 # =========================================================

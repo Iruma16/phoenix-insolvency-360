@@ -458,6 +458,7 @@ async def ingest_documents(
                 case_id=case_id,
                 document_id=document_id,
                 original_file_path=temp_file_path,
+                original_filename=file.filename,  # Preservar nombre original
             )
             
             logger.info(f"Archivo almacenado: {storage_metadata['storage_path']}")
@@ -629,7 +630,7 @@ async def ingest_documents(
                 # FASE 2A: Métricas de parsing
                 parsing_metrics={
                     'parser_used': parsing_result.tipo_documento,
-                    'processing_time_ms': int((datetime.utcnow().timestamp() - start_time) * 1000) if 'start_time' in locals() else 0,
+                    'processing_time_ms': int((datetime.utcnow().timestamp() - start_time) * 1000),
                     'num_entities': len(parsing_result.structured_data) if parsing_result.structured_data else 0,
                     'has_structured_data': parsing_result.structured_data is not None,
                     'extraction_methods': list(parsing_result.structured_data.keys()) if parsing_result.structured_data else [],
@@ -1049,6 +1050,139 @@ async def resolve_duplicate_action(
     db.refresh(document)
     
     return _build_document_summary(document, db)
+
+
+@router.post(
+    "/check-duplicates",
+    summary="Verificar duplicados ANTES de subir",
+    description=(
+        "Verifica si los archivos a subir son duplicados de documentos existentes. "
+        "Devuelve lista de archivos con información de duplicación. "
+        "Permite al usuario decidir ANTES de subir si proceder o no."
+    ),
+)
+async def check_duplicates_before_upload(
+    case_id: str,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+) -> List[dict]:
+    """
+    Verifica duplicados ANTES de subir archivos.
+    
+    Flujo:
+    1. Calcula hash SHA256 de cada archivo
+    2. Verifica duplicados binarios en BD
+    3. Si no hay duplicado binario, parsea y verifica semántico (opcional)
+    4. Retorna lista con info de duplicación para cada archivo
+    
+    Args:
+        case_id: ID del caso
+        files: Archivos a verificar
+        db: Sesión de base de datos
+        
+    Returns:
+        Lista de dicts con:
+            - filename: Nombre original del archivo
+            - file_size: Tamaño en bytes
+            - is_duplicate: True si es duplicado
+            - duplicate_type: "binary" o "semantic" o null
+            - duplicate_of: Nombre del archivo original duplicado
+            - duplicate_similarity: 1.0 para binario, <1.0 para semántico
+            - should_upload: Recomendación (False si es duplicado)
+    """
+    # Verificar que el caso existe
+    case = db.query(Case).filter(Case.case_id == case_id).first()
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Caso '{case_id}' no encontrado"
+        )
+    
+    results = []
+    
+    for file in files:
+        temp_file_path = None
+        try:
+            # Leer contenido
+            content = await file.read()
+            
+            if not content:
+                results.append({
+                    "filename": file.filename,
+                    "file_size": 0,
+                    "is_duplicate": False,
+                    "duplicate_type": None,
+                    "duplicate_of": None,
+                    "duplicate_similarity": None,
+                    "should_upload": False,
+                    "error": "Archivo vacío"
+                })
+                continue
+            
+            # Guardar temporalmente para calcular hash
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
+                temp_file.write(content)
+                temp_file_path = temp_file.name
+            
+            # Calcular hash SHA256
+            sha256_hash = calculate_file_hash(temp_file_path)
+            
+            # Verificar duplicado BINARIO
+            existing_doc = db.query(Document).filter(
+                Document.case_id == case_id,
+                Document.sha256_hash == sha256_hash
+            ).first()
+            
+            if existing_doc:
+                # DUPLICADO BINARIO EXACTO
+                results.append({
+                    "filename": file.filename,
+                    "file_size": len(content),
+                    "is_duplicate": True,
+                    "duplicate_type": "binary",
+                    "duplicate_of": existing_doc.filename,
+                    "duplicate_similarity": 1.0,
+                    "should_upload": False,
+                    "message": f"Este archivo es idéntico a '{existing_doc.filename}' ya subido."
+                })
+            else:
+                # No es duplicado binario
+                results.append({
+                    "filename": file.filename,
+                    "file_size": len(content),
+                    "is_duplicate": False,
+                    "duplicate_type": None,
+                    "duplicate_of": None,
+                    "duplicate_similarity": None,
+                    "should_upload": True,
+                    "message": "Archivo nuevo, listo para subir."
+                })
+        
+        except Exception as e:
+            logger.error(f"Error verificando duplicado de {file.filename}: {e}")
+            results.append({
+                "filename": file.filename,
+                "file_size": 0,
+                "is_duplicate": False,
+                "duplicate_type": None,
+                "duplicate_of": None,
+                "duplicate_similarity": None,
+                "should_upload": True,
+                "error": str(e)
+            })
+        
+        finally:
+            # Limpiar archivo temporal
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"No se pudo eliminar archivo temporal {temp_file_path}: {cleanup_error}")
+            
+            # IMPORTANTE: Resetear el cursor del archivo para que pueda leerse de nuevo
+            await file.seek(0)
+    
+    return results
 
 
 # =========================================================

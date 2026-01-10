@@ -17,6 +17,7 @@ runtime/
 
 # --- RESULTADOS DE TESTS ---
 tests/report_junit.xml
+tests/
 .coverage
 htmlcov/
 

@@ -436,6 +436,7 @@ def store_document_file(
     case_id: str,
     document_id: str,
     original_file_path: str,
+    original_filename: str = None,
 ) -> dict:
     """
     Copia el archivo original al storage del sistema con integridad legal.
@@ -449,6 +450,7 @@ def store_document_file(
         case_id: ID del caso
         document_id: UUID del documento
         original_file_path: Ruta temporal del archivo subido
+        original_filename: Nombre original del archivo (opcional, se inferirá si no se proporciona)
         
     Returns:
         dict con metadatos de integridad legal:
@@ -477,11 +479,15 @@ def store_document_file(
     # --------------------------------------------------
     # 2. Calcular metadatos de integridad ANTES de mover
     # --------------------------------------------------
-    original_filename = os.path.basename(original_file_path)
+    # Usar el nombre original proporcionado o inferirlo del path
+    if original_filename is None:
+        original_filename = os.path.basename(original_file_path)
+    
     sha256_hash = calculate_file_hash(original_file_path)
     file_size_bytes = get_file_size(original_file_path)
     mime_type = get_mime_type(original_filename)
     
+    print(f"Nombre orig  : {original_filename}")
     print(f"SHA256       : {sha256_hash}")
     print(f"Tamaño       : {file_size_bytes} bytes")
     print(f"MIME Type    : {mime_type}")
