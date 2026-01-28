@@ -1,5 +1,12 @@
-"""
-Paquete `app.models`.
-
-Contiene modelos ORM (SQLAlchemy) y contratos (Pydantic) usados por la API.
-"""
+from app.models.case import Case
+from app.models.document import Document
+from app.models.document_chunk import DocumentChunk
+from app.models.event import Event
+from app.models.fact import Fact
+from app.models.fact_evidence import FactEvidence
+from app.models.risk import Risk
+from app.models.audit_log import AuditLog
+from app.models.user import User
+from app.models.legal_report import LegalReportDB
+from app.models.execution_trace import ExecutionTraceDB
+from app.models.hard_manifest import HardManifestDB

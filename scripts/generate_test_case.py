@@ -14,15 +14,14 @@ Empresa: RETAIL DEMO SL
 Situación: Insolvencia actual
 Riesgos: Pagos preferentes, alzamiento de bienes
 """
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib import colors
 from datetime import datetime, timedelta
 from pathlib import Path
-
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 # Directorio de salida
 OUTPUT_DIR = Path("data/casos_prueba/RETAIL_DEMO_SL")
@@ -31,19 +30,19 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # Estilos
 styles = getSampleStyleSheet()
 title_style = ParagraphStyle(
-    "CustomTitle",
-    parent=styles["Heading1"],
+    'CustomTitle',
+    parent=styles['Heading1'],
     fontSize=18,
-    textColor=colors.HexColor("#1a237e"),
+    textColor=colors.HexColor('#1a237e'),
     spaceAfter=30,
-    alignment=TA_CENTER,
+    alignment=TA_CENTER
 )
 heading_style = ParagraphStyle(
-    "CustomHeading",
-    parent=styles["Heading2"],
+    'CustomHeading',
+    parent=styles['Heading2'],
     fontSize=14,
-    textColor=colors.HexColor("#283593"),
-    spaceAfter=12,
+    textColor=colors.HexColor('#283593'),
+    spaceAfter=12
 )
 
 
@@ -52,106 +51,96 @@ def create_balance_sheet():
     filename = OUTPUT_DIR / "01_Balance_Situacion_2023.pdf"
     doc = SimpleDocTemplate(str(filename), pagesize=A4)
     story = []
-
+    
     # Título
     story.append(Paragraph("RETAIL DEMO SL", title_style))
     story.append(Paragraph("BALANCE DE SITUACIÓN", title_style))
-    story.append(Paragraph("A 31 de diciembre de 2023", styles["Normal"]))
+    story.append(Paragraph("A 31 de diciembre de 2023", styles['Normal']))
     story.append(Spacer(1, 20))
-
+    
     # Activo
     story.append(Paragraph("ACTIVO", heading_style))
     activo_data = [
-        ["CONCEPTO", "IMPORTE (€)"],
-        ["", ""],
-        ["A) ACTIVO NO CORRIENTE", "180.000"],
-        ["  I. Inmovilizado intangible", "5.000"],
-        ["  II. Inmovilizado material", "150.000"],
-        ["      1. Terrenos y construcciones", "120.000"],
-        ["      2. Instalaciones técnicas", "30.000"],
-        ["  III. Inversiones financieras a l/p", "25.000"],
-        ["", ""],
-        ["B) ACTIVO CORRIENTE", "70.000"],
-        ["  I. Existencias", "45.000"],
-        ["  II. Deudores comerciales", "21.500"],
-        ["  III. Efectivo y equivalentes", "3.500"],
-        ["", ""],
-        ["TOTAL ACTIVO", "250.000"],
+        ['CONCEPTO', 'IMPORTE (€)'],
+        ['', ''],
+        ['A) ACTIVO NO CORRIENTE', '180.000'],
+        ['  I. Inmovilizado intangible', '5.000'],
+        ['  II. Inmovilizado material', '150.000'],
+        ['      1. Terrenos y construcciones', '120.000'],
+        ['      2. Instalaciones técnicas', '30.000'],
+        ['  III. Inversiones financieras a l/p', '25.000'],
+        ['', ''],
+        ['B) ACTIVO CORRIENTE', '70.000'],
+        ['  I. Existencias', '45.000'],
+        ['  II. Deudores comerciales', '21.500'],
+        ['  III. Efectivo y equivalentes', '3.500'],
+        ['', ''],
+        ['TOTAL ACTIVO', '250.000'],
     ]
-
-    activo_table = Table(activo_data, colWidths=[120 * mm, 40 * mm])
-    activo_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a237e")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 12),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e8eaf6")),
-            ]
-        )
-    )
+    
+    activo_table = Table(activo_data, colWidths=[120*mm, 40*mm])
+    activo_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8eaf6')),
+    ]))
     story.append(activo_table)
     story.append(Spacer(1, 20))
-
+    
     # Pasivo
     story.append(Paragraph("PATRIMONIO NETO Y PASIVO", heading_style))
     pasivo_data = [
-        ["CONCEPTO", "IMPORTE (€)"],
-        ["", ""],
-        ["A) PATRIMONIO NETO", "-230.000"],
-        ["  I. Capital", "60.000"],
-        ["  II. Reservas", "15.000"],
-        ["  III. Resultados ejercicio", "-60.000"],
-        ["  IV. Resultados ejercicios anteriores", "-245.000"],
-        ["", ""],
-        ["B) PASIVO NO CORRIENTE", "180.000"],
-        ["  I. Deudas a largo plazo", "180.000"],
-        ["      1. Préstamos entidades crédito", "180.000"],
-        ["", ""],
-        ["C) PASIVO CORRIENTE", "300.000"],
-        ["  I. Deudas a corto plazo", "85.000"],
-        ["  II. Acreedores comerciales", "105.000"],
-        ["  III. Deudas con Administraciones", "110.000"],
-        ["      1. Hacienda Pública", "68.000"],
-        ["      2. Seguridad Social", "42.000"],
-        ["", ""],
-        ["TOTAL PATRIMONIO NETO Y PASIVO", "250.000"],
+        ['CONCEPTO', 'IMPORTE (€)'],
+        ['', ''],
+        ['A) PATRIMONIO NETO', '-230.000'],
+        ['  I. Capital', '60.000'],
+        ['  II. Reservas', '15.000'],
+        ['  III. Resultados ejercicio', '-60.000'],
+        ['  IV. Resultados ejercicios anteriores', '-245.000'],
+        ['', ''],
+        ['B) PASIVO NO CORRIENTE', '180.000'],
+        ['  I. Deudas a largo plazo', '180.000'],
+        ['      1. Préstamos entidades crédito', '180.000'],
+        ['', ''],
+        ['C) PASIVO CORRIENTE', '300.000'],
+        ['  I. Deudas a corto plazo', '85.000'],
+        ['  II. Acreedores comerciales', '105.000'],
+        ['  III. Deudas con Administraciones', '110.000'],
+        ['      1. Hacienda Pública', '68.000'],
+        ['      2. Seguridad Social', '42.000'],
+        ['', ''],
+        ['TOTAL PATRIMONIO NETO Y PASIVO', '250.000'],
     ]
-
-    pasivo_table = Table(pasivo_data, colWidths=[120 * mm, 40 * mm])
-    pasivo_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a237e")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 12),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e8eaf6")),
-                ("TEXTCOLOR", (0, 2), (1, 2), colors.red),  # Patrimonio neto negativo en rojo
-            ]
-        )
-    )
+    
+    pasivo_table = Table(pasivo_data, colWidths=[120*mm, 40*mm])
+    pasivo_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8eaf6')),
+        ('TEXTCOLOR', (0, 2), (1, 2), colors.red),  # Patrimonio neto negativo en rojo
+    ]))
     story.append(pasivo_table)
-
+    
     story.append(Spacer(1, 30))
-    story.append(
-        Paragraph(
-            "<b>SITUACIÓN:</b> Patrimonio neto negativo de 230.000€. Insolvencia actual.",
-            ParagraphStyle("Alert", parent=styles["Normal"], textColor=colors.red),
-        )
-    )
-
+    story.append(Paragraph(
+        "<b>SITUACIÓN:</b> Patrimonio neto negativo de 230.000€. Insolvencia actual.",
+        ParagraphStyle('Alert', parent=styles['Normal'], textColor=colors.red)
+    ))
+    
     doc.build(story)
     print(f"✅ Creado: {filename}")
 
@@ -161,58 +150,54 @@ def create_pyg():
     filename = OUTPUT_DIR / "02_Cuenta_PyG_2023.pdf"
     doc = SimpleDocTemplate(str(filename), pagesize=A4)
     story = []
-
+    
     story.append(Paragraph("RETAIL DEMO SL", title_style))
     story.append(Paragraph("CUENTA DE PÉRDIDAS Y GANANCIAS", title_style))
-    story.append(Paragraph("Ejercicio 2023", styles["Normal"]))
+    story.append(Paragraph("Ejercicio 2023", styles['Normal']))
     story.append(Spacer(1, 20))
-
+    
     pyg_data = [
-        ["CONCEPTO", "IMPORTE (€)"],
-        ["", ""],
-        ["1. Importe neto de la cifra de negocios", "120.000"],
-        ["2. Variación de existencias", "-15.000"],
-        ["3. Aprovisionamientos", "-65.000"],
-        ["", ""],
-        ["VALOR AÑADIDO (1+2+3)", "40.000"],
-        ["", ""],
-        ["4. Gastos de personal", "-48.000"],
-        ["5. Otros gastos de explotación", "-32.000"],
-        ["6. Amortizaciones", "-18.000"],
-        ["7. Deterioros", "-5.000"],
-        ["", ""],
-        ["RESULTADO DE EXPLOTACIÓN", "-63.000"],
-        ["", ""],
-        ["8. Ingresos financieros", "500"],
-        ["9. Gastos financieros", "-12.500"],
-        ["", ""],
-        ["RESULTADO FINANCIERO", "-12.000"],
-        ["", ""],
-        ["RESULTADO ANTES DE IMPUESTOS", "-75.000"],
-        ["", ""],
-        ["10. Impuesto sobre beneficios", "15.000"],
-        ["", ""],
-        ["RESULTADO DEL EJERCICIO", "-60.000"],
+        ['CONCEPTO', 'IMPORTE (€)'],
+        ['', ''],
+        ['1. Importe neto de la cifra de negocios', '120.000'],
+        ['2. Variación de existencias', '-15.000'],
+        ['3. Aprovisionamientos', '-65.000'],
+        ['', ''],
+        ['VALOR AÑADIDO (1+2+3)', '40.000'],
+        ['', ''],
+        ['4. Gastos de personal', '-48.000'],
+        ['5. Otros gastos de explotación', '-32.000'],
+        ['6. Amortizaciones', '-18.000'],
+        ['7. Deterioros', '-5.000'],
+        ['', ''],
+        ['RESULTADO DE EXPLOTACIÓN', '-63.000'],
+        ['', ''],
+        ['8. Ingresos financieros', '500'],
+        ['9. Gastos financieros', '-12.500'],
+        ['', ''],
+        ['RESULTADO FINANCIERO', '-12.000'],
+        ['', ''],
+        ['RESULTADO ANTES DE IMPUESTOS', '-75.000'],
+        ['', ''],
+        ['10. Impuesto sobre beneficios', '15.000'],
+        ['', ''],
+        ['RESULTADO DEL EJERCICIO', '-60.000'],
     ]
-
-    pyg_table = Table(pyg_data, colWidths=[120 * mm, 40 * mm])
-    pyg_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a237e")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#ffebee")),
-                ("TEXTCOLOR", (0, -1), (1, -1), colors.red),
-            ]
-        )
-    )
+    
+    pyg_table = Table(pyg_data, colWidths=[120*mm, 40*mm])
+    pyg_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ffebee')),
+        ('TEXTCOLOR', (0, -1), (1, -1), colors.red),
+    ]))
     story.append(pyg_table)
-
+    
     doc.build(story)
     print(f"✅ Creado: {filename}")
 
@@ -221,77 +206,62 @@ def create_invoice(supplier_name, amount, invoice_num, days_overdue, filename):
     """Genera una factura impagada."""
     doc = SimpleDocTemplate(str(filename), pagesize=A4)
     story = []
-
+    
     # Fecha de emisión y vencimiento
     issue_date = datetime(2023, 8, 15) - timedelta(days=days_overdue)
     due_date = issue_date + timedelta(days=30)
-
+    
     story.append(Paragraph(f"{supplier_name}", title_style))
     story.append(Paragraph("FACTURA", title_style))
     story.append(Spacer(1, 10))
-
+    
     # Info factura
     info_data = [
-        ["Número de Factura:", invoice_num],
-        ["Fecha de Emisión:", issue_date.strftime("%d/%m/%Y")],
-        ["Fecha de Vencimiento:", due_date.strftime("%d/%m/%Y")],
-        ["", ""],
-        ["Cliente:", "RETAIL DEMO SL"],
-        ["CIF:", "B12345678"],
-        ["Dirección:", "Calle Mayor 123, Madrid"],
+        ['Número de Factura:', invoice_num],
+        ['Fecha de Emisión:', issue_date.strftime('%d/%m/%Y')],
+        ['Fecha de Vencimiento:', due_date.strftime('%d/%m/%Y')],
+        ['', ''],
+        ['Cliente:', 'RETAIL DEMO SL'],
+        ['CIF:', 'B12345678'],
+        ['Dirección:', 'Calle Mayor 123, Madrid'],
     ]
-
-    info_table = Table(info_data, colWidths=[50 * mm, 100 * mm])
-    info_table.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-            ]
-        )
-    )
+    
+    info_table = Table(info_data, colWidths=[50*mm, 100*mm])
+    info_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+    ]))
     story.append(info_table)
     story.append(Spacer(1, 20))
-
+    
     # Conceptos
     story.append(Paragraph("CONCEPTOS", heading_style))
     concepts_data = [
-        ["DESCRIPCIÓN", "CANTIDAD", "PRECIO", "TOTAL"],
-        [
-            "Suministro de mercancías",
-            "1",
-            f"{amount - (amount * 0.21):.2f}€",
-            f"{amount - (amount * 0.21):.2f}€",
-        ],
-        ["", "", "IVA (21%)", f"{amount * 0.21:.2f}€"],
-        ["", "", "TOTAL", f"{amount:.2f}€"],
+        ['DESCRIPCIÓN', 'CANTIDAD', 'PRECIO', 'TOTAL'],
+        ['Suministro de mercancías', '1', f'{amount - (amount * 0.21):.2f}€', f'{amount - (amount * 0.21):.2f}€'],
+        ['', '', 'IVA (21%)', f'{amount * 0.21:.2f}€'],
+        ['', '', 'TOTAL', f'{amount:.2f}€'],
     ]
-
-    concepts_table = Table(concepts_data, colWidths=[80 * mm, 25 * mm, 30 * mm, 30 * mm])
-    concepts_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a237e")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#ffebee")),
-            ]
-        )
-    )
+    
+    concepts_table = Table(concepts_data, colWidths=[80*mm, 25*mm, 30*mm, 30*mm])
+    concepts_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ffebee')),
+    ]))
     story.append(concepts_table)
-
+    
     story.append(Spacer(1, 30))
-    story.append(
-        Paragraph(
-            f"<b>ESTADO:</b> IMPAGADA - Vencida hace {days_overdue} días",
-            ParagraphStyle("Alert", parent=styles["Normal"], textColor=colors.red, fontSize=12),
-        )
-    )
-
+    story.append(Paragraph(
+        f"<b>ESTADO:</b> IMPAGADA - Vencida hace {days_overdue} días",
+        ParagraphStyle('Alert', parent=styles['Normal'], textColor=colors.red, fontSize=12)
+    ))
+    
     doc.build(story)
     print(f"✅ Creado: {filename}")
 
@@ -301,54 +271,48 @@ def create_bank_statement():
     filename = OUTPUT_DIR / "06_Extracto_Bancario_Dic2023.pdf"
     doc = SimpleDocTemplate(str(filename), pagesize=A4)
     story = []
-
+    
     story.append(Paragraph("BANCO EJEMPLO", title_style))
     story.append(Paragraph("EXTRACTO BANCARIO", title_style))
-    story.append(Paragraph("Diciembre 2023", styles["Normal"]))
+    story.append(Paragraph("Diciembre 2023", styles['Normal']))
     story.append(Spacer(1, 20))
-
-    story.append(Paragraph("Titular: RETAIL DEMO SL", styles["Normal"]))
-    story.append(Paragraph("Cuenta: ES12 1234 5678 9012 3456 7890", styles["Normal"]))
+    
+    story.append(Paragraph("Titular: RETAIL DEMO SL", styles['Normal']))
+    story.append(Paragraph("Cuenta: ES12 1234 5678 9012 3456 7890", styles['Normal']))
     story.append(Spacer(1, 20))
-
+    
     movements_data = [
-        ["FECHA", "CONCEPTO", "CARGO", "ABONO", "SALDO"],
-        ["01/12/2023", "Saldo inicial", "", "", "8.500€"],
-        ["05/12/2023", "Pago nóminas", "15.000€", "", "-6.500€"],
-        ["10/12/2023", "Ingreso cliente", "", "12.000€", "5.500€"],
-        ["12/12/2023", "Pago SOCIO A (vinculado)", "8.000€", "", "-2.500€"],  # ⚠️ Pago preferente
-        ["15/12/2023", "Pago préstamo", "3.200€", "", "-5.700€"],
-        ["18/12/2023", "Pago SOCIO B (vinculado)", "5.000€", "", "-10.700€"],  # ⚠️ Pago preferente
-        ["20/12/2023", "Ingreso cliente", "", "14.200€", "3.500€"],
-        ["", "", "", "Saldo final:", "3.500€"],
+        ['FECHA', 'CONCEPTO', 'CARGO', 'ABONO', 'SALDO'],
+        ['01/12/2023', 'Saldo inicial', '', '', '8.500€'],
+        ['05/12/2023', 'Pago nóminas', '15.000€', '', '-6.500€'],
+        ['10/12/2023', 'Ingreso cliente', '', '12.000€', '5.500€'],
+        ['12/12/2023', 'Pago SOCIO A (vinculado)', '8.000€', '', '-2.500€'],  # ⚠️ Pago preferente
+        ['15/12/2023', 'Pago préstamo', '3.200€', '', '-5.700€'],
+        ['18/12/2023', 'Pago SOCIO B (vinculado)', '5.000€', '', '-10.700€'],  # ⚠️ Pago preferente
+        ['20/12/2023', 'Ingreso cliente', '', '14.200€', '3.500€'],
+        ['', '', '', 'Saldo final:', '3.500€'],
     ]
-
-    movements_table = Table(movements_data, colWidths=[25 * mm, 65 * mm, 25 * mm, 25 * mm, 25 * mm])
-    movements_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a237e")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
-                ("BACKGROUND", (0, 4), (-1, 4), colors.HexColor("#fff3e0")),  # Pagos a vinculados
-                ("BACKGROUND", (0, 6), (-1, 6), colors.HexColor("#fff3e0")),
-                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ]
-        )
-    )
+    
+    movements_table = Table(movements_data, colWidths=[25*mm, 65*mm, 25*mm, 25*mm, 25*mm])
+    movements_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#fff3e0')),  # Pagos a vinculados
+        ('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#fff3e0')),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+    ]))
     story.append(movements_table)
-
+    
     story.append(Spacer(1, 20))
-    story.append(
-        Paragraph(
-            "<b>⚠️ ALERTA:</b> Se detectan pagos a socios/vinculados (12/12 y 18/12) por 13.000€ total.<br/>"
-            "Posible pago preferente según Art. 164.2.3 Ley Concursal.",
-            ParagraphStyle("Alert", parent=styles["Normal"], textColor=colors.orange, fontSize=10),
-        )
-    )
-
+    story.append(Paragraph(
+        "<b>⚠️ ALERTA:</b> Se detectan pagos a socios/vinculados (12/12 y 18/12) por 13.000€ total.<br/>"
+        "Posible pago preferente según Art. 164.2.3 Ley Concursal.",
+        ParagraphStyle('Alert', parent=styles['Normal'], textColor=colors.orange, fontSize=10)
+    ))
+    
     doc.build(story)
     print(f"✅ Creado: {filename}")
 
@@ -357,27 +321,25 @@ def create_embargo_notice(entity, amount, reference, filename):
     """Genera aviso de embargo."""
     doc = SimpleDocTemplate(str(filename), pagesize=A4)
     story = []
-
+    
     story.append(Paragraph(f"{entity}", title_style))
     story.append(Paragraph("AVISO DE EMBARGO", title_style))
     story.append(Spacer(1, 20))
-
-    story.append(Paragraph(f"Referencia: {reference}", styles["Normal"]))
-    story.append(Paragraph("Fecha: 15 de noviembre de 2023", styles["Normal"]))
+    
+    story.append(Paragraph(f"Referencia: {reference}", styles['Normal']))
+    story.append(Paragraph(f"Fecha: 15 de noviembre de 2023", styles['Normal']))
     story.append(Spacer(1, 20))
-
-    story.append(Paragraph("<b>Deudor:</b> RETAIL DEMO SL (CIF: B12345678)", styles["Normal"]))
+    
+    story.append(Paragraph(f"<b>Deudor:</b> RETAIL DEMO SL (CIF: B12345678)", styles['Normal']))
     story.append(Spacer(1, 10))
-
-    story.append(
-        Paragraph(
-            f"Se le notifica que se ha iniciado procedimiento de embargo por deudas pendientes "
-            f"por importe de <b>{amount:,.2f}€</b> correspondientes a:",
-            styles["Normal"],
-        )
-    )
+    
+    story.append(Paragraph(
+        f"Se le notifica que se ha iniciado procedimiento de embargo por deudas pendientes "
+        f"por importe de <b>{amount:,.2f}€</b> correspondientes a:",
+        styles['Normal']
+    ))
     story.append(Spacer(1, 10))
-
+    
     if "Hacienda" in entity:
         details = [
             "- IVA 4T 2022: 18.000€",
@@ -390,19 +352,17 @@ def create_embargo_notice(entity, amount, reference, filename):
             "- Cuotas Seguridad Social Septiembre 2023: 14.000€",
             "- Cuotas Seguridad Social Octubre 2023: 14.000€",
         ]
-
+    
     for detail in details:
-        story.append(Paragraph(detail, styles["Normal"]))
-
+        story.append(Paragraph(detail, styles['Normal']))
+    
     story.append(Spacer(1, 20))
-    story.append(
-        Paragraph(
-            "<b>REQUERIMIENTO:</b> Debe proceder al pago inmediato. En caso contrario, se "
-            "procederá al embargo de bienes y derechos.",
-            ParagraphStyle("Alert", parent=styles["Normal"], textColor=colors.red),
-        )
-    )
-
+    story.append(Paragraph(
+        "<b>REQUERIMIENTO:</b> Debe proceder al pago inmediato. En caso contrario, se "
+        "procederá al embargo de bienes y derechos.",
+        ParagraphStyle('Alert', parent=styles['Normal'], textColor=colors.red)
+    ))
+    
     doc.build(story)
     print(f"✅ Creado: {filename}")
 
@@ -412,18 +372,16 @@ def create_creditor_email():
     filename = OUTPUT_DIR / "09_Email_Reclamacion_Acreedor.pdf"
     doc = SimpleDocTemplate(str(filename), pagesize=A4)
     story = []
-
+    
     story.append(Paragraph("EMAIL - RECLAMACIÓN FORMAL", title_style))
     story.append(Spacer(1, 20))
-
-    story.append(Paragraph("<b>De:</b> juridico@proveedoralpha.com", styles["Normal"]))
-    story.append(Paragraph("<b>Para:</b> admin@retaildemo.com", styles["Normal"]))
-    story.append(Paragraph("<b>Fecha:</b> 20 de diciembre de 2023", styles["Normal"]))
-    story.append(
-        Paragraph("<b>Asunto:</b> RECLAMACIÓN FORMAL - Factura 2023-001 IMPAGADA", styles["Normal"])
-    )
+    
+    story.append(Paragraph("<b>De:</b> juridico@proveedoralpha.com", styles['Normal']))
+    story.append(Paragraph("<b>Para:</b> admin@retaildemo.com", styles['Normal']))
+    story.append(Paragraph("<b>Fecha:</b> 20 de diciembre de 2023", styles['Normal']))
+    story.append(Paragraph("<b>Asunto:</b> RECLAMACIÓN FORMAL - Factura 2023-001 IMPAGADA", styles['Normal']))
     story.append(Spacer(1, 20))
-
+    
     email_text = """
     Estimados señores,
     
@@ -448,9 +406,9 @@ def create_creditor_email():
     Departamento Jurídico
     PROVEEDOR ALPHA SL
     """
-
-    story.append(Paragraph(email_text.replace("\n", "<br/>"), styles["Normal"]))
-
+    
+    story.append(Paragraph(email_text.replace('\n', '<br/>'), styles['Normal']))
+    
     doc.build(story)
     print(f"✅ Creado: {filename}")
 
@@ -458,7 +416,7 @@ def create_creditor_email():
 def create_readme():
     """Genera README con información del caso."""
     filename = OUTPUT_DIR / "README.md"
-
+    
     content = """# RETAIL DEMO SL - Caso de Prueba Concursal
 
 ## 📊 RESUMEN DEL CASO
@@ -592,10 +550,10 @@ El sistema está funcionando correctamente SI:
 
 **Generado automáticamente por Phoenix Legal - Sistema de Análisis Concursal**
 """
-
-    with open(filename, "w", encoding="utf-8") as f:
+    
+    with open(filename, 'w', encoding='utf-8') as f:
         f.write(content)
-
+    
     print(f"✅ Creado: {filename}")
 
 
@@ -603,71 +561,71 @@ def main():
     """Genera todos los documentos del caso de prueba."""
     print("\n🚀 Generando caso de prueba: RETAIL DEMO SL\n")
     print("=" * 60)
-
+    
     # 1. Balance
     create_balance_sheet()
-
+    
     # 2. Cuenta PyG
     create_pyg()
-
+    
     # 3-5. Facturas impagadas
     create_invoice(
         "PROVEEDOR ALPHA SL",
         45000,
         "2023-001",
         120,
-        OUTPUT_DIR / "03_Factura_Proveedor_Alpha_45000.pdf",
+        OUTPUT_DIR / "03_Factura_Proveedor_Alpha_45000.pdf"
     )
     create_invoice(
         "PROVEEDOR BETA SL",
         32000,
         "2023-042",
         105,
-        OUTPUT_DIR / "04_Factura_Proveedor_Beta_32000.pdf",
+        OUTPUT_DIR / "04_Factura_Proveedor_Beta_32000.pdf"
     )
     create_invoice(
         "PROVEEDOR GAMMA SL",
         28000,
         "2023-078",
         95,
-        OUTPUT_DIR / "05_Factura_Proveedor_Gamma_28000.pdf",
+        OUTPUT_DIR / "05_Factura_Proveedor_Gamma_28000.pdf"
     )
-
+    
     # 6. Extracto bancario
     create_bank_statement()
-
+    
     # 7-8. Avisos de embargo
     create_embargo_notice(
         "AGENCIA TRIBUTARIA - MINISTERIO DE HACIENDA",
         68000,
         "REF-AT-2023-98765",
-        OUTPUT_DIR / "07_Aviso_Embargo_Hacienda.pdf",
+        OUTPUT_DIR / "07_Aviso_Embargo_Hacienda.pdf"
     )
     create_embargo_notice(
         "TESORERÍA GENERAL DE LA SEGURIDAD SOCIAL",
         42000,
         "REF-SS-2023-54321",
-        OUTPUT_DIR / "08_Aviso_Embargo_SS.pdf",
+        OUTPUT_DIR / "08_Aviso_Embargo_SS.pdf"
     )
-
+    
     # 9. Email de acreedor
     create_creditor_email()
-
+    
     # README
     create_readme()
-
+    
     print("=" * 60)
-    print("\n✅ CASO DE PRUEBA GENERADO EXITOSAMENTE\n")
+    print(f"\n✅ CASO DE PRUEBA GENERADO EXITOSAMENTE\n")
     print(f"📁 Ubicación: {OUTPUT_DIR}")
-    print("📄 Archivos: 10 documentos PDF + README.md")
-    print("\n🎯 El caso está listo para probar en Phoenix Legal")
-    print("\n🚀 Siguiente paso:")
-    print("   1. Abrir Streamlit: http://localhost:8501")
-    print("   2. Crear caso: 'RETAIL DEMO SL - Concurso 2026'")
+    print(f"📄 Archivos: 10 documentos PDF + README.md")
+    print(f"\n🎯 El caso está listo para probar en Phoenix Legal")
+    print(f"\n🚀 Siguiente paso:")
+    print(f"   1. Abrir Streamlit: http://localhost:8501")
+    print(f"   2. Crear caso: 'RETAIL DEMO SL - Concurso 2026'")
     print(f"   3. Subir todos los PDFs de: {OUTPUT_DIR}")
-    print("   4. Ejecutar análisis completo")
-    print("   5. Generar informe legal")
-    print("   6. Descargar PDF certificado\n")
+    print(f"   4. Ejecutar análisis completo")
+    print(f"   5. Generar informe legal")
+    print(f"   6. Descargar PDF certificado\n")
 
 
 if __name__ == "__main__":

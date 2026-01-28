@@ -1,18 +1,20 @@
-from langgraph.graph import END, StateGraph
+from langgraph.graph import StateGraph, END
 
 from app.graphs.state import AuditState
+from app.graphs.state_schema import PhoenixState, CURRENT_STATE_SCHEMA_VERSION
 
 # ⚠️ IMPORTANTE: Usar nodos validados con contrato de estado HARD
 from app.graphs.validated_nodes import (
-    analyze_timeline,
-    apply_rule_engine,
-    auditor_llm_node,
-    build_report,
-    detect_risks,
     ingest_documents,
-    legal_article_mapper,
+    analyze_timeline,
+    detect_risks,
     legal_hardening,
+    legal_article_mapper,
+    build_report,
+    auditor_llm_node,
     prosecutor_llm_node,
+    apply_rule_engine,
+    log_graph_execution_start
 )
 
 
@@ -26,12 +28,12 @@ def build_audit_graph():
     graph.add_node("analyze_timeline", analyze_timeline)
     graph.add_node("detect_risks", detect_risks)
     graph.add_node("legal_hardening", legal_hardening)
-
+    
     # Nodos nuevos (LLM + Rule Engine)
     graph.add_node("auditor_llm", auditor_llm_node)
     graph.add_node("rule_engine", apply_rule_engine)
     graph.add_node("prosecutor_llm", prosecutor_llm_node)
-
+    
     # Nodos finales
     graph.add_node("legal_article_mapper", legal_article_mapper)
     graph.add_node("build_report", build_report)
@@ -42,7 +44,7 @@ def build_audit_graph():
     # → rule_engine (reglas deterministas)
     # → prosecutor_llm (enriquecimiento legal)
     # → mapper → report
-
+    
     graph.set_entry_point("ingest_documents")
     graph.add_edge("ingest_documents", "analyze_timeline")
     graph.add_edge("analyze_timeline", "detect_risks")

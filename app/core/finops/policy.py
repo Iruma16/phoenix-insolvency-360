@@ -5,18 +5,17 @@ ENDURECIMIENTO #7: Bloqueovoid llamadas LLM cuando no tiene sentido.
 
 PRINCIPIO: LLM SOLO cuando hay evidencia suficiente y presupuesto disponible.
 """
-from dataclasses import dataclass
 from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
 class LLMCallDecision:
     """
     Decisión sobre si ejecutar llamada LLM.
-
+    
     GATE: Si allow_call = False, NO se ejecuta LLM.
     """
-
     allow_call: bool
     reason: str
     degraded_mode: bool = False  # Si True, usar modo degradado (sin LLM)
@@ -25,10 +24,10 @@ class LLMCallDecision:
 class LLMCallPolicy:
     """
     Política que decide si se permite llamada LLM.
-
+    
     ENDURECIMIENTO #7: Bloques programáticos antes de llamar.
     """
-
+    
     def evaluate(
         self,
         case_id: str,
@@ -40,13 +39,13 @@ class LLMCallPolicy:
     ) -> LLMCallDecision:
         """
         Evalúa si se permite llamada LLM.
-
+        
         GATES:
         1. Si insufficient_evidence → BLOCK
         2. Si no_response_reason presente → BLOCK
         3. Si budget_available = False → BLOCK + degraded_mode
         4. Si not has_evidence → BLOCK
-
+        
         Args:
             case_id: ID del caso
             phase: Fase de ejecución
@@ -54,7 +53,7 @@ class LLMCallPolicy:
             insufficient_evidence: Evidencia insuficiente
             no_response_reason: Razón de NO_RESPONSE (si aplica)
             budget_available: Presupuesto disponible
-
+        
         Returns:
             LLMCallDecision
         """
@@ -65,7 +64,7 @@ class LLMCallPolicy:
                 reason="INSUFFICIENT_EVIDENCE",
                 degraded_mode=True,
             )
-
+        
         # GATE 2: NO_RESPONSE reason
         if no_response_reason:
             return LLMCallDecision(
@@ -73,7 +72,7 @@ class LLMCallPolicy:
                 reason=f"NO_RESPONSE: {no_response_reason}",
                 degraded_mode=True,
             )
-
+        
         # GATE 3: Budget exceeded
         if not budget_available:
             return LLMCallDecision(
@@ -81,7 +80,7 @@ class LLMCallPolicy:
                 reason="BUDGET_EXCEEDED",
                 degraded_mode=True,
             )
-
+        
         # GATE 4: No evidence
         if not has_evidence:
             return LLMCallDecision(
@@ -89,7 +88,7 @@ class LLMCallPolicy:
                 reason="NO_EVIDENCE",
                 degraded_mode=True,
             )
-
+        
         # OK: Permitir llamada
         return LLMCallDecision(
             allow_call=True,
@@ -111,3 +110,4 @@ def get_global_llm_policy() -> LLMCallPolicy:
     if _global_policy is None:
         _global_policy = LLMCallPolicy()
     return _global_policy
+

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.graphs.state import AuditState
 from app.graphs.state_factory import create_initial_state
 from app.graphs.state_schema import PhoenixState
 
@@ -44,7 +45,7 @@ CASE_RETAIL_001: PhoenixState = create_initial_state(
             "content": "Informe tesorería (enero 2024): se constata insolvencia inminente tras fracasar financiación.",
             "date": "2024-01-20",
         },
-    ],
+    ]
 )
 
 CASE_RETAIL_002: PhoenixState = create_initial_state(
@@ -90,7 +91,7 @@ CASE_RETAIL_002: PhoenixState = create_initial_state(
             "content": "Informe tesorería (enero 2024): se constata insolvencia actual tras fracasar negociaciones con banco y proveedores.",
             "date": "2024-01-25",
         },
-    ],
+    ]
 )
 
 CASE_RETAIL_003: PhoenixState = create_initial_state(
@@ -142,5 +143,5 @@ CASE_RETAIL_003: PhoenixState = create_initial_state(
             "content": "Informe tesorería (febrero 2024): Se reconoce insolvencia grave desde al menos 8 meses. Imposibilidad de atender obligaciones corrientes.",
             "date": "2024-02-15",
         },
-    ],
+    ]
 )

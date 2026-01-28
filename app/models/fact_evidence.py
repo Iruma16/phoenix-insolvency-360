@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import String, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -36,12 +36,8 @@ class FactEvidence(Base):
         nullable=False,
     )
 
-    chunk_id: Mapped[Optional[str]] = mapped_column(
-        String(36), nullable=True
-    )  # si lo enlazamos a chunk
-    location_hint: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )  # "p2", "row 45", etc.
+    chunk_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # si lo enlazamos a chunk
+    location_hint: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # "p2", "row 45", etc.
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)

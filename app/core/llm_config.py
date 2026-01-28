@@ -15,6 +15,7 @@ Rule Engine + degradación controlada aseguran output válido SIEMPRE.
 import os
 from typing import Optional
 
+
 # ========================================
 # FEATURE FLAG GLOBAL
 # ========================================
@@ -49,11 +50,10 @@ LLM_AVAILABLE: bool = LLM_ENABLED and OPENAI_API_KEY is not None
 # HELPERS
 # ========================================
 
-
 def is_llm_enabled() -> bool:
     """
     Verifica si el LLM está habilitado y disponible.
-
+    
     Returns:
         True si LLM_ENABLED=true Y existe API key
         False en caso contrario
@@ -64,7 +64,7 @@ def is_llm_enabled() -> bool:
 def get_llm_config() -> dict:
     """
     Retorna configuración actual de LLM.
-
+    
     Útil para logging y debugging.
     """
     return {
@@ -74,7 +74,7 @@ def get_llm_config() -> dict:
         "fallback_model": FALLBACK_MODEL if LLM_AVAILABLE else None,
         "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
         "max_retries": DEFAULT_MAX_RETRIES,
-        "has_api_key": OPENAI_API_KEY is not None,
+        "has_api_key": OPENAI_API_KEY is not None
     }
 
 
@@ -82,17 +82,15 @@ def get_llm_config() -> dict:
 # STARTUP LOGGING
 # ========================================
 
-
 def log_llm_config() -> None:
     """Loguea configuración de LLM al inicio."""
     config = get_llm_config()
-
+    
     if LLM_AVAILABLE:
-        print(
-            f"[LLM_CONFIG] LLM enabled: primary={config['primary_model']}, "
-            f"fallback={config['fallback_model']}, timeout={config['timeout_seconds']}s"
-        )
+        print(f"[LLM_CONFIG] LLM enabled: primary={config['primary_model']}, "
+              f"fallback={config['fallback_model']}, timeout={config['timeout_seconds']}s")
     else:
         reason = "No API key" if not OPENAI_API_KEY else "Feature disabled"
         print(f"[LLM_CONFIG] LLM disabled: reason={reason}")
-        print("[LLM_CONFIG] System will operate with Rule Engine only (degraded mode)")
+        print(f"[LLM_CONFIG] System will operate with Rule Engine only (degraded mode)")
+

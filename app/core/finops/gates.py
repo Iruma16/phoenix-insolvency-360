@@ -8,8 +8,8 @@ PRINCIPIO: NO se ejecuta si no hay presupuesto.
 from typing import Optional
 
 from .budget import BudgetLedger, get_global_ledger
-from .exceptions import BudgetExceededException
 from .pricing import estimate_cost_usd, get_pricing_info
+from .exceptions import BudgetExceededException
 
 
 def check_budget_or_fail(
@@ -22,9 +22,9 @@ def check_budget_or_fail(
 ) -> float:
     """
     Verifica presupuesto ANTES de ejecutar llamada.
-
+    
     GATE DURO: Si presupuesto insuficiente → BudgetExceededException.
-
+    
     Args:
         case_id: ID del caso
         phase: Fase de ejecución
@@ -32,26 +32,26 @@ def check_budget_or_fail(
         estimated_input_tokens: Tokens estimados de entrada
         estimated_output_tokens: Tokens estimados de salida
         ledger: Ledger a usar (si None, usa global)
-
+    
     Returns:
         Coste estimado en USD
-
+    
     Raises:
         BudgetExceededException: Si presupuesto insuficiente
     """
     if ledger is None:
         ledger = get_global_ledger()
-
+    
     # Estimar coste
     estimated_cost = estimate_cost_usd(
         model=model,
         input_tokens=estimated_input_tokens,
         output_tokens=estimated_output_tokens,
     )
-
+    
     # Verificar presupuesto
     budget = ledger.get_budget(case_id)
-
+    
     if not budget.can_spend(estimated_cost):
         raise BudgetExceededException(
             case_id=case_id,
@@ -59,7 +59,7 @@ def check_budget_or_fail(
             remaining_usd=budget.remaining_usd,
             phase=phase,
         )
-
+    
     return estimated_cost
 
 
@@ -76,7 +76,7 @@ def record_actual_cost(
 ):
     """
     Registra coste real después de ejecutar.
-
+    
     Args:
         case_id: ID del caso
         phase: Fase de ejecución
@@ -90,7 +90,7 @@ def record_actual_cost(
     """
     if ledger is None:
         ledger = get_global_ledger()
-
+    
     # Si no hay coste real, calcular desde pricing table
     if cost_usd is None:
         cost_usd = estimate_cost_usd(
@@ -98,10 +98,10 @@ def record_actual_cost(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
-
+    
     # Obtener pricing info
     pricing_info = get_pricing_info()
-
+    
     # Registrar en ledger
     ledger.record_entry(
         case_id=case_id,
@@ -115,3 +115,4 @@ def record_actual_cost(
         pricing_version=pricing_info["pricing_version"],
         pricing_fingerprint=pricing_info["pricing_fingerprint"],
     )
+

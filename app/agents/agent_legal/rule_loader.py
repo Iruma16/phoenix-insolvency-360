@@ -5,6 +5,7 @@ Cargador de rulebook desde JSON.
 import json
 import logging
 from pathlib import Path
+from typing import Optional
 
 from .models import Rulebook
 
@@ -27,11 +28,11 @@ def load_rulebook(file_path: Path) -> Rulebook:
     """
     if not file_path.exists():
         raise FileNotFoundError(f"Rulebook no encontrado: {file_path}")
-
+    
     try:
-        with open(file_path, encoding="utf-8") as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-
+        
         rulebook = Rulebook(**data)
         logger.info(f"Rulebook cargado: {len(rulebook.rules)} reglas")
         return rulebook
@@ -47,7 +48,7 @@ def load_default_rulebook() -> Rulebook:
 
     Returns:
         Rulebook por defecto
-
+        
     Raises:
         FileNotFoundError: Si no se encuentra el rulebook
     """
@@ -55,17 +56,15 @@ def load_default_rulebook() -> Rulebook:
     possible_paths = [
         Path(__file__).parent / "rulebook.json",
         Path(__file__).parent.parent.parent / "legal" / "rulebook" / "trlc_rules.json",
-        Path(__file__).parent.parent.parent.parent
-        / "tests"
-        / "reports"
-        / "rulebook_mvp_completo.json",
+        Path(__file__).parent.parent.parent.parent / "tests" / "reports" / "rulebook_mvp_completo.json",
     ]
-
+    
     for path in possible_paths:
         if path.exists():
             logger.info(f"Rulebook cargado desde: {path}")
             return load_rulebook(path)
-
+    
     raise FileNotFoundError(
         f"No se encontró el rulebook en ninguna ubicación: {[str(p) for p in possible_paths]}"
     )
+

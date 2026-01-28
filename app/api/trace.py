@@ -13,12 +13,13 @@ PROHIBIDO:
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.case import Case
 from app.trace.models import ExecutionTrace
+
 
 router = APIRouter(
     prefix="/cases/{case_id}",
@@ -42,7 +43,7 @@ def get_execution_trace(
 ) -> ExecutionTrace:
     """
     Obtiene el trace autoritativo de la última ejecución del caso.
-
+    
     El trace es INMUTABLE y representa la única fuente de verdad.
     Incluye:
     - trace_id (determinista)
@@ -52,14 +53,14 @@ def get_execution_trace(
     - chunk_ids, document_ids
     - legal_report_hash (si existe)
     - execution_mode, system_version
-
+    
     Args:
         case_id: ID del caso
         db: Sesión de base de datos
-
+        
     Returns:
         ExecutionTrace completo
-
+        
     Raises:
         HTTPException 404: Si el caso no existe
         HTTPException 404: Si no existe trace para el caso
@@ -69,26 +70,27 @@ def get_execution_trace(
     case = db.query(Case).filter(Case.case_id == case_id).first()
     if not case:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Caso '{case_id}' no encontrado"
         )
-
+    
     # TODO: En una implementación real, aquí se consultaría la BD
     # para obtener el último ExecutionTrace del caso.
     # Por ahora, devolvemos un error indicando que no hay trace.
-
+    
     # NOTA: La persistencia del trace en BD no está implementada en FASE 6.
     # FASE 6 solo define los modelos Pydantic.
     # Aquí necesitaríamos:
     # 1. Un modelo SQLAlchemy para ExecutionTrace
     # 2. Persistir el trace al generar el informe legal
     # 3. Consultar el último trace del caso
-
+    
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=(
             f"No se encontró trace de ejecución para el caso '{case_id}'. "
             "El trace se genera al crear el informe legal."
-        ),
+        )
     )
 
 
@@ -100,3 +102,4 @@ def get_execution_trace(
 # PUT /cases/{case_id}/trace → PROHIBIDO (no se edita trace)
 # DELETE /cases/{case_id}/trace → PROHIBIDO (no se borra trace)
 # POST /cases/{case_id}/trace/regenerate → PROHIBIDO (no se regenera trace)
+

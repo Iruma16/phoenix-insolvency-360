@@ -5,9 +5,9 @@
 ### Iniciar el servidor
 
 ```bash
-cd phoenix-legal
+cd /Users/irumabragado/Documents/procesos/202512_phoenix-legal
 source .venv/bin/activate
-uvicorn app.main:app --reload --port 8000
+python app/api/public.py
 ```
 
 El servidor estará disponible en: `http://localhost:8000`
@@ -19,7 +19,7 @@ El servidor estará disponible en: `http://localhost:8000`
 
 ---
 
-## 📡 Endpoints (camino oficial)
+## 📡 Endpoints
 
 ### 1. GET `/` - Información del servicio
 
@@ -39,12 +39,17 @@ curl http://localhost:8000/
 
 ---
 
-### 2. POST `/api/cases` - Crear caso
+### 2. POST `/cases` - Crear caso
 
 ```bash
-curl -X POST http://localhost:8000/api/cases \
+curl -X POST http://localhost:8000/cases \
   -H "Content-Type: application/json" \
-  -d '{"name": "Caso Demo", "client_ref": "REF-001"}'
+  -d '{
+    "case_id": "CASE_001",
+    "company_name": "Empresa Ejemplo SL",
+    "sector": "Retail",
+    "size": "PYME"
+  }'
 ```
 
 **Respuesta**:
@@ -62,11 +67,11 @@ curl -X POST http://localhost:8000/api/cases \
 
 ---
 
-### 3. POST `/api/cases/{case_id}/documents` - Subir documentos
+### 3. POST `/cases/{case_id}/documents` - Subir documento
 
 ```bash
-curl -X POST http://localhost:8000/api/cases/<case_id>/documents \
-  -F "files=@/path/to/balance.pdf"
+curl -X POST http://localhost:8000/cases/CASE_001/documents \
+  -F "file=@/path/to/balance.pdf"
 ```
 
 **Respuesta**:
@@ -82,10 +87,10 @@ curl -X POST http://localhost:8000/api/cases/<case_id>/documents \
 
 ---
 
-### 4. GET `/api/cases/{case_id}/financial-analysis` - Análisis financiero (ejemplo)
+### 4. POST `/cases/{case_id}/analyze` - Analizar caso
 
 ```bash
-curl http://localhost:8000/api/cases/<case_id>/financial-analysis
+curl -X POST http://localhost:8000/cases/CASE_001/analyze
 ```
 
 **Respuesta**:
@@ -103,10 +108,10 @@ curl http://localhost:8000/api/cases/<case_id>/financial-analysis
 
 ---
 
-### 5. GET `/api/cases/{case_id}/legal-report/pdf` - Descargar PDF
+### 5. GET `/cases/{case_id}/reports/latest` - Descargar último PDF
 
 ```bash
-curl http://localhost:8000/api/cases/<case_id>/legal-report/pdf \
+curl http://localhost:8000/cases/CASE_001/reports/latest \
   --output informe.pdf
 ```
 

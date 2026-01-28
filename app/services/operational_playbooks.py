@@ -7,29 +7,27 @@ Lenguaje NO técnico, orientado a acción operativa.
 NO contiene lógica de decisión. SOLO mapeo evento → playbook.
 """
 from __future__ import annotations
-
-from dataclasses import dataclass
 from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
 class Playbook:
     """
     Playbook operativo para un evento del sistema.
-
+    
     Define en lenguaje negocio:
     - Qué significa el evento
     - Qué debe hacer el responsable
     - Qué NO debe hacer
     """
-
     evento: str
     significado: str
     accion_recomendada: str
     responsable: str
     prohibido: str
     severidad: str  # INFO, WARNING, ERROR
-
+    
     def to_dict(self) -> dict:
         """Convierte playbook a diccionario."""
         return {
@@ -40,20 +38,20 @@ class Playbook:
             "prohibido": self.prohibido,
             "severidad": self.severidad,
         }
-
+    
     def print_playbook(self) -> None:
         """Imprime playbook en formato legible."""
         print(f"\n{'='*80}")
         print(f"EVENTO: {self.evento}")
         print(f"SEVERIDAD: {self.severidad}")
         print(f"{'='*80}")
-        print("\n¿QUÉ SIGNIFICA?")
+        print(f"\n¿QUÉ SIGNIFICA?")
         print(f"  {self.significado}")
-        print("\n¿QUÉ HACER?")
+        print(f"\n¿QUÉ HACER?")
         print(f"  {self.accion_recomendada}")
-        print("\n¿QUIÉN ACTÚA?")
+        print(f"\n¿QUIÉN ACTÚA?")
         print(f"  {self.responsable}")
-        print("\n¿QUÉ NO HACER?")
+        print(f"\n¿QUÉ NO HACER?")
         print(f"  {self.prohibido}")
         print(f"{'='*80}")
 
@@ -265,6 +263,7 @@ PLAYBOOKS_REGISTRY = {
     "RAG_EVIDENCIA_INSUFICIENTE": PLAYBOOK_RAG_EVIDENCIA_INSUFICIENTE,
     "RAG_BAJA_CONFIANZA": PLAYBOOK_RAG_BAJA_CONFIANZA,
     "RAG_RESPUESTA_CON_EVIDENCIA": PLAYBOOK_RAG_RESPUESTA_CON_EVIDENCIA,
+    
     # PROSECUTOR
     "PROSECUTOR_NO_EVIDENCE": PLAYBOOK_PROSECUTOR_NO_EVIDENCE,
     "PROSECUTOR_PARTIAL_EVIDENCE": PLAYBOOK_PROSECUTOR_PARTIAL_EVIDENCE,
@@ -277,10 +276,10 @@ PLAYBOOKS_REGISTRY = {
 def get_playbook(event_key: str) -> Optional[Playbook]:
     """
     Obtiene el playbook operativo para un evento.
-
+    
     Args:
         event_key: Clave del evento (ej: "PROSECUTOR_NO_EVIDENCE")
-
+    
     Returns:
         Playbook o None si no existe
     """
@@ -289,11 +288,11 @@ def get_playbook(event_key: str) -> Optional[Playbook]:
 
 def print_all_playbooks() -> None:
     """Imprime todos los playbooks disponibles."""
-    print("\n" + "=" * 80)
+    print("\n" + "="*80)
     print("PLAYBOOKS OPERACIONALES - PHOENIX")
-    print("=" * 80)
+    print("="*80)
     print(f"\nTotal playbooks disponibles: {len(PLAYBOOKS_REGISTRY)}")
-
+    
     for key, playbook in PLAYBOOKS_REGISTRY.items():
         playbook.print_playbook()
 
@@ -301,11 +300,16 @@ def print_all_playbooks() -> None:
 def get_playbooks_by_severity(severity: str) -> list[Playbook]:
     """
     Obtiene playbooks filtrados por severidad.
-
+    
     Args:
         severity: INFO, WARNING, ERROR
-
+    
     Returns:
         Lista de playbooks con la severidad indicada
     """
-    return [playbook for playbook in PLAYBOOKS_REGISTRY.values() if playbook.severidad == severity]
+    return [
+        playbook
+        for playbook in PLAYBOOKS_REGISTRY.values()
+        if playbook.severidad == severity
+    ]
+

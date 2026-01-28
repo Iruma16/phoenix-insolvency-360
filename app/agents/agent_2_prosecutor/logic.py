@@ -8,31 +8,31 @@ SOLO enumera hechos probados con evidencia trazable.
 """
 from __future__ import annotations
 
-from typing import Optional
-
+from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from app.core.database import get_session_factory
 from app.rag.case_rag.retrieve import rag_answer_internal
 from app.rag.legal_rag.service import query_legal_rag
+from app.core.database import get_session_factory
 
-from .audit_trace import (
-    AuditTrace,
-    GateCheck,
-    ProsecutorSnapshot,
-    RAGSnapshot,
-    compute_result_hash,
-)
 from .schema import (
-    AcusacionBloqueada,
+    ProsecutorResult,
     AcusacionProbatoria,
+    AcusacionBloqueada,
+    ObligacionLegal,
     EvidenciaDocumental,
     EvidenciaFaltante,
-    ObligacionLegal,
-    ProsecutorResult,
-    Severidad,
     SolicitudEvidencia,
+    Severidad,
 )
+from .audit_trace import (
+    AuditTrace,
+    RAGSnapshot,
+    ProsecutorSnapshot,
+    GateCheck,
+    compute_result_hash,
+)
+
 
 # ============================
 # PREGUNTAS PROBATORIAS
@@ -76,41 +76,40 @@ PREGUNTAS_PROBATORIAS: dict[str, dict] = {
 # GATES BLOQUEANTES
 # ============================
 
-
 def gate_1_obligacion_legal(
     ground: str,
-    legal_results: list[dict],
+    legal_results: List[dict],
 ) -> ObligacionLegal | None:
     """
     GATE 1: Obligación legal definida.
-
+    
     Retorna None si no se puede definir obligación legal concreta.
     """
     if ground not in PREGUNTAS_PROBATORIAS:
         return None
-
+    
     obligacion_data = PREGUNTAS_PROBATORIAS[ground]["obligacion"]
-
+    
     # Enriquecer con artículos del RAG legal si existen
     for result in legal_results:
         if result.get("authority_level") == "norma" and result.get("citation"):
             # Si el RAG legal devuelve un artículo más específico, usar ese
             obligacion_data["articulo"] = result["citation"]
             break
-
+    
     return ObligacionLegal(**obligacion_data)
 
 
 def gate_2_evidencia_trazable(
-    sources: list[dict],
-) -> list[EvidenciaDocumental] | None:
+    sources: List[dict],
+) -> List[EvidenciaDocumental] | None:
     """
     GATE 2: Evidencia documental trazable.
-
+    
     Retorna None si la evidencia no es trazable 1:1.
     """
     evidencias = []
-
+    
     for src in sources:
         # VALIDACIÓN ESTRICTA: Todos los campos obligatorios deben existir
         chunk_id = src.get("chunk_id")
@@ -118,11 +117,11 @@ def gate_2_evidencia_trazable(
         start_char = src.get("start_char")
         end_char = src.get("end_char")
         content = src.get("content")
-
+        
         # GATE BLOQUEANTE: Si falta algún campo → NO trazable
         if not chunk_id or not doc_id or start_char is None or end_char is None or not content:
             continue
-
+        
         evidencias.append(
             EvidenciaDocumental(
                 chunk_id=chunk_id,
@@ -133,59 +132,62 @@ def gate_2_evidencia_trazable(
                 extracto_literal=content,  # Texto EXACTO, sin paráfrasis
             )
         )
-
+    
     # GATE BLOQUEANTE: Si no hay evidencias trazables → FAIL
     if not evidencias:
         return None
-
+    
     return evidencias
 
 
 def gate_3_evidencia_suficiente(
     ground: str,
-    evidencias: list[EvidenciaDocumental],
+    evidencias: List[EvidenciaDocumental],
     all_doc_types: set[str],
-) -> tuple[bool, list[str]]:
+) -> tuple[bool, List[str]]:
     """
     GATE 3: Evidencia suficiente (no parcial).
-
+    
     Retorna (es_suficiente, evidencia_faltante).
     """
     evidencia_minima = PREGUNTAS_PROBATORIAS[ground]["evidencia_minima"]
-
+    
     # Detectar qué tipos de documentos tenemos en evidencias
     # (simplificado: verificar por keywords en doc_id)
     evidencia_faltante = []
     for doc_tipo_requerido in evidencia_minima:
         # Buscar si alguna evidencia contiene el tipo requerido
-        encontrado = any(doc_tipo_requerido.lower() in ev.doc_id.lower() for ev in evidencias)
-
+        encontrado = any(
+            doc_tipo_requerido.lower() in ev.doc_id.lower()
+            for ev in evidencias
+        )
+        
         if not encontrado:
             evidencia_faltante.append(doc_tipo_requerido)
-
+    
     es_suficiente = len(evidencia_faltante) == 0
-
+    
     return es_suficiente, evidencia_faltante
 
 
 def gate_4_nivel_confianza(
-    evidencias: list[EvidenciaDocumental],
+    evidencias: List[EvidenciaDocumental],
     rag_confidence: str,
     rag_hallucination_risk: bool,
 ) -> float | None:
     """
     GATE 4: Nivel de confianza CALCULADO (NO hardcoded).
-
+    
     Calcula confianza basada en:
     - Número de evidencias
     - Calidad del retrieval
     - Riesgo de alucinación
-
+    
     Retorna None si la confianza es demasiado baja para acusar.
     """
     # Factor 1: Cantidad de evidencias (más evidencias = más confianza)
     cantidad_score = min(len(evidencias) / 3.0, 1.0)  # 3 evidencias = 1.0
-
+    
     # Factor 2: Calidad del retrieval
     if rag_confidence == "alta":
         calidad_score = 1.0
@@ -193,20 +195,24 @@ def gate_4_nivel_confianza(
         calidad_score = 0.7
     else:  # baja
         calidad_score = 0.3
-
+    
     # Factor 3: Riesgo de alucinación (penalizar)
     if rag_hallucination_risk:
         hallucination_penalty = 0.5
     else:
         hallucination_penalty = 1.0
-
+    
     # Confianza final (combinación ponderada)
-    confianza = 0.3 * cantidad_score + 0.5 * calidad_score + 0.2 * hallucination_penalty
-
+    confianza = (
+        0.3 * cantidad_score +
+        0.5 * calidad_score +
+        0.2 * hallucination_penalty
+    )
+    
     # GATE BLOQUEANTE: Confianza mínima = 0.5
     if confianza < 0.5:
         return None
-
+    
     return round(confianza, 2)
 
 
@@ -216,11 +222,11 @@ def gate_5_severidad(
 ) -> Severidad:
     """
     GATE 5: Severidad evaluada.
-
+    
     Basada en severidad_base ajustada por nivel de confianza.
     """
     severidad_base = PREGUNTAS_PROBATORIAS[ground]["severidad_base"]
-
+    
     # Si confianza es baja, reducir severidad
     if nivel_confianza < 0.6:
         if severidad_base == "CRITICA":
@@ -229,7 +235,7 @@ def gate_5_severidad(
             return "MEDIA"
         else:
             return "BAJA"
-
+    
     return severidad_base
 
 
@@ -237,75 +243,68 @@ def gate_5_severidad(
 # LÓGICA PRINCIPAL
 # ============================
 
-
 def ejecutar_analisis_prosecutor(
     *,
     case_id: str,
     auditor_summary: Optional[str] = None,
-    auditor_risks: Optional[list[str]] = None,
+    auditor_risks: Optional[List[str]] = None,
     auditor_fallback: bool = False,
 ) -> ProsecutorResult:
     """
     Ejecuta análisis prosecutor con GATES BLOQUEANTES.
-
+    
     NO acusa sin cumplir los 5 requisitos obligatorios.
     """
     import time
-
+    
     SessionLocal = get_session_factory()
     db: Session = SessionLocal()
-
-    acusaciones: list[AcusacionProbatoria] = []
-    acusaciones_bloqueadas: list[AcusacionBloqueada] = []
+    
+    acusaciones: List[AcusacionProbatoria] = []
+    acusaciones_bloqueadas: List[AcusacionBloqueada] = []
     evidencia_faltante_global: set[str] = set()
-
+    
     # ENDURECIMIENTO #6: Captura de trace para replay determinista
-    rag_snapshots: list[RAGSnapshot] = []
-    gate_checks: list[GateCheck] = []
-    rules_evaluated: list[str] = []
-
+    rag_snapshots: List[RAGSnapshot] = []
+    gate_checks: List[GateCheck] = []
+    rules_evaluated: List[str] = []
+    
     # ========================================
     # OPTIMIZACIÓN: Consolidar consultas legales
     # ========================================
     # ANTES: 3 llamadas separadas a query_legal_rag (una por ground)
     # AHORA: 1 llamada consolidada al inicio
-
+    
     start_legal_rag_time = time.time()
-
+    
     # Consolidar todas las preguntas probatorias en una consulta
     all_questions = " ".join([config["pregunta"] for config in PREGUNTAS_PROBATORIAS.values()])
     legal_results_consolidated = query_legal_rag(query=all_questions, top_k=10)
-
+    
     legal_rag_latency_ms = (time.time() - start_legal_rag_time) * 1000
-
+    
     # [CERT] Emisión de detección de cadena de tools
-    print(
-        "[CERT] TOOL_CHAIN_DETECTED flow=prosecutor_analysis tools=['rag_answer_internal_x3', 'query_legal_rag_consolidated']"
-    )
-
+    print(f"[CERT] TOOL_CHAIN_DETECTED flow=prosecutor_analysis tools=['rag_answer_internal_x3', 'query_legal_rag_consolidated']")
+    
     # [CERT] Reducción de contexto
     before_calls = 3  # Antes: 3 llamadas separadas
-    after_calls = 1  # Ahora: 1 llamada consolidada
-    print(
-        f"[CERT] CONTEXT_REDUCTION before_legal_rag_calls={before_calls} after_legal_rag_calls={after_calls}"
-    )
-
+    after_calls = 1   # Ahora: 1 llamada consolidada
+    print(f"[CERT] CONTEXT_REDUCTION before_legal_rag_calls={before_calls} after_legal_rag_calls={after_calls}")
+    
     # [CERT] Alcance de optimización
     optimized_flows = ["prosecutor_analysis"]
     not_applicable = ["auditor_analysis", "legal_agent_analysis"]
-    print(
-        f"[CERT] TOOL_CHAIN_SCOPE flows_optimized={optimized_flows} flows_not_applicable={not_applicable}"
-    )
-
+    print(f"[CERT] TOOL_CHAIN_SCOPE flows_optimized={optimized_flows} flows_not_applicable={not_applicable}")
+    
     # [CERT] NO llamadas intermedias al LLM
     # Este flujo ejecuta SOLO lógica programática (gates) sin llamar al LLM entre tools
-    print("[CERT] NO_INTERMEDIATE_LLM_CALLS = OK")
-
+    print(f"[CERT] NO_INTERMEDIATE_LLM_CALLS = OK")
+    
     try:
         for ground, config in PREGUNTAS_PROBATORIAS.items():
             pregunta = config["pregunta"]
             rules_evaluated.append(ground)
-
+            
             # Recuperar contexto crudo
             rag_result = rag_answer_internal(
                 db=db,
@@ -313,7 +312,7 @@ def ejecutar_analisis_prosecutor(
                 question=pregunta,
                 top_k=10,
             )
-
+            
             # ENDURECIMIENTO #6: Capturar RAG snapshot
             if rag_result.retrieval_evidence:
                 rag_snapshots.append(
@@ -325,49 +324,43 @@ def ejecutar_analisis_prosecutor(
                         min_similarity=rag_result.retrieval_evidence.min_similarity,
                         avg_similarity=rag_result.retrieval_evidence.avg_similarity,
                         retrieval_version=rag_result.retrieval_evidence.retrieval_version,
-                        no_response_reason=rag_result.no_response_reason.value
-                        if rag_result.no_response_reason
-                        else None,
+                        no_response_reason=rag_result.no_response_reason.value if rag_result.no_response_reason else None,
                         chunks_data=[
                             {
                                 "chunk_id": chunk.chunk_id,
                                 "document_id": chunk.document_id,
-                                "content": chunk.content[
-                                    :200
-                                ],  # Truncar para no hacer trace gigante
+                                "content": chunk.content[:200],  # Truncar para no hacer trace gigante
                             }
                             for chunk in rag_result.retrieval_evidence.chunks[:5]  # Solo primeros 5
-                        ],
+                        ]
                     )
                 )
-
+            
             # GATE ENDURECIMIENTO #4: Verificar NO_RESPONSE por evidencia insuficiente
             if rag_result.no_response_reason:
                 # Sistema bloqueado por falta de evidencia verificable
-                print(
-                    f"[CERT] PROSECUTOR_NO_ACCUSATION reason={rag_result.no_response_reason.value} ground={ground}"
-                )
-
+                print(f"[CERT] PROSECUTOR_NO_ACCUSATION reason={rag_result.no_response_reason.value} ground={ground}")
+                
                 # ENDURECIMIENTO #6: Registrar gate check
                 gate_checks.append(
                     GateCheck(
                         gate_id=f"evidence_gate_{ground}",
                         passed=False,
-                        reason=f"NO_RESPONSE: {rag_result.no_response_reason.value}",
+                        reason=f"NO_RESPONSE: {rag_result.no_response_reason.value}"
                     )
                 )
-
+                
                 # ENDURECIMIENTO #5: Registrar acusación BLOQUEADA con evidencia faltante estructurada
                 evidencias_faltantes = [
                     EvidenciaFaltante(
                         rule_id=ground,
                         required_evidence=doc_requerido,
                         present_evidence="NONE",
-                        blocking_reason=f"RAG retornó NO_RESPONSE: {rag_result.no_response_reason.value}",
+                        blocking_reason=f"RAG retornó NO_RESPONSE: {rag_result.no_response_reason.value}"
                     )
                     for doc_requerido in config["evidencia_minima"]
                 ]
-
+                
                 acusaciones_bloqueadas.append(
                     AcusacionBloqueada(
                         rule_id=ground,
@@ -375,34 +368,30 @@ def ejecutar_analisis_prosecutor(
                         evidencia_faltante=evidencias_faltantes,
                     )
                 )
-
+                
                 evidencia_faltante_global.update(config["evidencia_minima"])
                 continue
-
+            
             # VALIDACIÓN PREVIA: Si RAG ya señala problemas graves → skip
             if not rag_result.sources or not rag_result.context_text:
                 # [CERT] NO_EVIDENCE: No hay sources del RAG
                 print(f"[CERT] PROSECUTOR_NO_ACCUSATION reason=NO_EVIDENCE ground={ground}")
                 evidencia_faltante_global.update(config["evidencia_minima"])
                 continue
-
+            
             # OPTIMIZACIÓN: Reutilizar resultados legales consolidados
             # (en lugar de llamar query_legal_rag por cada ground)
             legal_results = legal_results_consolidated
-
+            
             # ========================================
             # GATE 1: Obligación legal definida
             # ========================================
             obligacion = gate_1_obligacion_legal(ground, legal_results)
             if not obligacion:
-                gate_checks.append(
-                    GateCheck(
-                        gate_id=f"gate_1_{ground}", passed=False, reason="No obligación legal"
-                    )
-                )
+                gate_checks.append(GateCheck(gate_id=f"gate_1_{ground}", passed=False, reason="No obligación legal"))
                 continue
             gate_checks.append(GateCheck(gate_id=f"gate_1_{ground}", passed=True))
-
+            
             # ========================================
             # GATE 2: Evidencia documental trazable
             # ========================================
@@ -410,44 +399,36 @@ def ejecutar_analisis_prosecutor(
             if not evidencias:
                 # [CERT] NO_EVIDENCE: Evidencias no trazables (faltan chunk_id/offsets)
                 print(f"[CERT] PROSECUTOR_NO_ACCUSATION reason=NO_EVIDENCE ground={ground}")
-                gate_checks.append(
-                    GateCheck(
-                        gate_id=f"gate_2_{ground}", passed=False, reason="Evidencia no trazable"
-                    )
-                )
+                gate_checks.append(GateCheck(gate_id=f"gate_2_{ground}", passed=False, reason="Evidencia no trazable"))
                 evidencia_faltante_global.update(config["evidencia_minima"])
                 continue
             gate_checks.append(GateCheck(gate_id=f"gate_2_{ground}", passed=True))
-
+            
             # ========================================
             # GATE 3: Evidencia suficiente (no parcial)
             # ========================================
             all_doc_types = set()  # TODO: obtener de DB si es necesario
-            es_suficiente, faltante = gate_3_evidencia_suficiente(ground, evidencias, all_doc_types)
-
+            es_suficiente, faltante = gate_3_evidencia_suficiente(
+                ground, evidencias, all_doc_types
+            )
+            
             if not es_suficiente:
                 # [CERT] PARTIAL_EVIDENCE: Evidencia insuficiente, faltan documentos clave
-                print(
-                    f"[CERT] PROSECUTOR_NO_ACCUSATION reason=PARTIAL_EVIDENCE ground={ground} missing={faltante}"
-                )
-
-                gate_checks.append(
-                    GateCheck(
-                        gate_id=f"gate_3_{ground}", passed=False, reason=f"Faltan: {faltante}"
-                    )
-                )
-
+                print(f"[CERT] PROSECUTOR_NO_ACCUSATION reason=PARTIAL_EVIDENCE ground={ground} missing={faltante}")
+                
+                gate_checks.append(GateCheck(gate_id=f"gate_3_{ground}", passed=False, reason=f"Faltan: {faltante}"))
+                
                 # ENDURECIMIENTO #5: Registrar acusación BLOQUEADA con detalles
                 evidencias_faltantes = [
                     EvidenciaFaltante(
                         rule_id=ground,
                         required_evidence=doc_faltante,
                         present_evidence=",".join([ev.doc_id for ev in evidencias]),
-                        blocking_reason="Documentos clave faltantes para verificar cumplimiento legal",
+                        blocking_reason="Documentos clave faltantes para verificar cumplimiento legal"
                     )
                     for doc_faltante in faltante
                 ]
-
+                
                 acusaciones_bloqueadas.append(
                     AcusacionBloqueada(
                         rule_id=ground,
@@ -455,12 +436,12 @@ def ejecutar_analisis_prosecutor(
                         evidencia_faltante=evidencias_faltantes,
                     )
                 )
-
+                
                 evidencia_faltante_global.update(faltante)
                 continue
-
+            
             gate_checks.append(GateCheck(gate_id=f"gate_3_{ground}", passed=True))
-
+            
             # ========================================
             # GATE 4: Nivel de confianza calculable
             # ========================================
@@ -469,63 +450,56 @@ def ejecutar_analisis_prosecutor(
                 rag_result.confidence,
                 rag_result.hallucination_risk,
             )
-
+            
             if nivel_confianza is None:
                 # [CERT] LOW_CONFIDENCE: Confianza calculada < 0.5
                 print(f"[CERT] PROSECUTOR_NO_ACCUSATION reason=LOW_CONFIDENCE ground={ground}")
-                evidencia_faltante_global.add(f"Mayor calidad documental para {ground}")
+                evidencia_faltante_global.add(
+                    f"Mayor calidad documental para {ground}"
+                )
                 continue
-
+            
             # ========================================
             # GATE 5: Severidad evaluada
             # ========================================
             severidad = gate_5_severidad(ground, nivel_confianza)
-
+            
             # ========================================
             # TODOS LOS GATES PASADOS → GENERAR ACUSACIÓN
             # ========================================
-
+            
             # [CERT] EVENTO 2: Conjunto de evidencias disponibles
             evidence_chunk_ids = [ev.chunk_id for ev in evidencias]
             print(f"[CERT] PROSECUTOR_EVIDENCE_CHUNKS = {evidence_chunk_ids}")
-
+            
             # [CERT] EVENTO 1: Inicio de acusación (SOLO si TODOS los gates pasaron)
-            print(
-                f"[CERT] PROSECUTOR_ACCUSATION_START case_id={case_id} articulo={obligacion.articulo}"
-            )
-
+            print(f"[CERT] PROSECUTOR_ACCUSATION_START case_id={case_id} articulo={obligacion.articulo}")
+            
             # Descripción fáctica: SOLO hechos documentados, sin adjetivos
             descripcion_factica = (
                 f"Los documentos muestran {len(evidencias)} evidencia(s) "
                 f"relacionada(s) con {ground.replace('_', ' ')}. "
                 f"Documentos: {', '.join(set(ev.doc_id for ev in evidencias))}."
             )
-
+            
             # [CERT] EVENTO 5: Guardrail contra narrativa
             # Verificar que descripcion_factica NO contiene narrativa especulativa
-            prohibited_words = [
-                "parece",
-                "podría",
-                "posiblemente",
-                "probablemente",
-                "indica",
-                "sugiere",
-            ]
+            prohibited_words = ["parece", "podría", "posiblemente", "probablemente", "indica", "sugiere"]
             if any(word in descripcion_factica.lower() for word in prohibited_words):
-                print("[CERT] PROSECUTOR_NARRATIVE_DETECTED = FAIL")
+                print(f"[CERT] PROSECUTOR_NARRATIVE_DETECTED = FAIL")
                 raise RuntimeError("NARRATIVE DETECTED IN FACTUAL DESCRIPTION")
-
+            
             # ENDURECIMIENTO #5: Convertir evidencia_faltante a estructura
             evidencias_faltantes_estructuradas = [
                 EvidenciaFaltante(
                     rule_id=ground,
                     required_evidence=doc_faltante,
                     present_evidence="PARTIAL",
-                    blocking_reason="Documento recomendado pero no bloqueante",
+                    blocking_reason="Documento recomendado pero no bloqueante"
                 )
                 for doc_faltante in faltante
             ]
-
+            
             acusacion = AcusacionProbatoria(
                 accusation_id=f"{case_id}-{ground}",
                 obligacion_legal=obligacion,
@@ -535,38 +509,33 @@ def ejecutar_analisis_prosecutor(
                 nivel_confianza=nivel_confianza,
                 evidencia_faltante=evidencias_faltantes_estructuradas,
             )
-
+            
             # [CERT] EVENTO 4: Validar estructura completa de acusación
             structure_valid = (
-                acusacion.obligacion_legal is not None
-                and len(acusacion.evidencia_documental) > 0
-                and all(
-                    ev.chunk_id
-                    and ev.doc_id
-                    and ev.start_char is not None
-                    and ev.end_char is not None
-                    for ev in acusacion.evidencia_documental
-                )
-                and acusacion.severidad is not None
-                and acusacion.nivel_confianza is not None
-                and acusacion.evidencia_faltante is not None
+                acusacion.obligacion_legal is not None and
+                len(acusacion.evidencia_documental) > 0 and
+                all(ev.chunk_id and ev.doc_id and ev.start_char is not None and ev.end_char is not None 
+                    for ev in acusacion.evidencia_documental) and
+                acusacion.severidad is not None and
+                acusacion.nivel_confianza is not None and
+                acusacion.evidencia_faltante is not None
             )
-
+            
             if not structure_valid:
                 raise RuntimeError("ACCUSATION STRUCTURE INCOMPLETE")
-
-            print("[CERT] PROSECUTOR_ACCUSATION_STRUCTURE_OK = True")
-
+            
+            print(f"[CERT] PROSECUTOR_ACCUSATION_STRUCTURE_OK = True")
+            
             # [CERT] EVENTO 2: Conjunto de chunks citados en la acusación
             cited_chunk_ids = [ev.chunk_id for ev in acusacion.evidencia_documental]
             print(f"[CERT] PROSECUTOR_CITED_CHUNKS = {cited_chunk_ids}")
-
+            
             acusaciones.append(acusacion)
-
+        
         # ========================================
         # RESULTADO FINAL
         # ========================================
-
+        
         # Si NO hay acusaciones → solicitar evidencia
         solicitud = None
         if not acusaciones and evidencia_faltante_global:
@@ -576,32 +545,30 @@ def ejecutar_analisis_prosecutor(
                 motivo="No existe evidencia documental suficiente para formular acusación.",
                 evidencia_requerida=sorted(list(evidencia_faltante_global)),
             )
-
+        
         # ========================================
         # [CERT] Comparación de coste y latencia (desde tracing real)
         # ========================================
         # ANTES: 3 llamadas separadas a query_legal_rag
         # AHORA: 1 llamada consolidada
-
+        
         # Latencia real medida (desde time.time())
         before_latency_ms = legal_rag_latency_ms * 3  # Si fueran 3 llamadas separadas
-        after_latency_ms = legal_rag_latency_ms  # 1 llamada consolidada (real)
-
+        after_latency_ms = legal_rag_latency_ms       # 1 llamada consolidada (real)
+        
         # Tokens: medidos desde el número de grounds procesados
         grounds_count = len(PREGUNTAS_PROBATORIAS)  # 3
         before_tokens_estimate = grounds_count * 500  # Estimación: 500 tokens/consulta
         after_tokens_estimate = 600  # Query consolidada (estimación conservadora)
-
-        print(
-            f"[CERT] COST_LATENCY_COMPARISON flow=prosecutor_legal_rag "
-            f"before_latency_ms={int(before_latency_ms)} "
-            f"after_latency_ms={int(after_latency_ms)} "
-            f"before_tokens={before_tokens_estimate} "
-            f"after_tokens={after_tokens_estimate} "
-            f"reduction_latency_pct={int((1 - after_latency_ms/before_latency_ms) * 100)} "
-            f"reduction_tokens_pct={int((1 - after_tokens_estimate/before_tokens_estimate) * 100)}"
-        )
-
+        
+        print(f"[CERT] COST_LATENCY_COMPARISON flow=prosecutor_legal_rag "
+              f"before_latency_ms={int(before_latency_ms)} "
+              f"after_latency_ms={int(after_latency_ms)} "
+              f"before_tokens={before_tokens_estimate} "
+              f"after_tokens={after_tokens_estimate} "
+              f"reduction_latency_pct={int((1 - after_latency_ms/before_latency_ms) * 100)} "
+              f"reduction_tokens_pct={int((1 - after_tokens_estimate/before_tokens_estimate) * 100)}")
+        
         # ========================================
         # ENDURECIMIENTO #6: Crear audit trace
         # ========================================
@@ -613,7 +580,7 @@ def ejecutar_analisis_prosecutor(
             total_acusaciones=len(acusaciones),
             total_bloqueadas=len(acusaciones_bloqueadas),
         )
-
+        
         # Determinar decision_state
         if len(acusaciones) > 0 and len(acusaciones_bloqueadas) == 0:
             decision_state = "COMPLETE"
@@ -621,7 +588,7 @@ def ejecutar_analisis_prosecutor(
             decision_state = "PARTIAL"
         else:
             decision_state = "BLOCKED"
-
+        
         # Crear prosecutor snapshot
         prosecutor_snapshot = ProsecutorSnapshot(
             case_id=case_id,
@@ -631,10 +598,9 @@ def ejecutar_analisis_prosecutor(
             bloqueadas_data=[bloc.model_dump() for bloc in acusaciones_bloqueadas],
             solicitud_evidencia=solicitud.model_dump() if solicitud else None,
         )
-
+        
         # Crear audit trace
         import uuid
-
         trace = AuditTrace(
             trace_id=f"trace_{case_id}_{uuid.uuid4().hex[:8]}",
             pipeline_version="1.0.0",
@@ -648,11 +614,11 @@ def ejecutar_analisis_prosecutor(
             decision_state=decision_state,
             invariants_checked=gate_checks,
         )
-
+        
         # Adjuntar trace serializado al resultado
         result.audit_trace_data = trace.to_dict()
-
+        
         return result
-
+    
     finally:
         db.close()

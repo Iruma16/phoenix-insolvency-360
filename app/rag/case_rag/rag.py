@@ -1,33 +1,34 @@
 from __future__ import annotations
 
+from typing import List, Optional
 from datetime import date
-from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.agents.base.response_builder import build_llm_answer
 from app.core.database import get_db
-from app.core.variables import RAG_ACTIVE_POLICY, RAG_TOP_K_DEFAULT
-from app.rag.case_rag.retrieve import ConfidenceLevel, rag_answer_internal
+from app.core.variables import RAG_TOP_K_DEFAULT, RAG_ACTIVE_POLICY
+from app.rag.case_rag.retrieve import rag_answer_internal, ConfidenceLevel
+from app.agents.base.response_builder import build_llm_answer
 from app.services.confidence_scoring import (
     calculate_confidence_score,
     explain_confidence_score,
     interpret_score_for_stdout,
 )
+from app.services.response_policy import (
+    get_policy,
+    evaluate_policy,
+    print_policy_decision,
+)
 from app.services.legal_phrasing import (
     get_insufficient_evidence_message,
     get_partial_information_message,
+    wrap_response_with_evidence_notice,
     get_response_type_from_policy_decision,
     print_response_type_decision,
-    wrap_response_with_evidence_notice,
 )
-from app.services.response_policy import (
-    evaluate_policy,
-    get_policy,
-    print_policy_decision,
-)
+
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
 
@@ -36,13 +37,12 @@ router = APIRouter(prefix="/rag", tags=["RAG"])
 # SCHEMAS API
 # =========================================================
 
-
 class RAGRequest(BaseModel):
     case_id: str
     question: str
     top_k: int = RAG_TOP_K_DEFAULT
 
-    doc_types: Optional[list[str]] = None
+    doc_types: Optional[List[str]] = None
     date_from: Optional[date] = None
     date_to: Optional[date] = None
 
@@ -63,9 +63,9 @@ class RAGSource(BaseModel):
 
 class RAGResponse(BaseModel):
     answer: str
-    sources: list[RAGSource]
+    sources: List[RAGSource]
     confidence: ConfidenceLevel
-    warnings: list[str]
+    warnings: List[str]
     hallucination_risk: bool = False  # True si hay alto riesgo de alucinación
     # CAPA DE PRODUCTO
     confidence_score: Optional[float] = None  # Score 0-1 (REGLA 1)
@@ -75,7 +75,6 @@ class RAGResponse(BaseModel):
 # =========================================================
 # ENDPOINT RAG (CAPA API)
 # =========================================================
-
 
 @router.post("/ask", response_model=RAGResponse)
 def ask_rag(
@@ -106,10 +105,10 @@ def ask_rag(
             "NO_RELEVANT_CONTEXT": "No se ha encontrado información relevante en la documentación para responder a esta pregunta.",
             "PARTIAL_CONTEXT": "La información encontrada es parcial.",
         }.get(result.status, "No se pudo recuperar contexto para esta pregunta.")
-
+        
         # REGLA 3: Usar phrasing controlado
         final_message = get_insufficient_evidence_message(error_message)
-
+        
         return RAGResponse(
             answer=final_message,
             sources=[RAGSource(**s) for s in result.sources],
@@ -123,13 +122,13 @@ def ask_rag(
     # --------------------------------------------------
     # PASO 3: CAPA DE PRODUCTO - Scoring + Políticas
     # --------------------------------------------------
-
+    
     # REGLA 1: Calcular confidence_score
     confidence_score = calculate_confidence_score(
         sources=result.sources,
         ground_truth_chunk_ids=None,  # TODO: cargar GT si existe
     )
-
+    
     # REGLA 5: Explicar score por stdout
     # CORRECCIÓN A: Usar interpret_score_for_stdout (NO incluir narrativa en dict)
     score_explanation = explain_confidence_score(
@@ -140,11 +139,11 @@ def ask_rag(
     print(f"\n{'='*80}")
     print(f"[SCORING] Confidence Score: {confidence_score:.3f}")
     print(f"[SCORING] Interpretación: {interpret_score_for_stdout(confidence_score)}")
-    print("[SCORING] Factores:")
-    for key, value in score_explanation["factors"].items():
+    print(f"[SCORING] Factores:")
+    for key, value in score_explanation['factors'].items():
         print(f"  - {key}: {value}")
     print(f"{'='*80}\n")
-
+    
     # REGLA 2: Evaluar política activa
     policy = get_policy(RAG_ACTIVE_POLICY)
     cumple_politica, motivo_politica = evaluate_policy(
@@ -152,7 +151,7 @@ def ask_rag(
         num_chunks=len(result.sources),
         confidence_score=confidence_score,
     )
-
+    
     # REGLA 5: Mostrar decisión de política por stdout
     print_policy_decision(
         policy=policy,
@@ -161,11 +160,11 @@ def ask_rag(
         cumple=cumple_politica,
         motivo=motivo_politica,
     )
-
+    
     # REGLA 2: Si no cumple política → BLOQUEAR respuesta
     if not cumple_politica:
         final_message = get_insufficient_evidence_message(motivo_politica)
-
+        
         return RAGResponse(
             answer=final_message,
             sources=[RAGSource(**s) for s in result.sources],
@@ -175,7 +174,7 @@ def ask_rag(
             confidence_score=confidence_score,
             response_type="EVIDENCIA_INSUFICIENTE",
         )
-
+    
     # --------------------------------------------------
     # PASO 4: Generar respuesta con LLM
     # --------------------------------------------------
@@ -185,10 +184,10 @@ def ask_rag(
         confidence_score=confidence_score,
         hallucination_risk=result.hallucination_risk,
     )
-
+    
     # REGLA 5: Mostrar tipo de respuesta por stdout
     print_response_type_decision(response_type, confidence_score)
-
+    
     # Si información parcial, agregar advertencia ANTES de llamar al LLM
     if response_type == "INFORMACION_PARCIAL_NO_CONCLUYENTE":
         partial_warning = get_partial_information_message(
@@ -196,20 +195,20 @@ def ask_rag(
             num_chunks=len(result.sources),
         )
         result.warnings.append(partial_warning)
-
+    
     # CERTIFICACIÓN 1: Log antes de llamar al LLM
     print(f"[CERT] LLM_CALL_START case_id={payload.case_id}")
-
+    
     # CERTIFICACIÓN 2: Chunks usados como contexto
     context_chunk_ids = [s.get("chunk_id", "N/A") for s in result.sources]
     print(f"[CERT] CONTEXT_CHUNKS = {context_chunk_ids}")
-
+    
     # Generar respuesta base del LLM
     llm_answer = build_llm_answer(
         question=payload.question,
         context_text=result.context_text,
     )
-
+    
     # --------------------------------------------------
     # PASO 5: REGLA 3 - Aplicar phrasing legal controlado
     # --------------------------------------------------

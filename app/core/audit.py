@@ -3,12 +3,10 @@ Helpers de auditoría para cumplimiento legal.
 
 Funciones para registrar acciones sensibles en la base de datos.
 """
+from sqlalchemy.orm import Session
+from app.models.audit_log import AuditLog
 import json
 import logging
-
-from sqlalchemy.orm import Session
-
-from app.models.audit_log import AuditLog
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +19,11 @@ def log_audit(
     details: dict = None,
     ip_address: str = None,
     user_agent: str = None,
-    commit: bool = True,
+    commit: bool = True
 ) -> AuditLog:
     """
     Registra una acción en la auditoría persistente.
-
+    
     Args:
         db: Sesión de base de datos
         user_id: ID del usuario que realizó la acción
@@ -35,7 +33,7 @@ def log_audit(
         ip_address: IP del cliente
         user_agent: User-Agent del cliente
         commit: Si True, hace commit automáticamente
-
+        
     Returns:
         AuditLog creado
     """
@@ -46,19 +44,19 @@ def log_audit(
             action=action,
             details=json.dumps(details, default=str) if details else None,
             ip_address=ip_address,
-            user_agent=user_agent,
+            user_agent=user_agent
         )
-
+        
         db.add(audit_entry)
-
+        
         if commit:
             db.commit()
             db.refresh(audit_entry)
-
+        
         logger.debug(f"📝 Audit log created: {user_id} - {action} - {case_id}")
-
+        
         return audit_entry
-
+    
     except Exception as e:
         logger.error(f"Error creating audit log: {e}")
         if commit:
@@ -73,11 +71,11 @@ def log_access(
     resource_type: str,
     resource_id: str,
     ip_address: str = None,
-    user_agent: str = None,
+    user_agent: str = None
 ):
     """
     Registra acceso a un recurso sensible.
-
+    
     Args:
         db: Sesión de base de datos
         user_id: ID del usuario
@@ -93,7 +91,7 @@ def log_access(
         case_id=resource_id if resource_type == "case" else None,
         details={"resource_type": resource_type, "resource_id": resource_id},
         ip_address=ip_address,
-        user_agent=user_agent,
+        user_agent=user_agent
     )
 
 
@@ -104,11 +102,11 @@ def log_access_denied(
     resource_id: str,
     reason: str,
     ip_address: str = None,
-    user_agent: str = None,
+    user_agent: str = None
 ):
     """
     Registra intento de acceso denegado (importante para seguridad).
-
+    
     Args:
         db: Sesión de base de datos
         user_id: ID del usuario que intentó acceder
@@ -123,7 +121,11 @@ def log_access_denied(
         user_id=user_id,
         action=f"access_denied_{resource_type}",
         case_id=resource_id if resource_type == "case" else None,
-        details={"resource_type": resource_type, "resource_id": resource_id, "reason": reason},
+        details={
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "reason": reason
+        },
         ip_address=ip_address,
-        user_agent=user_agent,
+        user_agent=user_agent
     )

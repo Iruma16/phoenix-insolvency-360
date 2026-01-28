@@ -3,16 +3,15 @@ Tests de regresión para mejoras del handoff: validación, fallback, contexto.
 
 Mockea RAG, LLM y BD para evitar dependencias pesadas.
 """
-from unittest.mock import MagicMock, patch
-
 import pytest
+from unittest.mock import patch, MagicMock
 from pydantic import ValidationError
 
 from app.agents.agent_1_auditor.runner import run_auditor
 from app.agents.agent_1_auditor.schema import AuditorResult
+from app.agents.handoff import build_agent2_payload, HandoffPayload
 from app.agents.agent_2_prosecutor.runner import run_prosecutor_from_auditor
 from app.agents.agent_2_prosecutor.schema import ProsecutorResult
-from app.agents.handoff import HandoffPayload, build_agent2_payload
 
 
 def test_handoff_payload_validation_valid():
@@ -25,9 +24,9 @@ def test_handoff_payload_validation_valid():
         "next_actions": ["Acción 1"],
         "auditor_fallback": False,
     }
-
+    
     payload = HandoffPayload(**payload_dict)
-
+    
     assert payload.case_id == "test-case-123"
     assert payload.question == "¿Hay riesgos legales?"
     assert payload.summary == "Resumen del análisis"
@@ -44,10 +43,10 @@ def test_handoff_payload_validation_invalid_case_id():
         "risks": [],
         "next_actions": [],
     }
-
+    
     with pytest.raises(ValidationError) as exc_info:
         HandoffPayload(**payload_dict)
-
+    
     assert "case_id" in str(exc_info.value).lower() or "no puede estar vacío" in str(exc_info.value)
 
 
@@ -57,7 +56,7 @@ def test_handoff_payload_validation_missing_required():
         "case_id": "test-case",
         # Falta question, summary, etc.
     }
-
+    
     with pytest.raises(ValidationError):
         HandoffPayload(**payload_dict)
 
@@ -70,7 +69,7 @@ def test_auditor_fallback_propagation():
         risks=["Falta de documentación"],
         next_actions=["Verificar documentos"],
     )
-
+    
     # Construir payload con fallback=True
     payload = build_agent2_payload(
         auditor_result=auditor_result,
@@ -78,11 +77,11 @@ def test_auditor_fallback_propagation():
         question="Test question",
         auditor_fallback=True,  # Flag de fallback
     )
-
+    
     assert payload["auditor_fallback"] is True
     assert payload["case_id"] == "test-case"
     assert payload["summary"] == "Análisis con fallback"
-
+    
     # Validar con Pydantic
     validated = HandoffPayload(**payload)
     assert validated.auditor_fallback is True
@@ -95,14 +94,14 @@ def test_handoff_with_auditor_context():
         risks=["Riesgo A", "Riesgo B", "Riesgo C"],
         next_actions=["Acción 1", "Acción 2"],
     )
-
+    
     payload = build_agent2_payload(
         auditor_result=auditor_result,
         case_id="test-case",
         question="Pregunta de prueba",
         auditor_fallback=False,
     )
-
+    
     assert payload["summary"] == "Resumen detallado del Auditor"
     assert len(payload["risks"]) == 3
     assert payload["risks"][0] == "Riesgo A"
@@ -112,31 +111,29 @@ def test_handoff_with_auditor_context():
 def test_run_auditor_returns_fallback_flag():
     """Test: run_auditor retorna tupla (result, auditor_fallback)."""
     mock_db = MagicMock()
-
-    with patch("app.agents.agent_1_auditor.runner.query_case_rag") as mock_rag:
+    
+    with patch('app.agents.agent_1_auditor.runner.query_case_rag') as mock_rag:
         # Caso 1: Contexto vacío (fallback esperado)
         mock_rag.return_value = ""  # Contexto vacío
-
+        
         result, auditor_fallback = run_auditor(
             case_id="test-case",
             question="Test question",
             db=mock_db,
         )
-
+        
         assert isinstance(result, AuditorResult)
         assert auditor_fallback is True
-
+        
         # Caso 2: Contexto con contenido (sin fallback)
-        mock_rag.return_value = (
-            "Este es un contexto largo con suficiente información para el análisis" * 10
-        )
-
+        mock_rag.return_value = "Este es un contexto largo con suficiente información para el análisis" * 10
+        
         result2, auditor_fallback2 = run_auditor(
             case_id="test-case",
             question="Test question",
             db=mock_db,
         )
-
+        
         assert isinstance(result2, AuditorResult)
         assert auditor_fallback2 is False
 
@@ -151,9 +148,11 @@ def test_prosecutor_accepts_handoff_payload():
         "next_actions": ["Acción 1"],
         "auditor_fallback": False,
     }
-
+    
     # Mock del ejecutar_analisis_prosecutor
-    with patch("app.agents.agent_2_prosecutor.runner.ejecutar_analisis_prosecutor") as mock_exec:
+    with patch('app.agents.agent_2_prosecutor.runner.ejecutar_analisis_prosecutor') as mock_exec:
+        from app.agents.agent_2_prosecutor.schema import RiskLevel
+        
         mock_result = ProsecutorResult(
             case_id="test-case-123",
             overall_risk_level="medio",
@@ -163,9 +162,9 @@ def test_prosecutor_accepts_handoff_payload():
             blocking_recommendation=False,
         )
         mock_exec.return_value = mock_result
-
+        
         result = run_prosecutor_from_auditor(payload_dict)
-
+        
         assert result.case_id == "test-case-123"
         # Verificar que se llamó con los parámetros correctos
         mock_exec.assert_called_once()
@@ -185,10 +184,10 @@ def test_prosecutor_rejects_invalid_handoff_payload():
         "risks": [],
         "next_actions": [],
     }
-
+    
     with pytest.raises(ValueError) as exc_info:
         run_prosecutor_from_auditor(payload_dict)
-
+    
     assert "case_id" in str(exc_info.value).lower()
 
 
@@ -202,8 +201,8 @@ def test_prosecutor_handles_auditor_fallback_flag():
         "next_actions": ["Acción"],
         "auditor_fallback": True,  # Flag de fallback activado
     }
-
-    with patch("app.agents.agent_2_prosecutor.runner.ejecutar_analisis_prosecutor") as mock_exec:
+    
+    with patch('app.agents.agent_2_prosecutor.runner.ejecutar_analisis_prosecutor') as mock_exec:
         mock_result = ProsecutorResult(
             case_id="test-case",
             overall_risk_level="medio",
@@ -213,9 +212,9 @@ def test_prosecutor_handles_auditor_fallback_flag():
             blocking_recommendation=False,
         )
         mock_exec.return_value = mock_result
-
+        
         result = run_prosecutor_from_auditor(payload_dict)
-
+        
         # Verificar que se pasó el flag
         call_kwargs = mock_exec.call_args.kwargs
         assert call_kwargs["auditor_fallback"] is True
@@ -224,3 +223,4 @@ def test_prosecutor_handles_auditor_fallback_flag():
 if __name__ == "__main__":
     print("Ejecutando tests de regresión del handoff...")
     print("Para ejecutar con pytest: python -m pytest tests/manual/test_handoff_improvements.py -v")
+

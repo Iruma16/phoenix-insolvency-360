@@ -14,13 +14,13 @@ def build_llm_answer(
 ) -> str:
     """
     Genera una respuesta usando LLM a partir de una pregunta y contexto recuperado.
-
+    
     REGLA 5: Prohibición explícita de relleno, inferencia o completado sin evidencia.
-
+    
     Args:
         question: Pregunta a responder
         context_text: Contexto documental recuperado (texto concatenado)
-
+        
     Returns:
         Respuesta generada por el LLM
     """
@@ -64,3 +64,4 @@ def build_llm_answer(
 
     answer = completion.choices[0].message.content.strip()
     return answer
+

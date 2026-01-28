@@ -5,15 +5,14 @@ OBJETIVO: Validar estructura de acusaciones sin dependencias externas.
 
 PRINCIPIO: Tests unitarios puros de validadores y estructura.
 """
-from typing import Optional
-
 import pytest
+from typing import List, Optional
 from pydantic import BaseModel, Field, validator
+
 
 # ============================
 # MOCK STRUCTURES (standalone)
 # ============================
-
 
 class EvidenciaDocumentalMock(BaseModel):
     chunk_id: str
@@ -40,12 +39,12 @@ class EvidenciaFaltanteMock(BaseModel):
 class AcusacionProBatoriaMock(BaseModel):
     accusation_id: str
     obligacion_legal: ObligacionLegalMock
-    evidencia_documental: list[EvidenciaDocumentalMock] = Field(min_items=1)
+    evidencia_documental: List[EvidenciaDocumentalMock] = Field(min_items=1)
     descripcion_factica: str
     severidad: str
     nivel_confianza: float = Field(ge=0.0, le=1.0)
-    evidencia_faltante: list[EvidenciaFaltanteMock] = Field(default_factory=list)
-
+    evidencia_faltante: List[EvidenciaFaltanteMock] = Field(default_factory=list)
+    
     @validator("evidencia_documental")
     def validate_evidencia_not_empty(cls, v):
         if not v or len(v) == 0:
@@ -56,13 +55,13 @@ class AcusacionProBatoriaMock(BaseModel):
 class AcusacionBloqueadaMock(BaseModel):
     rule_id: str
     blocked_reason: str
-    evidencia_faltante: list[EvidenciaFaltanteMock]
+    evidencia_faltante: List[EvidenciaFaltanteMock]
 
 
 class ProsecutorResultMock(BaseModel):
     case_id: str
-    acusaciones: list[AcusacionProBatoriaMock] = Field(default_factory=list)
-    acusaciones_bloqueadas: list[AcusacionBloqueadaMock] = Field(default_factory=list)
+    acusaciones: List[AcusacionProBatoriaMock] = Field(default_factory=list)
+    acusaciones_bloqueadas: List[AcusacionBloqueadaMock] = Field(default_factory=list)
     total_acusaciones: int
     total_bloqueadas: int = 0
 
@@ -71,16 +70,17 @@ class ProsecutorResultMock(BaseModel):
 # TEST 1: VALIDATOR EVIDENCIA
 # ============================
 
-
 def test_acusacion_sin_evidencia_falla():
     """GATE: Acusación sin evidencia_documental → ValidationError."""
     from pydantic import ValidationError
-
+    
     with pytest.raises(ValidationError):
         AcusacionProBatoriaMock(
             accusation_id="test_001",
             obligacion_legal=ObligacionLegalMock(
-                ley="Ley Concursal", articulo="Art. 5", deber="Solicitar concurso en 2 meses"
+                ley="Ley Concursal",
+                articulo="Art. 5",
+                deber="Solicitar concurso en 2 meses"
             ),
             evidencia_documental=[],
             descripcion_factica="Descripción",
@@ -94,7 +94,9 @@ def test_acusacion_con_evidencia_valida():
     acusacion = AcusacionProBatoriaMock(
         accusation_id="test_001",
         obligacion_legal=ObligacionLegalMock(
-            ley="Ley Concursal", articulo="Art. 5", deber="Solicitar concurso en 2 meses"
+            ley="Ley Concursal",
+            articulo="Art. 5",
+            deber="Solicitar concurso en 2 meses"
         ),
         evidencia_documental=[
             EvidenciaDocumentalMock(
@@ -102,14 +104,14 @@ def test_acusacion_con_evidencia_valida():
                 doc_id="doc_001",
                 start_char=0,
                 end_char=100,
-                extracto_literal="Texto evidencia",
+                extracto_literal="Texto evidencia"
             )
         ],
         descripcion_factica="Descripción objetiva",
         severidad="ALTA",
         nivel_confianza=0.8,
     )
-
+    
     assert len(acusacion.evidencia_documental) == 1
 
 
@@ -117,16 +119,15 @@ def test_acusacion_con_evidencia_valida():
 # TEST 2: EVIDENCIA FALTANTE
 # ============================
 
-
 def test_evidencia_faltante_estructura():
     """EvidenciaFaltante tiene campos obligatorios."""
     evidencia = EvidenciaFaltanteMock(
         rule_id="retraso_concurso",
         required_evidence="balance_completo",
         present_evidence="NONE",
-        blocking_reason="No se puede verificar insolvencia sin balance",
+        blocking_reason="No se puede verificar insolvencia sin balance"
     )
-
+    
     assert evidencia.rule_id == "retraso_concurso"
     assert evidencia.required_evidence == "balance_completo"
     assert evidencia.present_evidence == "NONE"
@@ -139,16 +140,15 @@ def test_evidencia_faltante_con_partial():
         rule_id="alzamiento_bienes",
         required_evidence="registro_completo_ventas",
         present_evidence="extracto_parcial",
-        blocking_reason="Solo se tiene extracto parcial, falta registro completo",
+        blocking_reason="Solo se tiene extracto parcial, falta registro completo"
     )
-
+    
     assert evidencia.present_evidence == "extracto_parcial"
 
 
 # ============================
 # TEST 3: ACUSACIÓN BLOQUEADA
 # ============================
-
 
 def test_acusacion_bloqueada_estructura():
     """AcusacionBloqueada contiene motivo y evidencia faltante."""
@@ -160,11 +160,11 @@ def test_acusacion_bloqueada_estructura():
                 rule_id="retraso_concurso",
                 required_evidence="balance",
                 present_evidence="NONE",
-                blocking_reason="RAG retornó NO_RESPONSE",
+                blocking_reason="RAG retornó NO_RESPONSE"
             )
-        ],
+        ]
     )
-
+    
     assert bloqueada.rule_id == "retraso_concurso"
     assert "NO_RESPONSE" in bloqueada.blocked_reason
     assert len(bloqueada.evidencia_faltante) == 1
@@ -180,24 +180,23 @@ def test_acusacion_bloqueada_multiple_evidencias():
                 rule_id="culpabilidad_agravada",
                 required_evidence="balance",
                 present_evidence="NONE",
-                blocking_reason="Documento clave ausente",
+                blocking_reason="Documento clave ausente"
             ),
             EvidenciaFaltanteMock(
                 rule_id="culpabilidad_agravada",
                 required_evidence="extractos_bancarios",
                 present_evidence="NONE",
-                blocking_reason="Documento clave ausente",
+                blocking_reason="Documento clave ausente"
             ),
-        ],
+        ]
     )
-
+    
     assert len(bloqueada.evidencia_faltante) == 2
 
 
 # ============================
 # TEST 4: PROSECUTOR RESULT
 # ============================
-
 
 def test_prosecutor_result_solo_acusaciones():
     """ProsecutorResult puede contener SOLO acusaciones completas."""
@@ -206,10 +205,14 @@ def test_prosecutor_result_solo_acusaciones():
         acusaciones=[
             AcusacionProBatoriaMock(
                 accusation_id="acc_001",
-                obligacion_legal=ObligacionLegalMock(ley="Ley", articulo="Art. 1", deber="D"),
+                obligacion_legal=ObligacionLegalMock(
+                    ley="Ley", articulo="Art. 1", deber="D"
+                ),
                 evidencia_documental=[
                     EvidenciaDocumentalMock(
-                        chunk_id="c1", doc_id="d1", start_char=0, end_char=10, extracto_literal="T"
+                        chunk_id="c1", doc_id="d1",
+                        start_char=0, end_char=10,
+                        extracto_literal="T"
                     )
                 ],
                 descripcion_factica="H",
@@ -221,7 +224,7 @@ def test_prosecutor_result_solo_acusaciones():
         total_acusaciones=1,
         total_bloqueadas=0,
     )
-
+    
     assert result.total_acusaciones == 1
     assert result.total_bloqueadas == 0
 
@@ -240,15 +243,15 @@ def test_prosecutor_result_solo_bloqueadas():
                         rule_id="rule_1",
                         required_evidence="doc",
                         present_evidence="NONE",
-                        blocking_reason="RAG sin chunks",
+                        blocking_reason="RAG sin chunks"
                     )
-                ],
+                ]
             )
         ],
         total_acusaciones=0,
         total_bloqueadas=1,
     )
-
+    
     assert result.total_acusaciones == 0
     assert result.total_bloqueadas == 1
 
@@ -260,10 +263,14 @@ def test_prosecutor_result_mixto():
         acusaciones=[
             AcusacionProBatoriaMock(
                 accusation_id="acc_001",
-                obligacion_legal=ObligacionLegalMock(ley="L", articulo="A", deber="D"),
+                obligacion_legal=ObligacionLegalMock(
+                    ley="L", articulo="A", deber="D"
+                ),
                 evidencia_documental=[
                     EvidenciaDocumentalMock(
-                        chunk_id="c1", doc_id="d1", start_char=0, end_char=10, extracto_literal="T"
+                        chunk_id="c1", doc_id="d1",
+                        start_char=0, end_char=10,
+                        extracto_literal="T"
                     )
                 ],
                 descripcion_factica="H",
@@ -280,15 +287,15 @@ def test_prosecutor_result_mixto():
                         rule_id="rule_2",
                         required_evidence="contrato",
                         present_evidence="PARTIAL",
-                        blocking_reason="Faltan anexos",
+                        blocking_reason="Faltan anexos"
                     )
-                ],
+                ]
             )
         ],
         total_acusaciones=1,
         total_bloqueadas=1,
     )
-
+    
     assert result.total_acusaciones == 1
     assert result.total_bloqueadas == 1
 
@@ -297,7 +304,6 @@ def test_prosecutor_result_mixto():
 # TEST 5: INVARIANTES
 # ============================
 
-
 def test_cert_contadores_coherentes():
     """[CERT] INVARIANTE: Contadores deben coincidir con listas."""
     result = ProsecutorResultMock(
@@ -305,10 +311,14 @@ def test_cert_contadores_coherentes():
         acusaciones=[
             AcusacionProBatoriaMock(
                 accusation_id="acc_001",
-                obligacion_legal=ObligacionLegalMock(ley="L", articulo="A", deber="D"),
+                obligacion_legal=ObligacionLegalMock(
+                    ley="L", articulo="A", deber="D"
+                ),
                 evidencia_documental=[
                     EvidenciaDocumentalMock(
-                        chunk_id="c1", doc_id="d1", start_char=0, end_char=10, extracto_literal="T"
+                        chunk_id="c1", doc_id="d1",
+                        start_char=0, end_char=10,
+                        extracto_literal="T"
                     )
                 ],
                 descripcion_factica="H",
@@ -325,15 +335,15 @@ def test_cert_contadores_coherentes():
                         rule_id="r1",
                         required_evidence="e",
                         present_evidence="NONE",
-                        blocking_reason="b",
+                        blocking_reason="b"
                     )
-                ],
+                ]
             )
         ],
         total_acusaciones=1,
         total_bloqueadas=1,
     )
-
+    
     assert result.total_acusaciones == len(result.acusaciones)
     assert result.total_bloqueadas == len(result.acusaciones_bloqueadas)
 
@@ -348,14 +358,14 @@ def test_cert_blocking_reason_no_vacio():
                 rule_id="rule_1",
                 required_evidence="balance",
                 present_evidence="NONE",
-                blocking_reason="RAG retornó 0 chunks",
+                blocking_reason="RAG retornó 0 chunks"
             )
-        ],
+        ]
     )
-
+    
     assert bloqueada.blocked_reason != ""
     assert len(bloqueada.blocked_reason) > 0
-
+    
     for ev_faltante in bloqueada.evidencia_faltante:
         assert ev_faltante.blocking_reason != ""
         assert len(ev_faltante.blocking_reason) > 0
@@ -383,3 +393,4 @@ INVARIANTES CERTIFICADOS:
 - INVARIANTE 5: total_bloqueadas == len(acusaciones_bloqueadas)
 - INVARIANTE 6: blocking_reason NUNCA vacío
 """
+

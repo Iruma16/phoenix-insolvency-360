@@ -5,42 +5,41 @@ OBJETIVO: Validar puntos únicos obligatorios para operaciones con coste.
 
 PRINCIPIO: PROHIBIDO llamar proveedor fuera de entry points.
 """
+import pytest
 from unittest.mock import Mock
 
-import pytest
-
-from app.core.finops.budget import BudgetLedger
 from app.core.finops.entry_points import (
-    EmbeddingsResult,
-    FinOpsBypassError,
-    LLMCallResult,
-    RetrieveResult,
     run_embeddings,
-    run_llm_call,
     run_retrieve,
+    run_llm_call,
     verify_cost_coherence,
     verify_trace_coherence,
+    FinOpsBypassError,
+    EmbeddingsResult,
+    RetrieveResult,
+    LLMCallResult,
 )
+from app.core.finops.budget import BudgetLedger
 from app.core.finops.exceptions import BudgetExceededException
-from app.core.finops.policy import LLMCallPolicy
 from app.core.finops.rag_cache import RAGCacheManager
 from app.core.finops.semantic_cache import SemanticCache
+from app.core.finops.policy import LLMCallPolicy
+
 
 # ============================
 # TEST 1: EMBEDDINGS ENTRY POINT
 # ============================
 
-
 def test_run_embeddings_requires_budget():
     """GATE: run_embeddings sin presupuesto → BudgetExceededException."""
     ledger = BudgetLedger()
     ledger.initialize_budget("CASE_001", budget_usd=0.000001)  # Presupuesto ínfimo
-
+    
     mock_provider = Mock(return_value=[[0.1, 0.2, 0.3]])
-
+    
     # Texto muy largo para forzar coste alto
     long_text = "x" * 10000  # 10K caracteres = ~2.5K tokens
-
+    
     with pytest.raises(BudgetExceededException):
         run_embeddings(
             texts=[long_text],
@@ -49,7 +48,7 @@ def test_run_embeddings_requires_budget():
             provider_func=mock_provider,
             ledger=ledger,
         )
-
+    
     # Verificar que NO se llamó al provider
     assert mock_provider.call_count == 0
 
@@ -58,12 +57,12 @@ def test_run_embeddings_with_budget():
     """run_embeddings con presupuesto OK ejecuta y registra coste."""
     ledger = BudgetLedger()
     ledger.initialize_budget("CASE_001", budget_usd=10.0)
-
+    
     mock_provider = Mock(return_value=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-
+    
     # Textos largos para generar coste real
     long_text = "test " * 500  # ~2500 caracteres = ~625 tokens
-
+    
     result = run_embeddings(
         texts=[long_text, long_text],
         model="text-embedding-3-small",
@@ -72,17 +71,17 @@ def test_run_embeddings_with_budget():
         trace_id="trace_001",
         ledger=ledger,
     )
-
+    
     # Verificar resultado
     assert isinstance(result, EmbeddingsResult)
     assert len(result.embeddings) == 2
     assert result.cost_usd > 0
     assert result.cached is False
     assert result.trace_id == "trace_001"
-
+    
     # Verificar provider llamado
     assert mock_provider.call_count == 1
-
+    
     # Verificar ledger actualizado
     entries = ledger.get_entries(case_id="CASE_001")
     assert len(entries) == 1
@@ -94,15 +93,16 @@ def test_run_embeddings_with_budget():
 # TEST 2: RETRIEVE ENTRY POINT
 # ============================
 
-
 def test_run_retrieve_cache_miss():
     """Primera query → cache miss → ejecuta retriever."""
     cache_manager = RAGCacheManager()
-
-    mock_retriever = Mock(
-        return_value=(["chunk1", "chunk2"], [0.9, 0.8], {"total_chunks": 2, "valid_chunks": 2})
-    )
-
+    
+    mock_retriever = Mock(return_value=(
+        ["chunk1", "chunk2"],
+        [0.9, 0.8],
+        {"total_chunks": 2, "valid_chunks": 2}
+    ))
+    
     result = run_retrieve(
         case_id="CASE_001",
         query="test query",
@@ -110,7 +110,7 @@ def test_run_retrieve_cache_miss():
         retriever_func=mock_retriever,
         cache_manager=cache_manager,
     )
-
+    
     assert isinstance(result, RetrieveResult)
     assert result.cached is False
     assert result.cache_type is None
@@ -121,11 +121,13 @@ def test_run_retrieve_cache_miss():
 def test_run_retrieve_cache_hit():
     """Segunda query → cache hit → NO ejecuta retriever."""
     cache_manager = RAGCacheManager()
-
-    mock_retriever = Mock(
-        return_value=(["chunk1", "chunk2"], [0.9, 0.8], {"total_chunks": 2, "valid_chunks": 2})
-    )
-
+    
+    mock_retriever = Mock(return_value=(
+        ["chunk1", "chunk2"],
+        [0.9, 0.8],
+        {"total_chunks": 2, "valid_chunks": 2}
+    ))
+    
     # Primera query
     run_retrieve(
         case_id="CASE_001",
@@ -134,7 +136,7 @@ def test_run_retrieve_cache_hit():
         retriever_func=mock_retriever,
         cache_manager=cache_manager,
     )
-
+    
     # Segunda query (mismos parámetros)
     result = run_retrieve(
         case_id="CASE_001",
@@ -143,11 +145,11 @@ def test_run_retrieve_cache_hit():
         retriever_func=mock_retriever,
         cache_manager=cache_manager,
     )
-
+    
     # Verificar cache hit
     assert result.cached is True
     assert result.cache_type in ["hot", "cold"]
-
+    
     # Verificar que NO se llamó al retriever segunda vez
     assert mock_retriever.call_count == 1
 
@@ -156,17 +158,16 @@ def test_run_retrieve_cache_hit():
 # TEST 3: LLM CALL ENTRY POINT
 # ============================
 
-
 def test_run_llm_call_blocked_by_policy():
     """GATE: Policy bloquea → NO se llama al LLM."""
     ledger = BudgetLedger()
     ledger.initialize_budget("CASE_001", budget_usd=10.0)
-
+    
     policy = LLMCallPolicy()
     semantic_cache = SemanticCache()
-
+    
     mock_llm = Mock(return_value=("Response", 100, 50))
-
+    
     result = run_llm_call(
         case_id="CASE_001",
         phase="llm_explain",
@@ -183,13 +184,13 @@ def test_run_llm_call_blocked_by_policy():
         ledger=ledger,
         semantic_cache=semantic_cache,
     )
-
+    
     # Verificar resultado bloqueado
     assert isinstance(result, LLMCallResult)
     assert result.response is None
     assert result.degraded_mode is True
     assert result.decision.allow_call is False
-
+    
     # Verificar que NO se llamó al LLM
     assert mock_llm.call_count == 0
 
@@ -198,15 +199,15 @@ def test_run_llm_call_blocked_by_budget():
     """GATE: Presupuesto insuficiente → BudgetExceededException."""
     ledger = BudgetLedger()
     ledger.initialize_budget("CASE_001", budget_usd=0.000001)  # Presupuesto ínfimo
-
+    
     policy = LLMCallPolicy()
     semantic_cache = SemanticCache()
-
+    
     mock_llm = Mock(return_value=("Response", 100, 50))
-
+    
     # Prompt muy largo para forzar coste alto
     long_prompt = "x" * 10000  # ~2.5K tokens
-
+    
     with pytest.raises(BudgetExceededException):
         run_llm_call(
             case_id="CASE_001",
@@ -224,7 +225,7 @@ def test_run_llm_call_blocked_by_budget():
             ledger=ledger,
             semantic_cache=semantic_cache,
         )
-
+    
     # Verificar que NO se llamó al LLM
     assert mock_llm.call_count == 0
 
@@ -233,12 +234,12 @@ def test_run_llm_call_semantic_cache_hit():
     """Semantic cache hit → NO se llama al LLM."""
     ledger = BudgetLedger()
     ledger.initialize_budget("CASE_001", budget_usd=10.0)
-
+    
     policy = LLMCallPolicy()
     semantic_cache = SemanticCache()
-
+    
     mock_llm = Mock(return_value=("Response", 100, 50))
-
+    
     # Primera llamada
     result1 = run_llm_call(
         case_id="CASE_001",
@@ -257,7 +258,7 @@ def test_run_llm_call_semantic_cache_hit():
         ledger=ledger,
         semantic_cache=semantic_cache,
     )
-
+    
     # Segunda llamada (mismos parámetros)
     result2 = run_llm_call(
         case_id="CASE_001",
@@ -276,15 +277,15 @@ def test_run_llm_call_semantic_cache_hit():
         ledger=ledger,
         semantic_cache=semantic_cache,
     )
-
+    
     # Verificar primera llamada OK
     assert result1.cached is False
     assert result1.cost_usd > 0
-
+    
     # Verificar segunda llamada cache hit
     assert result2.cached is True
     assert result2.cost_usd == 0.0  # Cache → sin coste
-
+    
     # Verificar que LLM solo se llamó una vez
     assert mock_llm.call_count == 1
 
@@ -293,12 +294,12 @@ def test_run_llm_call_records_cost():
     """LLM call siempre registra coste en ledger."""
     ledger = BudgetLedger()
     ledger.initialize_budget("CASE_001", budget_usd=10.0)
-
+    
     policy = LLMCallPolicy()
     semantic_cache = SemanticCache()
-
+    
     mock_llm = Mock(return_value=("Response", 100, 50))
-
+    
     result = run_llm_call(
         case_id="CASE_001",
         phase="llm_explain",
@@ -316,7 +317,7 @@ def test_run_llm_call_records_cost():
         ledger=ledger,
         semantic_cache=semantic_cache,
     )
-
+    
     # Verificar ledger
     entries = ledger.get_entries(case_id="CASE_001")
     assert len(entries) == 1
@@ -331,7 +332,6 @@ def test_run_llm_call_records_cost():
 # TEST 4: COHERENCE GATES
 # ============================
 
-
 def test_verify_cost_coherence_ok():
     """verify_cost_coherence OK si hay entrada en ledger."""
     ledger = BudgetLedger()
@@ -344,7 +344,7 @@ def test_verify_cost_coherence_ok():
         output_tokens=0,
         cost_usd=0.00002,
     )
-
+    
     # No debe lanzar excepción
     assert verify_cost_coherence(cost_usd=0.00002, case_id="CASE_001", ledger=ledger)
 
@@ -352,7 +352,7 @@ def test_verify_cost_coherence_ok():
 def test_verify_cost_coherence_fails_without_ledger_entry():
     """GATE: cost_usd > 0 sin BudgetEntry → FinOpsBypassError."""
     ledger = BudgetLedger()
-
+    
     with pytest.raises(FinOpsBypassError, match="FINOPS_BYPASS"):
         verify_cost_coherence(cost_usd=1.0, case_id="CASE_001", ledger=ledger)
 
@@ -370,7 +370,7 @@ def test_verify_trace_coherence_ok():
         cost_usd=0.00002,
         trace_id="trace_001",
     )
-
+    
     # No debe lanzar excepción
     assert verify_trace_coherence(ledger=ledger)
 
@@ -388,7 +388,7 @@ def test_verify_trace_coherence_fails_without_trace_id():
         cost_usd=0.00002,
         trace_id=None,  # SIN trace_id
     )
-
+    
     with pytest.raises(FinOpsBypassError, match="sin trace_id"):
         verify_trace_coherence(ledger=ledger)
 
@@ -424,3 +424,4 @@ INVARIANTES CERTIFICADOS:
 - INVARIANTE 7: cost_usd > 0 sin BudgetEntry → FinOpsBypassError
 - INVARIANTE 8: Ledger sin trace_id → FinOpsBypassError
 """
+

@@ -5,26 +5,25 @@ OBJETIVO: Validar que el sistema NO RESPONDE sin evidencia suficiente.
 
 PRINCIPIO: FAIL HARD - Sin evidencia verificable, sin respuesta.
 """
+import pytest
 from datetime import datetime
 
-import pytest
-
 from app.rag.evidence import (
-    MIN_AVG_SIMILARITY,
-    MIN_CHUNKS_REQUIRED,
-    RETRIEVAL_VERSION,
     DocumentChunkEvidence,
-    NoResponseReasonCode,
     RetrievalEvidence,
-    apply_evidence_gates,
+    NoResponseReasonCode,
     build_retrieval_evidence,
+    apply_evidence_gates,
     validate_chunk_evidence,
+    MIN_CHUNKS_REQUIRED,
+    MIN_AVG_SIMILARITY,
+    RETRIEVAL_VERSION,
 )
+
 
 # ============================
 # TEST 1: VALIDACIÓN DE CHUNKS
 # ============================
-
 
 def test_validate_chunk_evidence_valid():
     """Chunk con metadata completa es válido."""
@@ -39,9 +38,9 @@ def test_validate_chunk_evidence_valid():
         "end_char": 100,
         "filename": "documento.pdf",
     }
-
+    
     result = validate_chunk_evidence(chunk_data)
-
+    
     assert result is not None
     assert result.chunk_id == "chunk_001"
     assert result.document_id == "doc_001"
@@ -56,16 +55,15 @@ def test_validate_chunk_evidence_missing_required_field():
         "content": "Texto",
         "similarity_score": 0.85,
     }
-
+    
     result = validate_chunk_evidence(chunk_data)
-
+    
     assert result is None
 
 
 # ============================
 # TEST 2: BUILD EVIDENCE
 # ============================
-
 
 def test_build_retrieval_evidence_valid_chunks():
     """Construir evidencia desde chunks válidos."""
@@ -89,9 +87,9 @@ def test_build_retrieval_evidence_valid_chunks():
             "similarity_score": 0.7,
         },
     ]
-
+    
     evidence = build_retrieval_evidence(chunks)
-
+    
     assert evidence.total_chunks == 3
     assert evidence.valid_chunks == 3
     assert evidence.min_similarity == 0.7
@@ -122,9 +120,9 @@ def test_build_retrieval_evidence_mixed_valid_invalid():
             "similarity_score": 0.7,
         },
     ]
-
+    
     evidence = build_retrieval_evidence(chunks)
-
+    
     assert evidence.total_chunks == 3
     assert evidence.valid_chunks == 2  # Solo 2 válidos
     assert evidence.min_similarity == 0.7
@@ -134,9 +132,9 @@ def test_build_retrieval_evidence_mixed_valid_invalid():
 def test_build_retrieval_evidence_empty():
     """Construir evidencia sin chunks."""
     chunks = []
-
+    
     evidence = build_retrieval_evidence(chunks)
-
+    
     assert evidence.total_chunks == 0
     assert evidence.valid_chunks == 0
     assert evidence.min_similarity == 0.0
@@ -147,7 +145,6 @@ def test_build_retrieval_evidence_empty():
 # ============================
 # TEST 3: GATES BLOQUEANTES
 # ============================
-
 
 def test_gate_no_chunks_returns_evidence_missing():
     """GATE 1: total_chunks == 0 → EVIDENCE_MISSING."""
@@ -161,9 +158,9 @@ def test_gate_no_chunks_returns_evidence_missing():
         retrieval_version=RETRIEVAL_VERSION,
         timestamp=datetime.now(),
     )
-
+    
     reason_code = apply_evidence_gates(evidence)
-
+    
     assert reason_code == NoResponseReasonCode.EVIDENCE_MISSING
 
 
@@ -187,9 +184,9 @@ def test_gate_insufficient_chunks_returns_evidence_insufficient():
         retrieval_version=RETRIEVAL_VERSION,
         timestamp=datetime.now(),
     )
-
+    
     reason_code = apply_evidence_gates(evidence)
-
+    
     assert reason_code == NoResponseReasonCode.EVIDENCE_INSUFFICIENT
 
 
@@ -218,9 +215,9 @@ def test_gate_weak_similarity_returns_evidence_weak():
         retrieval_version=RETRIEVAL_VERSION,
         timestamp=datetime.now(),
     )
-
+    
     reason_code = apply_evidence_gates(evidence)
-
+    
     assert reason_code == NoResponseReasonCode.EVIDENCE_WEAK
 
 
@@ -255,16 +252,15 @@ def test_gates_pass_with_sufficient_evidence():
         retrieval_version=RETRIEVAL_VERSION,
         timestamp=datetime.now(),
     )
-
+    
     reason_code = apply_evidence_gates(evidence)
-
+    
     assert reason_code is None  # Pasa todos los gates
 
 
 # ============================
 # TEST 4: MÉTODO is_sufficient
 # ============================
-
 
 def test_is_sufficient_true_with_valid_evidence():
     """Evidencia válida retorna is_sufficient=True."""
@@ -291,7 +287,7 @@ def test_is_sufficient_true_with_valid_evidence():
         retrieval_version=RETRIEVAL_VERSION,
         timestamp=datetime.now(),
     )
-
+    
     assert evidence.is_sufficient() is True
 
 
@@ -314,7 +310,7 @@ def test_is_sufficient_false_with_insufficient_chunks():
         retrieval_version=RETRIEVAL_VERSION,
         timestamp=datetime.now(),
     )
-
+    
     assert evidence.is_sufficient() is False
 
 
@@ -343,7 +339,7 @@ def test_is_sufficient_false_with_weak_similarity():
         retrieval_version=RETRIEVAL_VERSION,
         timestamp=datetime.now(),
     )
-
+    
     assert evidence.is_sufficient() is False
 
 
@@ -351,12 +347,11 @@ def test_is_sufficient_false_with_weak_similarity():
 # TEST 5: INVARIANTES CERTIFICADOS
 # ============================
 
-
 def test_cert_invariante_sin_chunks_no_responde():
     """[CERT] INVARIANTE: Sin chunks (total_chunks=0) → NO_RESPONSE."""
     evidence = build_retrieval_evidence([])
     reason_code = apply_evidence_gates(evidence)
-
+    
     assert evidence.total_chunks == 0
     assert reason_code == NoResponseReasonCode.EVIDENCE_MISSING
 
@@ -371,10 +366,10 @@ def test_cert_invariante_chunks_insuficientes_no_responde():
             "similarity_score": 0.9,
         }
     ]
-
+    
     evidence = build_retrieval_evidence(chunks)
     reason_code = apply_evidence_gates(evidence)
-
+    
     assert evidence.valid_chunks < MIN_CHUNKS_REQUIRED
     assert reason_code == NoResponseReasonCode.EVIDENCE_INSUFFICIENT
 
@@ -395,10 +390,10 @@ def test_cert_invariante_similitud_debil_no_responde():
             "similarity_score": 0.3,
         },
     ]
-
+    
     evidence = build_retrieval_evidence(chunks)
     reason_code = apply_evidence_gates(evidence)
-
+    
     assert evidence.avg_similarity < MIN_AVG_SIMILARITY
     assert reason_code == NoResponseReasonCode.EVIDENCE_WEAK
 
@@ -419,10 +414,10 @@ def test_cert_invariante_evidencia_valida_permite_continuar():
             "similarity_score": 0.7,
         },
     ]
-
+    
     evidence = build_retrieval_evidence(chunks)
     reason_code = apply_evidence_gates(evidence)
-
+    
     assert evidence.valid_chunks >= MIN_CHUNKS_REQUIRED
     assert evidence.avg_similarity >= MIN_AVG_SIMILARITY
     assert reason_code is None  # Permite continuar
@@ -444,9 +439,9 @@ def test_cert_invariante_metadata_obligatoria():
             "similarity_score": 0.8,
         },
     ]
-
+    
     evidence = build_retrieval_evidence(chunks)
-
+    
     # Metadata obligatoria
     assert evidence.total_chunks is not None
     assert evidence.valid_chunks is not None
@@ -462,11 +457,10 @@ def test_cert_invariante_metadata_obligatoria():
 # TEST 6: INTEGRACIÓN CON PIPELINE
 # ============================
 
-
 def test_llm_not_called_when_no_response(monkeypatch):
     """LLM NO debe llamarse cuando hay NO_RESPONSE por evidencia insuficiente."""
-    from unittest.mock import MagicMock, Mock
-
+    from unittest.mock import Mock, MagicMock
+    
     # Mock del RAG que retorna evidencia insuficiente
     mock_rag_result = MagicMock()
     mock_rag_result.status = "NO_RELEVANT_CONTEXT"
@@ -483,10 +477,10 @@ def test_llm_not_called_when_no_response(monkeypatch):
         timestamp=datetime.now(),
     )
     mock_rag_result.no_response_reason = NoResponseReasonCode.EVIDENCE_MISSING
-
+    
     # Mock del LLM (NO debe llamarse)
     mock_llm = Mock()
-
+    
     # Verificar que si el flujo respeta NO_RESPONSE, el LLM no se llama
     if mock_rag_result.no_response_reason:
         # Pipeline debe bloquearse aquí, NO llamar al LLM
@@ -494,15 +488,15 @@ def test_llm_not_called_when_no_response(monkeypatch):
     else:
         # Solo si NO hay reason_code, llamar al LLM
         mock_llm.generate(context=mock_rag_result.context_text)
-
+    
     # Verificar que el LLM NO fue llamado
     mock_llm.generate.assert_not_called()
 
 
 def test_valid_evidence_allows_pipeline_continue():
     """Evidencia válida permite que el pipeline continúe (LLM puede llamarse)."""
-    from unittest.mock import MagicMock, Mock
-
+    from unittest.mock import Mock, MagicMock
+    
     # Mock del RAG que retorna evidencia VÁLIDA
     mock_rag_result = MagicMock()
     mock_rag_result.status = "OK"
@@ -535,10 +529,10 @@ def test_valid_evidence_allows_pipeline_continue():
         timestamp=datetime.now(),
     )
     mock_rag_result.no_response_reason = None  # Sin bloqueo
-
+    
     # Mock del LLM
     mock_llm = Mock()
-
+    
     # Verificar que si NO hay reason_code, el LLM SÍ puede llamarse
     if mock_rag_result.no_response_reason:
         # NO llamar al LLM
@@ -546,7 +540,7 @@ def test_valid_evidence_allows_pipeline_continue():
     else:
         # SÍ llamar al LLM (evidencia válida)
         mock_llm.generate(context=mock_rag_result.context_text)
-
+    
     # Verificar que el LLM SÍ fue llamado
     mock_llm.generate.assert_called_once()
 
@@ -574,3 +568,4 @@ INVARIANTES CERTIFICADOS:
 - INVARIANTE 5: Metadata obligatoria SIEMPRE presente
 - INVARIANTE 6: LLM NO se llama cuando no_response_reason != None
 """
+

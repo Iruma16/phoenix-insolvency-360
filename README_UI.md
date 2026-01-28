@@ -15,11 +15,7 @@ pip install -r requirements.txt
 ### 2. Iniciar interfaz web
 
 ```bash
-# 1) Iniciar API (en otra terminal)
-uvicorn app.main:app --reload --port 8000
-
-# 2) Iniciar UI
-streamlit run app/ui/streamlit_mvp.py
+streamlit run app/ui/streamlit_app.py
 ```
 
 La interfaz se abrirá automáticamente en http://localhost:8501
@@ -109,7 +105,7 @@ Para funcionalidades avanzadas, usar la API REST (ver `README_API.md`).
 ### Puerto 8501 en uso
 
 ```bash
-streamlit run app/ui/streamlit_mvp.py --server.port 8502
+streamlit run app/ui/streamlit_app.py --server.port 8502
 ```
 
 ### Error "Module not found"

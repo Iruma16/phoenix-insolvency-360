@@ -1,5 +1,4 @@
 from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from app.core.database import get_session
@@ -26,7 +25,7 @@ def upsert_fact_with_evidence(
     """
     Crea o reutiliza un Fact (deduplicado por fingerprint) y añade evidencia.
     Devuelve fact_id.
-
+    
     Args:
         session: Sesión de base de datos opcional. Si no se proporciona,
                 se crea una nueva sesión.
@@ -93,7 +92,9 @@ def _upsert_fact_in_session(
 ) -> str:
     """Lógica interna de upsert usando una sesión existente."""
     existing = (
-        session.query(Fact).filter(Fact.case_id == case_id, Fact.fingerprint == fingerprint).first()
+        session.query(Fact)
+        .filter(Fact.case_id == case_id, Fact.fingerprint == fingerprint)
+        .first()
     )
 
     if existing:

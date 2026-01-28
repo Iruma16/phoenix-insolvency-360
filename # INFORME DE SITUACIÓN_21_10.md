@@ -50,9 +50,9 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 
 ---
 
-### 1.2 Detección de Duplicados ✅ **95% PRODUCTION-GRADE**
+### 1.2 Detección de Duplicados 🟡 **80% IMPLEMENTADO**
 
-**Estado**: **Sistema blindado con lock optimista, cascade invalidation y auditoría completa**
+**Estado**: **Backend completo, falta UI de gestión**
 
 #### 1.2.1 Duplicados Exactos ✅ **100%**
 - ✅ Cálculo de hash de contenido (SHA-256)
@@ -60,56 +60,31 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 - ✅ Notificación de duplicados exactos
 - ✅ Campos en BD (`is_duplicate`, `duplicate_action`)
 - ✅ API endpoint `/check-duplicates`
-- ✅ Hash canónico determinista
 
 #### 1.2.2 Duplicados Semánticos ✅ **100%**
 - ✅ Comparación de embeddings entre documentos
 - ✅ Umbral de similitud configurable (> 0.95)
 - ✅ Función `find_semantic_duplicates()` implementada
 - ✅ Detección automática en ingesta
-- ✅ Metadata explicable (method, model, threshold)
 
-#### 1.2.3 Gestión de Duplicados ✅ **95% PRODUCTION-GRADE**
-**Backend blindado:**
-- ✅ Tabla `DuplicatePair` persistente con ID canónico (hash determinista)
-- ✅ Lock optimista (`decision_version`) para concurrencia
-- ✅ Auditoría append-only (`DuplicateDecisionAudit`) inmutable
-- ✅ Soft-delete con snapshots para rollback
-- ✅ Invalidación en cascada automática (si A-B y B-C, excluir B invalida ambos pares)
-- ✅ Validaciones backend soberanas (`duplicate_validation.py`)
-- ✅ Simulación de batch actions antes de aplicar
-- ✅ Response con `decision_version` para siguiente operación
-- ✅ Endpoints: `/duplicate-action`, `/duplicates`, `/simulate-batch`, `/exclude`
-
-**UI Streamlit:**
-- ✅ Vista completa de pares de duplicados
-- ✅ Comparativa lado a lado con preview contextual
-- ✅ Filtros: Todos/Pendientes/Resueltos
-- ✅ Decisión individual con auditoría
-- ✅ Batch actions con simulación obligatoria
-- ✅ Manejo de conflictos 409 (concurrent modification)
-- ✅ Warnings de preview no representativo
-
-**Tests:**
-- ✅ 13/14 tests passing (93%)
-- ✅ Cobertura: determinismo, lock, cascade, audit
-
-**Pendiente (5%):**
-- ⏳ UUID reproducible entre PDF/Word (mejora futura)
-- ⏳ 1 test de warnings (fallo menor no crítico)
+#### 1.2.3 Gestión de Duplicados ✅ **70%**
+- ✅ Endpoint `/{document_id}/duplicate-action` para resolver
+- ✅ Acciones: `keep_both`, `mark_duplicate`, `exclude_from_analysis`
+- ✅ Auditoría completa (who, when, why)
+- ❌ **Falta**: UI en Streamlit para revisión visual
+- ❌ **Falta**: Vista comparativa lado a lado
 
 **Esfuerzo pendiente**: 2-3 días (solo UI)
 
 ---
 
-### 1.3 Chunking con Location ✅ **100%**
+### 1.3 Chunking con Location ✅ **90%**
 
-**Estado**: **Implementado y completo**
+**Estado**: **Implementado y robusto**
 
 **Archivos clave**:
 - `app/services/chunker.py`: Chunking semántico con offsets
 - `app/models/document_chunk.py`: Modelo de chunks con ubicación física
-- `app/services/document_chunk_pipeline.py`: Pipeline de creación de chunks
 
 **Funcionalidades**:
 - ✅ Chunking por ventanas deslizantes (tamaño configurable)
@@ -117,27 +92,17 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 - ✅ Información de página (page_start, page_end)
 - ✅ Método de extracción rastreado (extraction_method)
 - ✅ Trazabilidad completa documento → chunk → texto
-- ✅ **Chunking semántico avanzado** (respeta límites de párrafos/secciones)
-- ✅ **Estrategias adaptativas** por tipo de documento (tabla vs texto)
-- ✅ **Overlap inteligente** que preserve contexto semántico completo
-- ✅ **Metadata enriquecida** por chunk (tipo: tabla/texto/lista)
 
 **Fortalezas**:
 - Preparado para múltiples métodos de extracción (pdf_text, excel_cell, ocr)
 - Soporte para documentos multipágina
 - Índice por chunk para reconstruir orden
-- Detección automática de tipo de contenido (tabla/lista/texto)
-- Corte en límites naturales (párrafos > líneas > frases > espacios)
-- Overlap adaptativo según límites semánticos
-- Estrategias específicas para tablas (mayor tamaño, sin overlap)
 
-**Implementación reciente (2026-01-12)**:
-- Nueva función `_find_best_split_point()`: Busca puntos de corte en límites naturales
-- Nueva función `_get_semantic_overlap()`: Ajusta overlap respetando contexto
-- Nueva función `_detect_content_type()`: Detecta tabla/lista/texto automáticamente
-- Estrategias para Excel/XLSX con chunks más grandes y sin overlap
-- Campo `content_type` añadido a modelo y pipeline
-- Migración DB: `20260112_1430_ef83ab6c54d1_add_content_type_to_chunks.py`
+**Lo que falta (10% - optimizaciones no críticas)**:
+- ⚠️ Chunking semántico avanzado (respetar límites de párrafos/secciones)
+- ⚠️ Estrategias adaptativas por tipo de documento (tabla vs texto)
+- ⚠️ Overlap inteligente que preserve contexto semántico completo
+- ⚠️ Metadata enriquecida por chunk (tipo: tabla/texto/lista)
 
 ---
 
@@ -366,169 +331,70 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 
 ---
 
-### 1.9 Generación de Informe PDF ✅ **100%** (Production-Grade)
+### 1.9 Generación de Informe PDF ✅ **70%**
 
-**Estado**: **Implementado, corregido y production-ready**
+**Estado**: **Implementado y funcional**
 
 **Archivos clave**:
-- `app/reports/pdf_report.py`: Generador con todas las correcciones críticas
-- `app/reports/report_utils.py`: ReportGenerator con degradación STRICT/LENIENT
+- `app/reports/pdf_report.py`: Generador de PDFs con ReportLab
+- `app/reports/report_generator.py`: Orquestador de informes
 - `app/api/pdf_report.py`: Endpoint de generación
 
-**Funcionalidades core (100%)**:
+**Funcionalidades**:
 - ✅ Portada con datos del caso
 - ✅ Resumen ejecutivo
 - ✅ Hallazgos con evidencia
-- ✅ Timeline de eventos con normalización de datos
-- ✅ Citas con ubicación física (página + offset + chunk_id)
+- ✅ **Timeline de eventos (mejorado con Fase B2)**
+- ✅ Citas con ubicación física (página + offset)
 - ✅ Marca de agua "BORRADOR TÉCNICO"
-- ✅ Disclaimer legal
+- ✅ Disclaimer legal en cada página
 
-**Mejoras implementadas (2026-01-12)**:
-- ✅ **Numeración páginas correcta** ("Página X de Y" con doble pasada)
-- ✅ **Tablas profesionales** (filas alternadas, bordes, colores corporativos)
-- ✅ **Índice automático** con bookmarks PDF para navegación
-- ✅ **Gráficos matplotlib** (distribución riesgos + timeline) con memory leak fix
-- ✅ **Exportación a Word** (.docx) con trazabilidad legal completa
-- ✅ **Anexos automatizados** con bookmarks correctos por página
-- ✅ **Resumen GPT-4** opcional con integración FinOps completa
-- ✅ **ReportManifest** para auditoría legal (IDs, hashes, versiones)
-- ✅ **Modo STRICT/LENIENT** con degradación elegante
+**Mejoras recientes**:
+- ✅ Visualización HTML de timeline para PDFs (Fase B2)
+- ✅ Sección de patrones sospechosos detectados
+- ✅ Estadísticas de timeline incluidas
 
-**Correcciones críticas aplicadas**:
-- ✅ Numeración de páginas: doble pasada ReportLab correcta
-- ✅ Matplotlib: backend Agg + plt.close() obligatorio (sin memory leaks)
-- ✅ Timeline: normalización de fechas + orden + deduplicación
-- ✅ Word: metadata de trazabilidad + chunk IDs + offsets completos
-- ✅ Anexos: bookmarks con página real (no índice)
-- ✅ GPT: budget check + BudgetEntry + telemetría + trace ID
-- ✅ Degradación: STRICT falla duro, LENIENT continúa con warnings
-- ✅ Auditoría: manifest con content hash + features tracking
+**Lo que falta (30% - mejoras de presentación)**:
+- ⚠️ Diseño profesional con plantilla corporativa (branding, colores)
+- ⚠️ Gráficos financieros avanzados (matplotlib/plotly: ratios, tendencias, estructura patrimonial)
+- ⚠️ Tablas con formato profesional (bordes, colores alternados)
+- ⚠️ Índice automático con navegación (bookmarks PDF)
+- ⚠️ Numeración de páginas con formato "Página X de Y"
+- ⚠️ Firma digital / sello electrónico
+- ⚠️ Exportación a Word (.docx) para edición
+- ⚠️ Anexos automatizados (documentos de evidencia)
+- ⚠️ Generación de resumen ejecutivo con GPT-4 (opcional)
 
-**Arquitectura de calidad**:
-- ✅ FinOps compliance total (budget enforcer integrado)
-- ✅ Telemetría con OpenTelemetry
-- ✅ Trazabilidad legal completa (chunk → evidencia → informe)
-- ✅ Manejo robusto de errores con degradación
-- ✅ Determinismo (DPI fijo, backend explícito)
-- ✅ Recursos liberados correctamente (finally blocks)
+**Nota**: Este 30% son **mejoras estéticas y de formato**. El contenido técnico es completo y trazable.
 
-**Lo que queda (5% - no crítico)**:
-- ⚠️ Bookmarks con callback `onLaterPages` (mejora UX, actual funciona)
-- ⚠️ Firma digital / s<ello electrónico (requiere certificados .p12/.pfx externos)
-- ⚠️ Tests unitarios (recomendado para regresión)
-
-**Dependencias añadidas**:
-- `matplotlib==3.8.2` (gráficos)
-- `PyPDF2==3.0.1` (anexos + metadata)
-- `python-docx==1.1.0` (ya existente)
-
-**Nivel de calidad**:
-- **Antes**: 🟡 Demo técnica (bugs silenciosos, memory leaks, sin trazabilidad)
-- **Ahora**: 🟢 **Production-grade legal** (STRICT mode, auditoría completa, FinOps)
-
-
+---
 
 ## ❌ 2. FUNCIONALIDADES PENDIENTES (LO QUE FALTA)
 
-### 2.1 UI Streamlit - Dashboards Avanzados 🟢 **95% implementado** ⬆️
+### 2.1 UI Streamlit - Dashboards Avanzados 🟡 **40% pendiente**
 
-**Estado actual**: 95% funcional (actualización: 13 enero 2026)
+**Estado actual**: 60% funcional (5 componentes básicos implementados)
 
-**Lo que YA existe y está COMPLETO**:
+**Lo que YA existe**:
 - ✅ `render_balance_block`: Visualización de balance
-- ✅ `render_timeline_block_backend`: **Timeline con backend paginado (NUEVO)** 
+- ✅ `render_timeline_block`: Timeline de eventos
 - ✅ `render_ratios_block`: Ratios financieros
 - ✅ `render_credits_block`: Clasificación de créditos
 - ✅ `render_insolvency_block`: Indicadores de insolvencia
-- ✅ **Dashboard de riesgos de culpabilidad (Tab 7)**: Score global, filtros, categorías, base legal
-- ✅ **Gestión visual de duplicados (Tab 6)**: Filtros, comparativa lado a lado, batch actions
-- ✅ **Vista comparativa de documentos**: Preview contextual con offsets, warnings
 
-**Mejoras críticas implementadas (13 enero 2026)**:
-- ✅ **Timeline escalable con backend**: Endpoint `/api/timeline/paginated` con filtros reales
-- ✅ **Paginación real en BD**: Query optimizada con índices
-- ✅ **Filtros dinámicos**: Por tipo, categoría, severidad, rango de fechas
-- ✅ **Estadísticas en tiempo real**: Contadores por tipo/categoría/severidad
+**Lo que FALTA**:
+- ❌ Dashboard visual de riesgos de culpabilidad (backend B3 al 85%)
+- ❌ Gestión visual de duplicados (backend al 80%)
+- ❌ Gráficos financieros interactivos avanzados
+- ❌ Vista comparativa de documentos duplicados
+- ❌ Timeline interactivo con filtros por categoría/severidad
+- ❌ Visualización de patrones sospechosos detectados
 
-**Lo que FALTA** (5%):
-- ⚠️ Posibles mejoras menores: animaciones, más opciones de drill-down (opcional)
-
-**Lo que se COMPLETÓ HOY (13 enero 2026)**:
-- ✅ **Vista detallada de evidencias**: Implementada con `render_alert_evidence_list()` - muestra documento, páginas, offsets, chunk IDs, contenido completo
-- ✅ **Gráficos Plotly avanzados**: Balance (3 tipos: Pie, Bar, Treemap), Ratios (con drill-down), Patrones (5 tipos de charts: Bar+Line, Pie, Heatmap, Scatter, Top 5)
-
-**Mejoras de calidad aplicadas**:
-- ✅ Manejo de conflictos de concurrencia (409)
-- ✅ Simulación de batch actions antes de aplicar
-- ✅ Nullsafety en todos los componentes críticos
-- ✅ Feedback visual de operaciones
-- ✅ Escalabilidad de timeline para casos con +10k eventos
-
-**Esfuerzo restante**: 1-2 días (solo detalles menores)
+**Esfuerzo estimado**: 5-7 días
 
 ---
 
-### 2.2 Arquitectura UI y Mantenibilidad ✅ **60% implementado** ⬆️
-
-**Estado**: **Refactorización avanzada - 13 enero 2026**
-
-**Problema identificado**:
-- `components.py` tenía ~1.572 líneas, difícil de mantener y testear
-- Código duplicado entre componentes
-- Imports circulares potenciales
-
-**Lo que YA se hizo**:
-- ✅ Creada estructura `app/ui/components_modules/`
-- ✅ Extraídos helpers comunes: `common.py` (get_field_value, get_confidence_emoji)
-- ✅ Extraído componente de evidencias: `evidence.py` (render_evidence_expander, render_alert_evidence_list)
-- ✅ Tests unitarios: `tests/ui/test_common_helpers.py` (2/2 pasando ✅)
-- ✅ **Eliminado código duplicado en `components.py`** (NUEVO)
-- ✅ **`components.py` ahora importa de módulos** en lugar de duplicar código (NUEVO)
-- ✅ **Reducción de tamaño**: 1572 → 1526 líneas (-46 líneas) (NUEVO)
-- ✅ **Fix de imports circulares** (NUEVO)
-
-**Lo que FALTA** (40%):
-- ⚠️ Migrar componentes grandes a módulos individuales (balance.py, ratios.py, etc.)
-- ⚠️ Más tests de integración para componentes UI
-- ⚠️ Modularizar `api_client.py` en clientes especializados
-
-**Prioridad**: 🟡 Media (no bloquea piloto, sí bloquea escalar equipo)
-
-**Esfuerzo restante**: 3-4 días (opcional, puede hacerse progresivamente)
-
----
-
-### 2.3 Trazabilidad Legal Completa ✅ **100% implementado** (NUEVO)
-
-**Estado**: **COMPLETADO - 13 enero 2026**
-
-**Problema resuelto**: Faltaba ID de ejecución específica para reproducibilidad legal
-
-**Lo que se implementó**:
-- ✅ **Modelo `AnalysisExecution`**: Tracking completo de cada run de análisis
-  - `run_id`: UUID único por ejecución
-  - `model_versions`: Versiones de LLMs/detectores usados
-  - `document_ids`: Documentos incluidos en el análisis
-  - `started_at`, `finished_at`, `status`
-  
-- ✅ **`pipeline_run_id` en `SuspiciousPattern`**: Cada patrón detectado está vinculado a un run específico
-- ✅ **`analysis_run_id` en `TimelineEvent`**: Cada evento del timeline está vinculado a un run específico
-- ✅ **Migración aplicada**: `20260113_0100_add_execution_tracking.py`
-
-**Beneficios legales**:
-- ✅ Reproducibilidad completa de auditorías
-- ✅ Explicación de divergencias entre runs
-- ✅ Trazabilidad modelo → detección → evidencia
-- ✅ Compliance con requisitos periciales
-
-**Prioridad**: 🟢 CRÍTICO (ahora resuelto)
-
-**Esfuerzo**: COMPLETADO
-
----
-
-### 2.4 Recomendación Automatizada 🔴 **0% (CRÍTICO)**
+### 2.2 Recomendación Automatizada 🔴 **0% (CRÍTICO)**
 
 **Estado**: **Completamente inexistente**
 
@@ -545,33 +411,24 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 
 ---
 
-### 2.5 Tests de Regresión 🟡 **95% completado** ⬆️
+### 2.3 Mejoras de Diseño PDF 🟡 **30% pendiente**
 
-**Estado actual**: 95% cobertura crítica (actualización: 13 enero 2026)
+**Estado actual**: 70% funcional (contenido completo, diseño básico)
 
-**Lo que YA existe**:
-- ✅ Tests de lock optimista (7 tests) - 100% pass
-- ✅ Tests de cascade (4 tests) - 75% pass (1 fallo menor no crítico)
-- ✅ Tests de auditoría (3 tests) - 100% pass
-- ✅ **Tests de UI helpers (2 tests) - 100% pass (NUEVO)**
-- ✅ Fixture db_session con SQLite in-memory
-- ✅ Cobertura: determinismo, concurrencia, invalidación, append-only
+**Lo que FALTA**:
+- ❌ Diseño profesional con plantilla corporativa
+- ❌ Gráficos matplotlib/plotly integrados
+- ❌ Índice con bookmarks navegables
+- ❌ Formato profesional de tablas
+- ❌ Firma digital / sello electrónico
 
-**Lo que FALTA** (5%):
-- ❌ Fix test warnings en cascade (fallo menor, no crítico)
-- ❌ Tests de integración API para timeline backend
-- ❌ Tests de propagación de `run_id`
-- ❌ Tests de PDF generation
-- ❌ Tests de Word export
-- ❌ Coverage report (pytest-cov)
-
-**Esfuerzo estimado**: 1-2 días
+**Esfuerzo estimado**: 3-4 días
 
 ---
 
-### 2.6 Optimizaciones Opcionales (No Bloqueantes)
+### 2.4 Optimizaciones Opcionales (No Bloqueantes)
 
-#### 2.6.1 RAG Avanzado (20% restante)
+#### 2.4.1 RAG Avanzado (20% restante)
 - ⚠️ Ground Truth dataset
 - ⚠️ Reranking con cross-encoder
 - ⚠️ Multi-tenant vectorstores
@@ -579,14 +436,14 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 
 **Esfuerzo estimado**: 4-5 días (opcional)
 
-#### 2.6.2 NER Avanzado para Vinculados
+#### 2.4.2 NER Avanzado para Vinculados
 - ⚠️ Entrenamiento personalizado con spaCy
 - ⚠️ Detección de relaciones entre entidades
 - ⚠️ Análisis de grafos (NetworkX)
 
 **Esfuerzo estimado**: 5-7 días (opcional)
 
-#### 2.6.3 Parser de Extractos Bancarios
+#### 2.4.3 Parser de Extractos Bancarios
 - ⚠️ Múltiples formatos bancarios españoles
 - ⚠️ Detección de flujos anómalos
 - ⚠️ Integración con detección de salida de recursos
@@ -597,55 +454,52 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 
 ## 📊 3. ANÁLISIS DE COMPLETITUD
 
-### Resumen por Bloque (Actualizado: 13 enero 2026)
+### Resumen por Bloque
 
 | Bloque | Completitud | Estado | Prioridad | Esfuerzo Pendiente |
 |--------|-------------|--------|-----------|-------------------|
 | **1.1 Ingesta Multi-formato** | 100% | ✅ **OPERATIVO** | - | **COMPLETADO** |
-| **1.2 Duplicados** | 95% | ✅ **PRODUCTION** | Baja | 1 día (UUID reproducible) |
+| **1.2 Duplicados (Backend)** | 80% | ✅ **OPERATIVO** | Baja | 2-3 días (solo UI) |
 | **1.3 Chunking** | 90% | ✅ Robusto | Baja | Optimizaciones opcionales |
 | **1.4 RAG** | 80% | ✅ Certificado | Baja | Optimizaciones opcionales |
 | **1.5 Fail-Fast** | 90% | ✅ Robusto | Baja | Optimizaciones opcionales |
 | **1.6 Análisis Financiero** | 100% | ✅ **FASE B1** | - | **COMPLETADO** |
-| **1.7 Timeline Backend** | **100%** ⬆️ | ✅ **ESCALABLE** | - | **COMPLETADO** |
-| **1.8 Trazabilidad Legal** | **100%** 🆕 | ✅ **RUN-IDS** | - | **COMPLETADO** |
-| **1.9 Riesgos Culpabilidad** | 85% | ✅ **FASE B3** | Media | 3-4 días (NER opcional) |
-| **1.10 Informe PDF/Word** | 98% | ✅ **PRODUCTION** | - | Firma digital (opcional) |
-| **2.1 UI Streamlit** | **95%** ⬆️ | ✅ **COMPLETO** | Baja | 1 día (mejoras opcionales) |
-| **2.2 Modularización UI** | **60%** ⬆️ | ✅ Avanzada | Media | 3-4 días (opcional) |
-| **2.3 Recomendación** | 0% | 🔴 Inexistente | **Crítica** | 6-8 días |
-| **2.4 Tests** | **95%** ⬆️ | ✅ Funcional | Baja | 1-2 días |
+| **1.7 Timeline Completo** | 100% | ✅ **FASE B2** | - | **COMPLETADO** |
+| **1.8 Riesgos Culpabilidad** | 85% | ✅ **FASE B3** | Media | 3-4 días (NER opcional) |
+| **1.9 Informe PDF** | 70% | ✅ Funcional | Media | 3-4 días (diseño) |
+| **2.1 UI Streamlit** | 60% | 🟡 Funcional | **Alta** | 5-7 días |
+| **2.2 Recomendación** | 0% | 🔴 Inexistente | **Crítica** | 6-8 días |
+| **2.3 PDF Diseño** | 70% | 🟡 Básico | Media | 3-4 días |
 
-### Métricas Globales (Actualizado: 13 enero 2026)
+### Métricas Globales
 
-- **Completitud general PANTALLA 1**: **~92%** ⬆️ (antes: 88% → 91% → 92%)
-- **Funcionalidades operativas**: 12 de 14 bloques (86%)
-- **Funcionalidades parciales**: 1 de 14 bloques (7%)
-- **Funcionalidades inexistentes**: 1 de 14 bloques (7%)
-- **Tests automatizados**: **15/16 passing (94%)** ⬆️
+- **Completitud general PANTALLA 1**: **~80%**
+- **Funcionalidades operativas**: 9 de 12 bloques (75%)
+- **Funcionalidades parciales**: 2 de 12 bloques (17%)
+- **Funcionalidades inexistentes**: 1 de 12 bloques (8%)
 
-### Hallazgos Clave de la Sesión (13 enero 2026)
+### Hallazgos Clave de la Auditoría
 
-✅ **MEJORAS CRÍTICAS IMPLEMENTADAS**:
-1. **Timeline 100% escalable**: Modelo persistente + API backend + paginación real
-2. **Trazabilidad legal completa**: `AnalysisExecution` + `run_id`s en patrones y eventos
-3. **Vista de evidencias completa**: `render_alert_evidence_list()` con trazabilidad legal total
-4. **Modularización UI avanzada**: Código duplicado eliminado, imports circulares fix, -46 líneas
-5. **Reproducibilidad pericial**: Cada detección vinculada a ejecución específica con versiones
-6. **Gráficos avanzados confirmados**: Balance (3 tipos), Ratios (drill-down), Patrones (5 charts)
+✅ **CONFIRMACIONES CRÍTICAS**:
+1. **Ingesta 100% completa**: PDF, Excel, Word, Email, OCR → `ingesta.py` líneas 703-750
+2. **Parsers especializados 100% integrados**:
+   - Facturas: `is_likely_invoice()` → líneas 204, 282
+   - Financieros: `is_financial_statement()` → líneas 196, 274
+   - Legales: `is_legal_document()` → líneas 212, 290
+3. **Duplicados 80% backend**: Hash + similitud → `documents.py` líneas 532-595
+4. **UI Streamlit 60% funcional**: 5 componentes → `components.py` + `streamlit_mvp.py`
+5. **Fases B1/B2/B3 completadas**: Backend al 95-100%, solo faltan dashboards UI
 
-🟡 **PENDIENTE NO CRÍTICO**:
-1. Continuar modularización de `components.py` (3-4 días, opcional)
-2. Tests de integración de nuevos endpoints (1-2 días)
-
-🔴 **BLOQUEANTE REAL**:
-1. Recomendación automatizada (0% - 6-8 días)
+❌ **REALMENTE FALTANTE**:
+1. UI Streamlit: Dashboards avanzados (backend completo, falta visualización)
+2. Recomendación automatizada (0% - componente completamente nuevo)
+3. Mejoras de diseño PDF (contenido completo, falta estética profesional)
 
 ---
 
 ## ✅ 4. FORTALEZAS DEL SISTEMA
 
-### Arquitectura Backend (95% completa) ⬆️
+### Arquitectura Backend (90-95% completa)
 
 1. ✅ **Ingesta multi-formato 100% operativa**:
    - PDF + OCR fallback automático ✅
@@ -662,64 +516,40 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
    - Extracción estructurada de tablas Excel ✅
    - Tests E2E pasados (3/3) ✅
 
-3. ✅ **Timeline completo y escalable (Fase B2) 100%** ⬆️:
+3. ✅ **Timeline completo (Fase B2) 100%**:
    - 15+ tipos de eventos con clasificación automática ✅
-   - **Backend paginado con filtros reales** ✅ 🆕
-   - **Query optimizada con índices** ✅ 🆕
-   - **Modelo persistente `TimelineEvent`** ✅ 🆕
    - 4 patrones sospechosos detectados ✅
    - Análisis estadístico completo ✅
    - Tests E2E pasados (6/6) ✅
 
-4. ✅ **Trazabilidad legal enterprise-grade** 🆕:
-   - **Modelo `AnalysisExecution` para tracking de runs** ✅
-   - **`pipeline_run_id` en patrones sospechosos** ✅
-   - **`analysis_run_id` en eventos de timeline** ✅
-   - Reproducibilidad completa de auditorías ✅
-   - Explicación de divergencias entre ejecuciones ✅
-
-5. ✅ **Detección de culpabilidad (Fase B3) 85%**:
+4. ✅ **Detección de culpabilidad (Fase B3) 85%**:
    - Alzamiento de bienes 80% ✅
    - Pagos preferentes 70% ✅
    - Irregularidades contables 100% ✅
    - Solo falta: NER avanzado para vinculados (opcional) ⚠️
 
-6. ✅ **Duplicados backend production-grade 95%**:
+5. ✅ **Duplicados backend 80%**:
    - Hash SHA-256 para duplicados exactos ✅
    - Similitud semántica (embeddings > 0.95) ✅
-   - Lock optimista + cascade invalidation ✅
-   - Auditoría append-only ✅
-   - Endpoints funcionando con manejo 409 ✅
+   - Endpoints `/check-duplicates` funcionando ✅
+   - Gestión de acciones (`keep_both`, `mark_duplicate`) ✅
 
-7. ✅ **RAG certificado con trazabilidad legal**:
+6. ✅ **RAG certificado con trazabilidad legal**:
    - 7 tests de invariantes ✅
    - Guardián anti-alucinación ✅
    - Evidencia probatoria completa ✅
 
-8. ✅ **UI modularizada en progreso** 🆕:
-   - Estructura `components_modules/` creada ✅
-   - Helpers extraídos y testeados ✅
-   - Base para escalabilidad de equipo ✅
-
 ---
 
-## 🎯 5. ROADMAP Y PRIORIDADES (Actualizado: 13 enero 2026)
+## 🎯 5. ROADMAP Y PRIORIDADES
 
-### 🟢 COMPLETADO en esta sesión (13 enero)
-- ✅ Timeline backend escalable (3 días → HECHO)
-- ✅ Trazabilidad legal con run IDs (2 días → HECHO)
-- ✅ **Vista detallada de evidencias** (1 hora → HECHO) 🆕
-- ✅ **Modularización UI avanzada** (2 horas → HECHO) 🆕
-  - Código duplicado eliminado
-  - Imports circulares fix
-  - Reducción de 46 líneas
-- ✅ Tests de UI helpers (0.5 días → HECHO)
+### Para MVP 95% Completo (3-4 semanas)
 
-### 🟡 Para MVP 95% Completo (1-2 semanas)
-
-**Semana 1: Continuar Modularización UI (opcional)** (3-4 días)
-- Migrar componentes grandes a módulos individuales
-- Más tests unitarios por módulo
+**Semana 1: UI Streamlit Dashboards** (5-7 días)
+- Dashboard de riesgos de culpabilidad
+- Gestión visual de duplicados
+- Gráficos financieros interactivos
+- Timeline interactivo con filtros
 
 **Semana 2-3: Recomendación Automatizada** (6-8 días)
 - Árbol de decisión TRLC
@@ -727,13 +557,13 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 - UI de presentación
 - Sistema de justificación legal
 
-**Semana 3: Testing Final** (2-3 días)
-- Tests de integración de timeline backend
-- Tests de propagación de run_ids
-- Coverage report completo
-- Fix de warnings pendientes
+**Semana 4: PDF Profesional + Testing** (3-4 días)
+- Diseño corporativo
+- Gráficos matplotlib integrados
+- Índice navegable
+- Testing E2E completo
 
-### 🔵 Para Production-Ready 100% (+1-2 semanas opcional)
+### Para Production-Ready 100% (+1-2 semanas opcional)
 
 **Optimizaciones Avanzadas**:
 - NER avanzado para vinculados (5-7 días)
@@ -745,70 +575,42 @@ Este informe evalúa el estado actual de la **PANTALLA 1: Ingesta Masiva + Anál
 
 ## 📌 6. RECOMENDACIÓN ESTRATÉGICA
 
-### Evaluación por Capas (Actualizado: 13 enero 2026)
+### Evaluación por Capas
 
-| Capa | Completitud | Estado | Cambio |
-|------|-------------|--------|--------|
-| **Backend Core** | **95%** ⬆️ | ✅ Casi completo | +5% |
-| **Parsers e Ingesta** | 100% | ✅ Completo | - |
-| **Análisis (B1/B2/B3)** | **100%** ⬆️ | ✅ **COMPLETO** | +5% |
-| **Trazabilidad Legal** | **100%** 🆕 | ✅ **COMPLETO** | +100% |
-| **API Endpoints** | **90%** ⬆️ | ✅ Funcional | +5% |
-| **UI Streamlit** | **95%** ⬆️ | ✅ **COMPLETO** | +25% |
-| **Arquitectura UI** | **60%** ⬆️ | ✅ Avanzada | +60% |
-| **Recomendación** | 0% | 🔴 Falta | - |
+| Capa | Completitud | Estado |
+|------|-------------|--------|
+| **Backend Core** | 90-95% | ✅ Casi completo |
+| **Parsers e Ingesta** | 100% | ✅ Completo |
+| **Análisis (B1/B2/B3)** | 95% | ✅ Casi completo |
+| **API Endpoints** | 85% | ✅ Funcional |
+| **UI Streamlit** | 60% | 🟡 Mejorable |
+| **Recomendación** | 0% | 🔴 Falta |
 
-### Estado Legal / Pericial (Actualizado)
+### Decisión Estratégica
 
-| Área | Estado | Justificación |
-|------|--------|---------------|
-| **Legal / pericial** | 🟢 **APTO** | ✅ Trazabilidad completa con run IDs |
-| **Backend escalabilidad** | 🟢 **APTO** | ✅ Timeline paginado, queries optimizadas |
-| **Reproducibilidad** | 🟢 **APTO** | ✅ AnalysisExecution + run_id en todo |
-| **UI funcional** | 🟢 **APTO** | ✅ Todas las pantallas operativas |
-| **Mantenibilidad UI** | 🟢 **Buena** | ✅ Modularización al 60%, código limpio |
-| **Entrada de más devs** | 🟢 **Bajo riesgo** | ✅ Estructura modular, tests, docs código |
-| **Producto vendible (piloto)** | 🟢 **SÍ** | ✅ 92% completitud, críticos resueltos |
-| **Producto enterprise** | 🟡 **Casi** | 🟡 Falta recomendación automatizada |
+**PANTALLA 1 tiene una base técnica EXCEPCIONAL (80% completitud real confirmada):**
 
-### Decisión Estratégica (Actualizada)
+- **Para demo técnica**: ✅ **Sistema actual es MUY robusto** (80%)
+- **Para MVP completo end-to-end**: 🟡 **3-4 semanas** para llegar al 95%
+- **Para 100% production-ready**: 🟡 **4-5 semanas** con todo el pulido
 
-**PANTALLA 1 tiene ahora base técnica EXCEPCIONAL (92% completitud real):**
+### Conclusión Final
 
-- **Para demo técnica**: ✅ **Sistema ROBUSTO y ESCALABLE** (92%)
-- **Para piloto con clientes**: ✅ **LISTO** (solo falta recomendación)
-- **Para MVP completo end-to-end**: 🟡 **1-2 semanas** para llegar al 95%
-- **Para 100% production-ready**: 🟡 **2-3 semanas** con pulido completo
-
-### Conclusión Final (13 enero 2026 - Actualización Final)
-
-El sistema alcanzó **92% de completitud** tras implementar en esta sesión:
-1. ✅ Timeline backend escalable (bloqueante crítico resuelto)
-2. ✅ Trazabilidad legal completa (requisito pericial cumplido)
-3. ✅ **Vista detallada de evidencias** (nueva funcionalidad)
-4. ✅ **Modularización UI avanzada** (60%, código limpio, tests)
-5. ✅ **Confirmación de gráficos avanzados** (ya existían, actualizados en informe)
-
-**Evolución de completitud**:
+El sistema está **significativamente más avanzado** de lo que los informes iniciales indicaban. La completitud pasó de:
 - 45% reportado inicialmente
 - → 65% tras Fases B1/B2/B3  
-- → 80% tras auditoría exhaustiva (10 enero)
-- → 91% tras refactorización crítica backend (13 enero)
-- → **92% tras completar UI y modularización (13 enero tarde)** ⬆️
+- → **80% real tras auditoría exhaustiva**
 
-**Bloqueantes críticos restantes**: 
-- 🔴 **Solo 1**: Recomendación automatizada (6-8 días)
-
-**El sistema está LISTO para piloto con clientes reales.**
+**Hallazgo clave**: Casi toda la lógica de negocio está implementada e integrada. Lo que falta son principalmente **interfaces visuales** y **un componente nuevo** (recomendación automatizada).
 
 ---
 
-**Fin del informe actualizado**
+**Fin del informe**
 
 ---
 
-_Generado: 10 de enero de 2026 | Actualizado: 13 de enero de 2026 (final)_  
-_Sistema: Phoenix Legal v2.0.0 (con Fases B1/B2/B3 + Refactorización Completa)_  
+_Generado: 10 de enero de 2026_  
+_Sistema: Phoenix Legal v2.0.0 (con Fases B1/B2/B3)_  
 _Autor: Análisis técnico automatizado + Auditoría exhaustiva de código_  
-_Completitud REAL: **92%** ⬆️ (80% → 91% → 92%)_  
-_Última actualización: Timeline backend + trazabilidad legal + vista evidencias + modularización UI (60%)_
+_Completitud REAL: 80% (corregida desde 45% → 65% → 80%)_  
+_Versión: Final corregida - Sin contradicciones_

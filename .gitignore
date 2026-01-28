@@ -1,50 +1,29 @@
 # --- SEGURIDAD (CRÍTICO) ---
 .env
 .env.*
-!.env.example
 *.key
 
-# --- CARPETAS GENERADAS / OUTPUTS (NO VERSIONAR) ---
-runs/
-artifacts/
-outputs/
-logs/
+# --- CARPETAS DE DATOS Y DOCUMENTACIÓN (PRIVADO) ---
+data/
+doc/
+reports/
+test/
 
-# --- DATOS (NO VERSIONAR) ---
-clients_data/**/cases/
-clients_data/**/_vectorstore/
-clients_data/**/_cache/
-clients_data/**/logs/
-clients_data/**/exports/
-clients_data/**/reports/
-clients_data/**/documents/original/
-clients_data/**/documents/processed/
-clients_data/default/
-clients_data/**/.DS_Store
+# --- DATOS RUNTIME DEL PROYECTO ---
+clients_data/_vectorstore/
+clients_data/cases/
+clients_data/logs/
 runtime/
-
-# Datos de demo grandes (NO versionar; usar solo `data/sample/`)
-data/demo_ready/
-data/casos_prueba/
-data/*.pdf
-data/*.docx
-data/*.xlsx
 
 # --- RESULTADOS DE TESTS ---
 tests/report_junit.xml
-tests/coverage.xml
-tests/coverage_html/
-tests/reports/
-.pytest_cache/
+tests/
 .coverage
 htmlcov/
 
 # --- ENTORNOS Y LIBRERÍAS ---
 venv/
 .venv/
-.ruff_cache/
-.mypy_cache/
-*.egg-info/
 __pycache__/
 *.pyc
 *.pyo

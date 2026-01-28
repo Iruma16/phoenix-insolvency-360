@@ -1,8 +1,24 @@
-from typing import Optional
-
-from fastapi import Depends, FastAPI
+from typing import Optional, List
+from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+from app.core.database import get_engine, get_db
+from app.rag.case_rag.rag import router as rag_router
+from app.api.documents import router as documents_router
+from app.api.reports import router as reports_router
+from app.api.v2_auditor import router as v2_auditor_router
+from app.api.v2_prosecutor import router as v2_prosecutor_router
+from app.api.cases import router as cases_router
+from app.api.chunks import router as chunks_router
+from app.api.analysis_alerts import router as analysis_alerts_router
+from app.api.legal_report import router as legal_report_router  # ✅ RE-HABILITADO (imports corregidos)
+from app.api.trace import router as trace_router
+from app.api.manifest import router as manifest_router
+from app.api.pdf_report import router as pdf_report_router
+from app.api.balance_concursal import router as balance_concursal_router
+from app.api.financial_analysis import router as financial_analysis_router
+from app.api.auth import router as auth_router
 
 # 👉 IMPORT DEL AGENTE 1 (AUDITOR)
 from app.agents.agent_1_auditor.runner import run_auditor
@@ -14,35 +30,14 @@ from app.agents.agent_2_prosecutor.runner import run_prosecutor_from_auditor
 from app.agents.agent_legal.runner import run_legal_agent
 
 # 👉 IMPORT DEL HANDOFF
-from app.agents.handoff import HandoffPayload
-from app.api.analysis_alerts import router as analysis_alerts_router
-from app.api.auth import router as auth_router
-from app.api.balance_concursal import router as balance_concursal_router
-from app.api.cases import router as cases_router
-from app.api.chunks import router as chunks_router
-from app.api.documents import router as documents_router
-from app.api.financial_analysis import router as financial_analysis_router
-from app.api.legal_report import (
-    router as legal_report_router,
-)
-from app.api.manifest import router as manifest_router
-from app.api.pdf_report import router as pdf_report_router
-from app.api.reports import router as reports_router
-from app.api.timeline import router as timeline_router  # ✅ NUEVO: Timeline paginado
+from app.agents.handoff import build_agent2_payload, HandoffPayload
 
-# ✅ RE-HABILITADO (imports corregidos)
-from app.api.trace import router as trace_router
-from app.api.v2_auditor import router as v2_auditor_router
-from app.api.v2_prosecutor import router as v2_prosecutor_router
-from app.core.database import get_db, get_engine
-from app.rag.case_rag.rag import router as rag_router
 
 # =========================================================
 # FASTAPI APP (ENTRYPOINT ASGI)
 # =========================================================
 
 app = FastAPI(title="Phoenix Insolvency")
-
 
 # Endpoint raíz
 @app.get("/")
@@ -60,17 +55,9 @@ def root():
             "legal_report": "/api/cases/{case_id}/legal-report",
             "trace": "/api/cases/{case_id}/trace",
             "manifest": "/api/cases/{case_id}/manifest",
-            "pdf_report": "/api/cases/{case_id}/legal-report/pdf",
-            "timeline": "/api/cases/{case_id}/timeline",
-        },
+            "pdf_report": "/api/cases/{case_id}/legal-report/pdf"
+        }
     }
-
-
-@app.get("/health")
-def health():
-    """Healthcheck simple para Docker/CI."""
-    return {"status": "healthy"}
-
 
 # Routers existentes
 app.include_router(rag_router)
@@ -94,9 +81,6 @@ app.include_router(balance_concursal_router, prefix="/api")
 # FASE 2B: Análisis Financiero Concursal
 app.include_router(financial_analysis_router, prefix="/api")
 
-# Timeline paginado (escalable)
-app.include_router(timeline_router, prefix="/api")  # ✅ NUEVO
-
 # Autenticación JWT
 app.include_router(auth_router, prefix="/api")
 
@@ -104,7 +88,6 @@ app.include_router(auth_router, prefix="/api")
 # =========================================================
 # MODELOS API – AGENTE AUDITOR
 # =========================================================
-
 
 class AuditorInput(BaseModel):
     case_id: str
@@ -115,13 +98,12 @@ class LegalAgentInput(BaseModel):
     case_id: str
     question: str
     auditor_summary: Optional[str] = None
-    auditor_risks: Optional[list[str]] = None
+    auditor_risks: Optional[List[str]] = None
 
 
 # =========================================================
 # ENDPOINT AGENTE 1 – AUDITOR
 # =========================================================
-
 
 @app.post("/auditor/run")
 def run_auditor_agent(
@@ -130,7 +112,7 @@ def run_auditor_agent(
 ):
     """
     Ejecuta el Agente Auditor con RAG interno.
-
+    
     El agente usa RAG para recuperar contexto del caso antes de realizar
     el análisis de auditoría.
     """
@@ -149,15 +131,14 @@ def run_auditor_agent(
 # ENDPOINT HANDOFF Y AGENTE 2
 # =========================================================
 
-
 @app.post("/prosecutor/run-from-auditor")
 def run_prosecutor_from_auditor_endpoint(payload: HandoffPayload):
     """
     Ejecuta el Agente Prosecutor a partir del resultado del Auditor (handoff).
-
+    
     Este endpoint recibe el payload del handoff del Auditor (validado con Pydantic)
     y ejecuta el Agente Prosecutor para realizar el análisis fiscal del caso.
-
+    
     El payload debe incluir:
     - case_id, question, summary, risks, next_actions (obligatorios)
     - auditor_fallback (bool, indica si el Auditor usó fallback)
@@ -173,7 +154,6 @@ def run_prosecutor_from_auditor_endpoint(payload: HandoffPayload):
 # ENDPOINT AGENTE LEGAL
 # =========================================================
 
-
 @app.post("/legal/analyze")
 def run_legal_agent_endpoint(
     payload: LegalAgentInput,
@@ -181,13 +161,13 @@ def run_legal_agent_endpoint(
 ):
     """
     Ejecuta el Agente Legal para analizar riesgos legales específicos.
-
+    
     El agente analiza el caso desde la perspectiva de un Administrador Concursal
     y Abogado Concursalista, basándose en:
     - Ley Concursal española
     - Jurisprudencia relevante
     - Evidencias del caso
-
+    
     El agente puede recibir contexto previo del Auditor (opcional).
     """
     result = run_legal_agent(
@@ -203,7 +183,6 @@ def run_legal_agent_endpoint(
 # =========================================================
 # MAIN CLÁSICO (solo para tests manuales)
 # =========================================================
-
 
 def main():
     """

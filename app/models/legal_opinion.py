@@ -4,9 +4,10 @@ Modelo de Dictamen Jurídico Preliminar.
 FASE 1.3: Balance de Situación Automático
 """
 from enum import Enum
-from typing import Literal
+from typing import Literal, List
 
 from pydantic import BaseModel, Field
+
 
 # Disclaimer legal estándar
 DISCLAIMER_BALANCE_CONCURSAL = """
@@ -41,7 +42,6 @@ tomadas sin validación profesional adecuada.
 
 class OpinionConclusion(str, Enum):
     """Conclusión del dictamen jurídico."""
-
     INSOLVENCIA_ACTUAL_ACREDITADA = "insolvencia_actual_acreditada"
     INSOLVENCIA_INMINENTE = "insolvencia_inminente"
     SITUACION_PREOCUPANTE = "situacion_preocupante"
@@ -50,23 +50,30 @@ class OpinionConclusion(str, Enum):
 
 class LegalOpinion(BaseModel):
     """Dictamen jurídico preliminar estructurado."""
-
+    
     conclusion: OpinionConclusion
-
-    fundamentos: list[str] = Field(..., description="Fundamentos jurídicos de la conclusión")
-
-    base_legal: list[str] = Field(
+    
+    fundamentos: list[str] = Field(
+        ...,
+        description="Fundamentos jurídicos de la conclusión"
+    )
+    
+    base_legal: List[str] = Field(
         ...,
         description="Artículos TRLC citados explícitamente (P0.11 - defensibilidad jurídica)",
-        json_schema_extra={"example": ["Art. 2.2 TRLC", "Art. 249 TRLC"]},
+        json_schema_extra={"example": ["Art. 2.2 TRLC", "Art. 249 TRLC"]}
     )
-
+    
     confianza: Literal["ALTA", "MEDIA", "BAJA"]
-
-    recomendacion: str = Field(..., description="Recomendación legal clara y accionable")
-
-    advertencia: str = Field(
-        default=DISCLAIMER_BALANCE_CONCURSAL, description="Advertencia legal estándar"
+    
+    recomendacion: str = Field(
+        ...,
+        description="Recomendación legal clara y accionable"
     )
-
+    
+    advertencia: str = Field(
+        default=DISCLAIMER_BALANCE_CONCURSAL,
+        description="Advertencia legal estándar"
+    )
+    
     model_config = {"extra": "forbid"}

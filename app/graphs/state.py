@@ -1,4 +1,4 @@
-from typing import Any, Optional, TypedDict
+from typing import TypedDict, List, Optional, Dict, Any
 
 
 class Document(TypedDict):
@@ -18,31 +18,32 @@ class Risk(TypedDict):
     risk_type: str
     severity: str
     explanation: str
-    evidence: list[str]
+    evidence: List[str]
 
 
 class AuditState(TypedDict):
     case_id: str
 
     # Identidad del caso
-    company_profile: dict[str, Any]
+    company_profile: Dict[str, Any]
 
     # Datos
-    documents: list[Document]
-    timeline: list[TimelineEvent]
+    documents: List[Document]
+    timeline: List[TimelineEvent]
 
     # Análisis
-    risks: list[Risk]
-    missing_documents: list[str]
-    legal_findings: list[dict[str, Any]]
-
+    risks: List[Risk]
+    missing_documents: List[str]
+    legal_findings: List[Dict[str, Any]]
+    
     # Análisis LLM (opcional)
-    auditor_llm: Optional[dict[str, Any]]
-    prosecutor_llm: Optional[dict[str, Any]]
-
+    auditor_llm: Optional[Dict[str, Any]]
+    prosecutor_llm: Optional[Dict[str, Any]]
+    
     # Rule Engine
-    rule_based_findings: Optional[list[dict[str, Any]]]
+    rule_based_findings: Optional[List[Dict[str, Any]]]
 
     # Salida
     notes: Optional[str]
-    report: Optional[dict[str, Any]]
+    report: Optional[Dict[str, Any]]
+

@@ -8,10 +8,10 @@ ENDURECIMIENTO #7: Excepciones específicas para control de presupuesto.
 class BudgetExceededException(Exception):
     """
     Excepción cuando se excede el presupuesto disponible.
-
+    
     GATE DURO: Esta excepción detiene ejecución ANTES de llamar al proveedor.
     """
-
+    
     def __init__(
         self,
         case_id: str,
@@ -23,7 +23,7 @@ class BudgetExceededException(Exception):
         self.required_usd = required_usd
         self.remaining_usd = remaining_usd
         self.phase = phase
-
+        
         message = (
             f"BUDGET_EXCEEDED: case_id={case_id} phase={phase} "
             f"required={required_usd:.6f} remaining={remaining_usd:.6f}"
@@ -33,5 +33,5 @@ class BudgetExceededException(Exception):
 
 class PricingTableError(Exception):
     """Excepción cuando hay problema con la tabla de precios."""
-
     pass
+

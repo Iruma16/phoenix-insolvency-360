@@ -5,17 +5,21 @@ OBJETIVO: Validar estructura de trace sin dependencias externas complejas.
 
 PRINCIPIO: Tests unitarios puros de dataclasses y replay lógico.
 """
-import hashlib
+import pytest
 import json
+import hashlib
+
+from dataclasses import asdict
+
 
 # ============================
 # MOCK STRUCTURES (standalone)
 # ============================
-# Replicamos las estructuras mínimas para tests sin importar toda la app
-from dataclasses import asdict, dataclass, field
-from typing import Any, Optional
 
-import pytest
+# Replicamos las estructuras mínimas para tests sin importar toda la app
+
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
 
 
 @dataclass(frozen=True)
@@ -35,7 +39,7 @@ class RAGSnapshotTest:
     avg_similarity: float
     retrieval_version: str
     no_response_reason: Optional[str] = None
-    chunks_data: list[dict[str, Any]] = field(default_factory=list)
+    chunks_data: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -43,31 +47,31 @@ class ProsecutorSnapshotTest:
     case_id: str
     total_acusaciones: int
     total_bloqueadas: int
-    acusaciones_data: list[dict[str, Any]] = field(default_factory=list)
-    bloqueadas_data: list[dict[str, Any]] = field(default_factory=list)
-    solicitud_evidencia: Optional[dict[str, Any]] = None
+    acusaciones_data: List[Dict[str, Any]] = field(default_factory=list)
+    bloqueadas_data: List[Dict[str, Any]] = field(default_factory=list)
+    solicitud_evidencia: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
 class AuditTraceTest:
     trace_id: str
     pipeline_version: str
-    manifest_snapshot: dict[str, Any]
-    config_snapshot: dict[str, Any]
+    manifest_snapshot: Dict[str, Any]
+    config_snapshot: Dict[str, Any]
     case_id: str
-    rules_evaluated: list[str]
-    rag_snapshots: list[RAGSnapshotTest]
+    rules_evaluated: List[str]
+    rag_snapshots: List[RAGSnapshotTest]
     prosecutor_snapshot: ProsecutorSnapshotTest
     result_hash: str
     decision_state: str
-    invariants_checked: list[GateCheckTest]
-
-    def to_dict(self) -> dict[str, Any]:
+    invariants_checked: List[GateCheckTest]
+    
+    def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
-
+    
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), sort_keys=True, indent=2)
-
+    
     def compute_hash(self) -> str:
         serialized = json.dumps(self.to_dict(), sort_keys=True)
         return hashlib.sha256(serialized.encode()).hexdigest()
@@ -76,7 +80,6 @@ class AuditTraceTest:
 # ============================
 # TEST 1: STRUCTURE
 # ============================
-
 
 def test_trace_has_all_required_fields():
     """GATE: Trace debe tener todos los campos obligatorios."""
@@ -107,9 +110,11 @@ def test_trace_has_all_required_fields():
         ),
         result_hash="hash123",
         decision_state="COMPLETE",
-        invariants_checked=[GateCheckTest(gate_id="gate_1", passed=True)],
+        invariants_checked=[
+            GateCheckTest(gate_id="gate_1", passed=True)
+        ],
     )
-
+    
     assert trace.trace_id == "trace_001"
     assert trace.case_id == "CASE_001"
     assert len(trace.rag_snapshots) == 1
@@ -138,11 +143,11 @@ def test_trace_is_serializable():
         decision_state="BLOCKED",
         invariants_checked=[],
     )
-
+    
     json_str = trace.to_json()
     assert isinstance(json_str, str)
     assert "trace_001" in json_str
-
+    
     # Deserializar
     trace_dict = trace.to_dict()
     assert trace_dict["trace_id"] == "trace_001"
@@ -169,7 +174,7 @@ def test_trace_is_hashable_deterministic():
         decision_state="BLOCKED",
         invariants_checked=[],
     )
-
+    
     trace2 = AuditTraceTest(
         trace_id="trace_001",
         pipeline_version="1.0.0",
@@ -189,10 +194,10 @@ def test_trace_is_hashable_deterministic():
         decision_state="BLOCKED",
         invariants_checked=[],
     )
-
+    
     hash1 = trace1.compute_hash()
     hash2 = trace2.compute_hash()
-
+    
     # Mismo contenido → mismo hash
     assert hash1 == hash2
     assert len(hash1) == 64  # SHA256
@@ -219,7 +224,7 @@ def test_trace_is_immutable():
         decision_state="BLOCKED",
         invariants_checked=[],
     )
-
+    
     # Intentar modificar → debe fallar
     with pytest.raises(Exception):
         trace.trace_id = "MODIFIED"
@@ -228,7 +233,6 @@ def test_trace_is_immutable():
 # ============================
 # TEST 2: RAG SNAPSHOT
 # ============================
-
 
 def test_rag_snapshot_captures_evidence_stats():
     """RAGSnapshot debe capturar estadísticas de evidencia."""
@@ -244,9 +248,9 @@ def test_rag_snapshot_captures_evidence_stats():
         chunks_data=[
             {"chunk_id": "c1", "document_id": "d1", "content": "texto1"},
             {"chunk_id": "c2", "document_id": "d2", "content": "texto2"},
-        ],
+        ]
     )
-
+    
     assert snapshot.total_chunks == 10
     assert snapshot.valid_chunks == 7
     assert snapshot.avg_similarity == 0.75
@@ -265,7 +269,7 @@ def test_rag_snapshot_captures_no_response():
         retrieval_version="1.0.0",
         no_response_reason="EVIDENCE_MISSING",
     )
-
+    
     assert snapshot.no_response_reason == "EVIDENCE_MISSING"
     assert snapshot.total_chunks == 0
 
@@ -273,7 +277,6 @@ def test_rag_snapshot_captures_no_response():
 # ============================
 # TEST 3: PROSECUTOR SNAPSHOT
 # ============================
-
 
 def test_prosecutor_snapshot_captures_both_complete_and_blocked():
     """ProsecutorSnapshot debe capturar acusaciones completas Y bloqueadas."""
@@ -289,7 +292,7 @@ def test_prosecutor_snapshot_captures_both_complete_and_blocked():
             {"rule_id": "rule_3", "blocked_reason": "EVIDENCE_WEAK"},
         ],
     )
-
+    
     assert snapshot.total_acusaciones == 2
     assert snapshot.total_bloqueadas == 1
     assert len(snapshot.acusaciones_data) == 2
@@ -300,13 +303,20 @@ def test_prosecutor_snapshot_captures_both_complete_and_blocked():
 # TEST 4: GATE CHECKS
 # ============================
 
-
 def test_gate_check_records_pass_and_fail():
     """GateCheck debe registrar pass y fail."""
-    gate_pass = GateCheckTest(gate_id="gate_1", passed=True, reason=None)
-
-    gate_fail = GateCheckTest(gate_id="gate_2", passed=False, reason="Evidencia insuficiente")
-
+    gate_pass = GateCheckTest(
+        gate_id="gate_1",
+        passed=True,
+        reason=None
+    )
+    
+    gate_fail = GateCheckTest(
+        gate_id="gate_2",
+        passed=False,
+        reason="Evidencia insuficiente"
+    )
+    
     assert gate_pass.passed is True
     assert gate_fail.passed is False
     assert gate_fail.reason == "Evidencia insuficiente"
@@ -315,7 +325,6 @@ def test_gate_check_records_pass_and_fail():
 # ============================
 # TEST 5: DECISION STATE
 # ============================
-
 
 def test_decision_state_complete():
     """decision_state debe reflejar COMPLETE cuando todas las acusaciones pasan."""
@@ -341,7 +350,7 @@ def test_decision_state_complete():
             GateCheckTest(gate_id="gate_1_rule_2", passed=True),
         ],
     )
-
+    
     assert trace.decision_state == "COMPLETE"
     assert all(g.passed for g in trace.invariants_checked)
 
@@ -370,7 +379,7 @@ def test_decision_state_partial():
             GateCheckTest(gate_id="gate_1_rule_2", passed=False, reason="NO_RESPONSE"),
         ],
     )
-
+    
     assert trace.decision_state == "PARTIAL"
     assert trace.prosecutor_snapshot.total_acusaciones == 1
     assert trace.prosecutor_snapshot.total_bloqueadas == 1
@@ -403,7 +412,7 @@ def test_decision_state_blocked():
             GateCheckTest(gate_id="gate_1_rule_2", passed=False, reason="NO_EVIDENCE"),
         ],
     )
-
+    
     assert trace.decision_state == "BLOCKED"
     assert trace.prosecutor_snapshot.total_acusaciones == 0
     assert trace.prosecutor_snapshot.total_bloqueadas == 2
@@ -436,3 +445,4 @@ INVARIANTES CERTIFICADOS:
 - INVARIANTE 4: ProsecutorSnapshot captura totales coherentes
 - INVARIANTE 5: decision_state refleja estado final correcto
 """
+
