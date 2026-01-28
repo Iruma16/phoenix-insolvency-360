@@ -93,11 +93,11 @@ RAG_TOP_K_DEFAULT=10
 
 ```yaml
 volumes:
-  - ../clients_data:/app/clients_data  # Datos de casos y RAG
   - ../app:/app/app                    # Hot reload en desarrollo
+  - ../runtime:/app/runtime            # BD SQLite (local)
 ```
 
-**Importante:** Los datos persisten en `clients_data/` en el host.
+**Importante:** La BD SQLite persiste en `runtime/` en el host.
 
 ---
 
@@ -190,7 +190,7 @@ docker compose exec phoenix-legal ls -lh clients_data/cases/CASE_001/reports/
 
 ### Acceder a PDFs generados
 
-Los informes se guardan en `clients_data/cases/{case_id}/reports/` y son accesibles desde el host.
+Los informes se descargan vía endpoint `GET /api/cases/{case_id}/legal-report/pdf`.
 
 ---
 

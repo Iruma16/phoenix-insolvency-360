@@ -8,17 +8,17 @@ PRINCIPIO: Mismo modelo + tokens → mismo coste.
 import pytest
 
 from app.core.finops.pricing import (
-    PRICING_VERSION,
     PRICING_TABLE,
+    PRICING_VERSION,
     estimate_cost_usd,
-    pricing_fingerprint,
     get_pricing_info,
+    pricing_fingerprint,
 )
-
 
 # ============================
 # TEST 1: PRICING VERSION
 # ============================
+
 
 def test_pricing_version_exists():
     """PRICING_VERSION debe existir y no estar vacía."""
@@ -38,11 +38,12 @@ def test_pricing_version_format():
 # TEST 2: ESTIMATE COST
 # ============================
 
+
 def test_estimate_cost_deterministic():
     """INVARIANTE: Mismo modelo + tokens → mismo coste."""
     cost1 = estimate_cost_usd("gpt-4o-mini", 1000, 500)
     cost2 = estimate_cost_usd("gpt-4o-mini", 1000, 500)
-    
+
     assert cost1 == cost2
 
 
@@ -52,10 +53,10 @@ def test_estimate_cost_calculation():
     # 1000 input tokens = 1K * 0.00015 = 0.00015
     # 500 output tokens = 0.5K * 0.0006 = 0.0003
     # Total = 0.00045
-    
+
     cost = estimate_cost_usd("gpt-4o-mini", 1000, 500)
     expected = 0.00045
-    
+
     assert abs(cost - expected) < 0.000001
 
 
@@ -63,7 +64,7 @@ def test_estimate_cost_embeddings():
     """Embeddings tienen output_tokens = 0."""
     cost = estimate_cost_usd("text-embedding-3-small", 1000, 0)
     expected = 0.00002  # 1K * 0.00002
-    
+
     assert abs(cost - expected) < 0.000001
 
 
@@ -77,11 +78,12 @@ def test_estimate_cost_unknown_model_fails():
 # TEST 3: PRICING FINGERPRINT
 # ============================
 
+
 def test_pricing_fingerprint_stable():
     """INVARIANTE: Misma tabla → mismo fingerprint."""
     fp1 = pricing_fingerprint()
     fp2 = pricing_fingerprint()
-    
+
     assert fp1 == fp2
     assert len(fp1) == 64  # SHA256
 
@@ -89,22 +91,22 @@ def test_pricing_fingerprint_stable():
 def test_pricing_fingerprint_changes_on_price_change():
     """
     INVARIANTE: Si cambia un precio → fingerprint cambia.
-    
+
     Este test DEBE FALLAR si se modifica PRICING_TABLE
     sin actualizar PRICING_VERSION.
     """
     # Guardar fingerprint actual
     current_fp = pricing_fingerprint()
-    
+
     # Modificar tabla temporalmente
     original_price = PRICING_TABLE["gpt-4o-mini"]["input_per_1k"]
     PRICING_TABLE["gpt-4o-mini"]["input_per_1k"] = 999.99
-    
+
     modified_fp = pricing_fingerprint()
-    
+
     # Restaurar tabla
     PRICING_TABLE["gpt-4o-mini"]["input_per_1k"] = original_price
-    
+
     # Fingerprint debe haber cambiado
     assert modified_fp != current_fp
 
@@ -113,10 +115,11 @@ def test_pricing_fingerprint_changes_on_price_change():
 # TEST 4: GET PRICING INFO
 # ============================
 
+
 def test_get_pricing_info_structure():
     """get_pricing_info debe retornar version y fingerprint."""
     info = get_pricing_info()
-    
+
     assert "pricing_version" in info
     assert "pricing_fingerprint" in info
     assert info["pricing_version"] == PRICING_VERSION
@@ -127,13 +130,14 @@ def test_get_pricing_info_structure():
 # TEST 5: PRICING TABLE INTEGRITY
 # ============================
 
+
 def test_pricing_table_has_required_models():
     """Tabla de precios debe tener modelos críticos."""
     required_models = [
         "gpt-4o-mini",
         "text-embedding-3-small",
     ]
-    
+
     for model in required_models:
         assert model in PRICING_TABLE, f"Falta modelo: {model}"
 
@@ -173,4 +177,3 @@ INVARIANTES CERTIFICADOS:
 - INVARIANTE 4: Modelo desconocido → ValueError
 - INVARIANTE 5: Pricing table tiene estructura obligatoria
 """
-

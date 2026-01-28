@@ -5,16 +5,11 @@ Este archivo configura Alembic para detectar automáticamente
 cambios en los modelos SQLAlchemy y generar migraciones.
 """
 from logging.config import fileConfig
-import sys
-from pathlib import Path
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
-
-# Añadir path del proyecto
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Importar configuración y modelos
 from app.core.config import settings

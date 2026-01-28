@@ -1,8 +1,10 @@
-from app.core.database import Base, get_engine
 import app.models  # noqa: F401
+from app.core.database import Base, get_engine
+
 # =========================================================
 # INIT DB
 # =========================================================
+
 
 def main():
     """

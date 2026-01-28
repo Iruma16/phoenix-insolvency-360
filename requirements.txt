@@ -12,10 +12,10 @@ python-multipart==0.0.6  # Para upload de archivos
 # LangChain y LLM
 langchain==0.3.27
 langchain-openai==0.3.35
-langchain-core==0.3.43
-langchain-text-splitters==0.3.4
+langchain-core==0.3.81
+langchain-text-splitters==0.3.11
 langgraph==0.2.59
-openai==1.58.1
+openai==2.14.0
 
 # Database y ORM
 sqlalchemy==2.0.25
@@ -24,7 +24,9 @@ psycopg2-binary==2.9.9  # PostgreSQL driver
 
 # Configuración y Variables de Entorno
 python-dotenv==1.0.0
-pydantic[email]==2.5.3  # Con soporte para validación de emails
+pydantic-settings==2.9.1
+pydantic[email]==2.12.5  # Compatible con LangChain (>=2.7.4)
+requests==2.31.0
 
 # Seguridad y Autenticación
 passlib[bcrypt]==1.7.4
@@ -33,7 +35,7 @@ PyJWT==2.8.0
 cryptography==42.0.0
 
 # RAG y Vectorstore
-chromadb==0.4.22
+chromadb==1.4.1
 sentence-transformers==2.3.1  # Para embeddings alternativos
 
 # Procesamiento de Documentos
@@ -50,11 +52,14 @@ pdf2image==1.17.0  # Conversión PDF → imágenes para OCR
 
 # Generación de Reportes
 reportlab==4.4.7
+matplotlib==3.9.4  # Compatible con NumPy 2.x
+PyPDF2==3.0.1  # Manipulación y fusión de PDFs
+plotly==5.18.0  # Gráficos interactivos para UI Streamlit
 
 # Utilidades
-pandas==2.1.4
 python-dateutil==2.8.2
-numpy==1.24.3  # Para cálculo de similaridad coseno (deduplicación)
+pandas==2.2.3
+numpy==2.0.2
 
 # Observabilidad y Métricas
 prometheus-client==0.19.0
@@ -69,5 +74,5 @@ slowapi==0.1.9
 structlog==24.1.0
 
 # UI (opcional para demo)
-streamlit==1.30.0
+streamlit==1.50.0
 

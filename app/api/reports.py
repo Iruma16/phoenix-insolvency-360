@@ -2,6 +2,7 @@
 Endpoint para generación de informes legales.
 """
 from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -24,18 +25,20 @@ def generate_report(
 ):
     """
     Genera un informe legal completo para un caso.
-    
+
     Devuelve el path al archivo Markdown generado.
     El PDF se genera automáticamente si hay librerías disponibles.
     """
     try:
         md_path = generate_case_report(case_id=payload.case_id, db=db)
-        
+
         return {
             "status": "success",
             "case_id": payload.case_id,
             "markdown_path": str(md_path),
-            "pdf_path": str(md_path.with_suffix('.pdf')) if md_path.with_suffix('.pdf').exists() else None,
+            "pdf_path": str(md_path.with_suffix(".pdf"))
+            if md_path.with_suffix(".pdf").exists()
+            else None,
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -47,27 +50,26 @@ def generate_report(
 def download_report(case_id: str, filename: str):
     """
     Descarga un informe generado.
-    
+
     Permite descargar archivos .md o .pdf desde reports/{case_id}/
     """
     reports_dir = Path(__file__).parent.parent.parent / "reports" / case_id
     file_path = reports_dir / filename
-    
+
     # Validación de seguridad
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    
-    if not file_path.suffix in ['.md', '.pdf']:
+
+    if file_path.suffix not in [".md", ".pdf"]:
         raise HTTPException(status_code=400, detail="Tipo de archivo no permitido")
-    
+
     if not file_path.is_relative_to(reports_dir):
         raise HTTPException(status_code=403, detail="Acceso denegado")
-    
+
     media_type = "application/pdf" if file_path.suffix == ".pdf" else "text/markdown"
-    
+
     return FileResponse(
         path=str(file_path),
         media_type=media_type,
         filename=filename,
     )
-

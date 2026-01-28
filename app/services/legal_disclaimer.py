@@ -57,20 +57,18 @@ IMPORTANTE: Este análisis es preliminar y requiere validación por asesor legal
 # FUNCIONES DE APLICACIÓN
 # ════════════════════════════════════════════════════════════════
 
+
 def add_disclaimer_to_text(
-    text: str,
-    *,
-    disclaimer_type: str = "technical",
-    position: str = "end"
+    text: str, *, disclaimer_type: str = "technical", position: str = "end"
 ) -> str:
     """
     Añade disclaimer a un texto.
-    
+
     Args:
         text: Texto original
         disclaimer_type: Tipo de disclaimer ("technical", "short", "degraded")
         position: Posición ("start" o "end")
-    
+
     Returns:
         Texto con disclaimer añadido
     """
@@ -83,7 +81,7 @@ def add_disclaimer_to_text(
         disclaimer = DISCLAIMER_DEGRADED
     else:
         disclaimer = DISCLAIMER_TECHNICAL
-    
+
     # Añadir según posición
     if position == "start":
         return f"{disclaimer}\n\n{text}"
@@ -94,10 +92,10 @@ def add_disclaimer_to_text(
 def get_disclaimer(disclaimer_type: str = "technical") -> str:
     """
     Obtiene disclaimer por tipo.
-    
+
     Args:
         disclaimer_type: Tipo de disclaimer
-    
+
     Returns:
         Texto del disclaimer
     """
@@ -128,20 +126,17 @@ LANGUAGE_REPLACEMENTS = {
     "demostró": "indicios que sugieren",
     "prueba": "indica",
     "probó": "evidencia que sugiere",
-    
     # Juicios categóricos
     "es culpable": "existen indicios que requieren revisión sobre",
     "es responsable de": "posible responsabilidad en",
     "causó": "indicios de que pudo causar",
     "cometió": "posible comisión de",
-    
     # Expresiones de certeza
     "sin duda": "según los datos disponibles",
     "definitivamente": "muy probablemente",
     "claramente": "aparentemente",
     "obviamente": "según indicios",
     "es evidente": "los datos sugieren",
-    
     # Conclusiones definitivas
     "se concluye que": "los indicios apuntan a que",
     "se determina que": "se identifica como posible que",
@@ -152,56 +147,54 @@ LANGUAGE_REPLACEMENTS = {
 def apply_cautious_language_policy(text: str) -> str:
     """
     Aplica política de lenguaje cauteloso para mitigar riesgo legal.
-    
+
     Reemplaza expresiones absolutas por lenguaje cauteloso:
     - "incumple" → "podría incumplir"
     - "es culpable" → "existen indicios"
     - etc.
-    
+
     Args:
         text: Texto original
-    
+
     Returns:
         Texto con lenguaje cauteloso aplicado
     """
     processed_text = text
-    
+
     for absolute_phrase, cautious_phrase in LANGUAGE_REPLACEMENTS.items():
         # Reemplazar case-insensitive
         import re
+
         pattern = re.compile(re.escape(absolute_phrase), re.IGNORECASE)
         processed_text = pattern.sub(cautious_phrase, processed_text)
-    
+
     return processed_text
 
 
 def process_llm_output_safe(
-    llm_output: str,
-    *,
-    add_disclaimer: bool = True,
-    apply_language_policy: bool = True
+    llm_output: str, *, add_disclaimer: bool = True, apply_language_policy: bool = True
 ) -> str:
     """
     Procesa output de LLM para hacerlo legalmente seguro.
-    
+
     Args:
         llm_output: Texto generado por LLM
         add_disclaimer: Si True, añade disclaimer
         apply_language_policy: Si True, aplica lenguaje cauteloso
-    
+
     Returns:
         Texto procesado y seguro
     """
     processed = llm_output
-    
+
     # Aplicar política de lenguaje cauteloso
     if apply_language_policy:
         processed = apply_cautious_language_policy(processed)
-    
+
     # Añadir disclaimer
     if add_disclaimer:
         processed = add_disclaimer_to_text(processed, disclaimer_type="short")
-    
+
     return processed
 
 
@@ -216,27 +209,26 @@ FORBIDDEN_PHRASES = [
     "sin lugar a dudas",
     "definitivamente culpable",
     "incumplió intencionalmente",
-    "actuó con mala fe demostrada"
+    "actuó con mala fe demostrada",
 ]
 
 
 def validate_output_language(text: str) -> tuple[bool, list[str]]:
     """
     Valida que el texto NO contenga expresiones prohibidas.
-    
+
     Args:
         text: Texto a validar
-    
+
     Returns:
         (is_valid, found_forbidden_phrases)
     """
     found_forbidden = []
-    
+
     for forbidden in FORBIDDEN_PHRASES:
         if forbidden.lower() in text.lower():
             found_forbidden.append(forbidden)
-    
-    is_valid = len(found_forbidden) == 0
-    
-    return is_valid, found_forbidden
 
+    is_valid = len(found_forbidden) == 0
+
+    return is_valid, found_forbidden

@@ -5,21 +5,22 @@ OBJETIVO: Validar cache de retrieval para reducir costes.
 
 PRINCIPIO: Cache hit → NO se ejecuta retrieval ni embeddings.
 """
-import pytest
 import time
 
-from app.core.finops.rag_cache import (
-    compute_rag_cache_key,
-    RAGCacheEntry,
-    RAGHotCache,
-    RAGColdCache,
-    RAGCacheManager,
-)
+import pytest
 
+from app.core.finops.rag_cache import (
+    RAGCacheEntry,
+    RAGCacheManager,
+    RAGColdCache,
+    RAGHotCache,
+    compute_rag_cache_key,
+)
 
 # ============================
 # TEST 1: CACHE KEY
 # ============================
+
 
 def test_compute_rag_cache_key_deterministic():
     """INVARIANTE: Mismos parámetros → misma clave."""
@@ -30,7 +31,7 @@ def test_compute_rag_cache_key_deterministic():
         filters=None,
         retriever_version="1.0.0",
     )
-    
+
     key2 = compute_rag_cache_key(
         case_id="CASE_001",
         query="test query",
@@ -38,7 +39,7 @@ def test_compute_rag_cache_key_deterministic():
         filters=None,
         retriever_version="1.0.0",
     )
-    
+
     assert key1 == key2
     assert len(key1) == 64  # SHA256
 
@@ -50,13 +51,13 @@ def test_compute_rag_cache_key_normalizes_query():
         query="  test   query  ",
         top_k=10,
     )
-    
+
     key2 = compute_rag_cache_key(
         case_id="CASE_001",
         query="test query",
         top_k=10,
     )
-    
+
     assert key1 == key2
 
 
@@ -67,19 +68,20 @@ def test_compute_rag_cache_key_different_params():
         query="test query",
         top_k=10,
     )
-    
+
     key2 = compute_rag_cache_key(
         case_id="CASE_001",
         query="test query",
         top_k=20,  # Diferente
     )
-    
+
     assert key1 != key2
 
 
 # ============================
 # TEST 2: CACHE ENTRY
 # ============================
+
 
 def test_cache_entry_is_expired():
     """Cache entry debe detectar expiración."""
@@ -91,7 +93,7 @@ def test_cache_entry_is_expired():
         timestamp=time.time() - 7200,  # 2 horas atrás
         ttl_seconds=3600,  # 1 hora
     )
-    
+
     assert entry.is_expired() is True
 
 
@@ -105,7 +107,7 @@ def test_cache_entry_not_expired():
         timestamp=time.time(),
         ttl_seconds=3600,
     )
-    
+
     assert entry.is_expired() is False
 
 
@@ -113,19 +115,20 @@ def test_cache_entry_not_expired():
 # TEST 3: HOT CACHE
 # ============================
 
+
 def test_hot_cache_miss():
     """Primera consulta → miss."""
     cache = RAGHotCache()
-    
+
     entry = cache.get("key_001")
-    
+
     assert entry is None
 
 
 def test_hot_cache_hit():
     """Segunda consulta → hit."""
     cache = RAGHotCache()
-    
+
     entry = RAGCacheEntry(
         key="key_001",
         chunk_ids=["c1", "c2"],
@@ -133,11 +136,11 @@ def test_hot_cache_hit():
         evidence_snapshot={},
         timestamp=time.time(),
     )
-    
+
     cache.put(entry)
-    
+
     retrieved = cache.get("key_001")
-    
+
     assert retrieved is not None
     assert retrieved.key == "key_001"
     assert retrieved.chunk_ids == ["c1", "c2"]
@@ -146,7 +149,7 @@ def test_hot_cache_hit():
 def test_hot_cache_lru_eviction():
     """Hot cache debe evict cuando excede max_size."""
     cache = RAGHotCache(max_size=2)
-    
+
     entry1 = RAGCacheEntry(
         key="key_001",
         chunk_ids=["c1"],
@@ -154,7 +157,7 @@ def test_hot_cache_lru_eviction():
         evidence_snapshot={},
         timestamp=time.time(),
     )
-    
+
     entry2 = RAGCacheEntry(
         key="key_002",
         chunk_ids=["c2"],
@@ -162,7 +165,7 @@ def test_hot_cache_lru_eviction():
         evidence_snapshot={},
         timestamp=time.time(),
     )
-    
+
     entry3 = RAGCacheEntry(
         key="key_003",
         chunk_ids=["c3"],
@@ -170,11 +173,11 @@ def test_hot_cache_lru_eviction():
         evidence_snapshot={},
         timestamp=time.time(),
     )
-    
+
     cache.put(entry1)
     cache.put(entry2)
     cache.put(entry3)  # Debe evict key_001
-    
+
     assert cache.get("key_001") is None
     assert cache.get("key_002") is not None
     assert cache.get("key_003") is not None
@@ -184,19 +187,20 @@ def test_hot_cache_lru_eviction():
 # TEST 4: COLD CACHE
 # ============================
 
+
 def test_cold_cache_miss():
     """Primera consulta → miss."""
     cache = RAGColdCache()
-    
+
     entry = cache.get("key_001")
-    
+
     assert entry is None
 
 
 def test_cold_cache_hit():
     """Segunda consulta → hit."""
     cache = RAGColdCache()
-    
+
     entry = RAGCacheEntry(
         key="key_001",
         chunk_ids=["c1", "c2"],
@@ -204,11 +208,11 @@ def test_cold_cache_hit():
         evidence_snapshot={},
         timestamp=time.time(),
     )
-    
+
     cache.put(entry)
-    
+
     retrieved = cache.get("key_001")
-    
+
     assert retrieved is not None
     assert retrieved.key == "key_001"
 
@@ -217,12 +221,13 @@ def test_cold_cache_hit():
 # TEST 5: CACHE MANAGER
 # ============================
 
+
 def test_cache_manager_first_query_miss():
     """Primera query → miss."""
     manager = RAGCacheManager()
-    
+
     entry = manager.get("key_001")
-    
+
     assert entry is None
     assert manager.misses == 1
 
@@ -230,7 +235,7 @@ def test_cache_manager_first_query_miss():
 def test_cache_manager_second_query_hit_hot():
     """Segunda query → hot hit."""
     manager = RAGCacheManager()
-    
+
     entry = RAGCacheEntry(
         key="key_001",
         chunk_ids=["c1", "c2"],
@@ -238,12 +243,12 @@ def test_cache_manager_second_query_hit_hot():
         evidence_snapshot={},
         timestamp=time.time(),
     )
-    
+
     manager.put(entry)
-    
+
     # Primera consulta después de put → hot hit
     retrieved = manager.get("key_001")
-    
+
     assert retrieved is not None
     assert manager.hot_hits == 1
     assert manager.misses == 0
@@ -254,7 +259,7 @@ def test_cache_manager_cold_promotion():
     hot_cache = RAGHotCache()
     cold_cache = RAGColdCache()
     manager = RAGCacheManager(hot_cache=hot_cache, cold_cache=cold_cache)
-    
+
     # Almacenar en cold solamente
     entry = RAGCacheEntry(
         key="key_001",
@@ -264,16 +269,16 @@ def test_cache_manager_cold_promotion():
         timestamp=time.time(),
     )
     cold_cache.put(entry)
-    
+
     # Primera consulta → cold hit + promoción a hot
     retrieved = manager.get("key_001")
-    
+
     assert retrieved is not None
     assert manager.cold_hits == 1
-    
+
     # Segunda consulta → hot hit
     retrieved2 = manager.get("key_001")
-    
+
     assert retrieved2 is not None
     assert manager.hot_hits == 1
 
@@ -281,11 +286,11 @@ def test_cache_manager_cold_promotion():
 def test_cache_manager_hit_rates():
     """Cache manager debe calcular hit rates."""
     manager = RAGCacheManager()
-    
+
     # 2 misses
     manager.get("key_001")
     manager.get("key_002")
-    
+
     # 1 put + 1 hot hit
     entry = RAGCacheEntry(
         key="key_003",
@@ -296,12 +301,12 @@ def test_cache_manager_hit_rates():
     )
     manager.put(entry)
     manager.get("key_003")
-    
+
     # Total: 2 misses, 1 hot hit
     assert manager.hot_hits == 1
     assert manager.misses == 2
-    assert manager.get_hit_rate_hot() == pytest.approx(1/3)
-    assert manager.get_miss_rate() == pytest.approx(2/3)
+    assert manager.get_hit_rate_hot() == pytest.approx(1 / 3)
+    assert manager.get_miss_rate() == pytest.approx(2 / 3)
 
 
 # ============================
@@ -331,4 +336,3 @@ INVARIANTES CERTIFICADOS:
 - INVARIANTE 4: Cold hit → promoción a hot cache
 - INVARIANTE 5: Cache manager calcula hit rates correctamente
 """
-

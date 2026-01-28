@@ -27,7 +27,7 @@ types-python-jose==3.3.4.8
 types-passlib==1.7.7.13
 
 # Development Tools
-ipython==8.20.0  # REPL mejorado
+ipython==8.18.1  # REPL mejorado (última compatible con Python 3.9)
 ipdb==0.13.13  # Debugger
 watchdog==3.0.0  # File watcher para hot reload
 
@@ -40,7 +40,7 @@ mkdocstrings[python]==0.24.0
 sqlalchemy-utils==0.41.1  # Utilidades extras para SQLAlchemy
 
 # HTTP Testing
-httpx==0.26.0  # Cliente HTTP para tests
+httpx==0.27.2  # Cliente HTTP para tests (compatible con Starlette TestClient)
 responses==0.24.1  # Mock de HTTP requests
 
 # Profiling

@@ -2,24 +2,30 @@
 Modelos de datos para el motor de reglas.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Optional
+
 from pydantic import BaseModel, Field
 
 
 class Trigger(BaseModel):
     """Trigger de activación de una regla."""
+
     condition: str = Field(..., description="Expresión lógica evaluable")
-    variables_required: List[str] = Field(default_factory=list, description="Variables necesarias para evaluar")
+    variables_required: list[str] = Field(
+        default_factory=list, description="Variables necesarias para evaluar"
+    )
 
 
 class EvidenceRequired(BaseModel):
     """Evidencia requerida para mitigar el riesgo."""
-    document_types: List[str] = Field(default_factory=list)
-    descriptions: List[str] = Field(default_factory=list)
+
+    document_types: list[str] = Field(default_factory=list)
+    descriptions: list[str] = Field(default_factory=list)
 
 
 class SeverityLogic(BaseModel):
     """Lógica de escalado de severidad."""
+
     low: Optional[str] = None
     medium: Optional[str] = None
     high: Optional[str] = None
@@ -28,6 +34,7 @@ class SeverityLogic(BaseModel):
 
 class ConfidenceLogic(BaseModel):
     """Lógica de cálculo de confianza."""
+
     high: Optional[str] = None
     medium: Optional[str] = None
     low: Optional[str] = None
@@ -36,6 +43,7 @@ class ConfidenceLogic(BaseModel):
 
 class Outputs(BaseModel):
     """Templates de salida de la regla."""
+
     description_template: str
     recommendation_template: str
     missing_data_template: Optional[str] = None
@@ -43,9 +51,10 @@ class Outputs(BaseModel):
 
 class Rule(BaseModel):
     """Regla del motor de reglas."""
+
     rule_id: str
     risk_type: str
-    article_refs: List[str]
+    article_refs: list[str]
     trigger: Trigger
     evidence_required: EvidenceRequired
     severity_logic: SeverityLogic
@@ -55,6 +64,6 @@ class Rule(BaseModel):
 
 class Rulebook(BaseModel):
     """Rulebook completo."""
-    metadata: Dict[str, Any]
-    rules: List[Rule]
 
+    metadata: dict[str, Any]
+    rules: list[Rule]

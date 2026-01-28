@@ -10,14 +10,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=sqlite:///clients_data/phoenix_legal.db
+      - DATABASE_URL=sqlite:///./runtime/db/phoenix_legal.db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - EMBEDDING_MODEL=text-embedding-3-small
       - RAG_TOP_K_DEFAULT=10
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_secret_key_in_production}
     volumes:
-      - ../clients_data:/app/clients_data
       - ../app:/app/app
+      - ../runtime:/app/runtime
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]

@@ -3,11 +3,12 @@ Runner del Agente Legal.
 """
 
 import logging
-from typing import Optional, List
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.rag.legal_rag.service import query_legal_rag
+
 from .logic import legal_agent_logic
 from .schema import LegalAgentResult, LegalRisk
 
@@ -19,7 +20,7 @@ def run_legal_agent(
     question: str,
     db: Session,
     auditor_summary: Optional[str] = None,
-    auditor_risks: Optional[List[str]] = None,
+    auditor_risks: Optional[list[str]] = None,
 ) -> LegalAgentResult:
     """
     Ejecuta el Agente Legal para analizar riesgos legales.
@@ -40,7 +41,7 @@ def run_legal_agent(
             "agent_name": "legal",
             "case_id": case_id,
             "stage": "analysis",
-        }
+        },
     )
 
     # Consultar RAG Legal para obtener base legal
@@ -56,10 +57,10 @@ def run_legal_agent(
         legal_context_parts = []
         for result in legal_results:
             if isinstance(result, dict):
-                citation = result.get('citation', '')
-                text = result.get('text', '')
-                source = result.get('source', '')
-                authority = result.get('authority_level', '')
+                citation = result.get("citation", "")
+                text = result.get("text", "")
+                source = result.get("source", "")
+                authority = result.get("authority_level", "")
                 context_line = f"{citation}"
                 if source:
                     context_line += f" ({source})"
@@ -84,9 +85,7 @@ def run_legal_agent(
     )
 
     # Construir resultado estructurado
-    legal_risks = [
-        LegalRisk(**risk_data) for risk_data in result_data.get("legal_risks", [])
-    ]
+    legal_risks = [LegalRisk(**risk_data) for risk_data in result_data.get("legal_risks", [])]
 
     result = LegalAgentResult(
         case_id=case_id,
@@ -105,8 +104,7 @@ def run_legal_agent(
             "stage": "analysis",
             "risks_count": len(legal_risks),
             "confidence_level": result.confidence_level,
-        }
+        },
     )
 
     return result
-

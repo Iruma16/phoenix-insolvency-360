@@ -5,8 +5,7 @@ Define salidas estándar con lenguaje jurídico prudente y consistente.
 NO creativo. NO comercial. NO afirmaciones rotundas sin evidencia.
 """
 
-from typing import Literal, List, Dict, Any
-
+from typing import Any, Literal
 
 ResponseType = Literal[
     "RESPUESTA_CON_EVIDENCIA",
@@ -19,10 +18,11 @@ ResponseType = Literal[
 # PLANTILLAS DE RESPUESTA CONTROLADAS
 # =========================================================
 
+
 def get_insufficient_evidence_message(motivo: str) -> str:
     """
     REGLA 3: Mensaje estándar para evidencia insuficiente.
-    
+
     Lenguaje jurídico prudente. NO categórico.
     """
     return (
@@ -43,7 +43,7 @@ def get_partial_information_message(
 ) -> str:
     """
     REGLA 3: Mensaje estándar para información parcial.
-    
+
     Lenguaje prudente. Advierte limitaciones.
     """
     return (
@@ -56,21 +56,21 @@ def get_partial_information_message(
     )
 
 
-def format_sources_citation(sources: List[Dict[str, Any]]) -> str:
+def format_sources_citation(sources: list[dict[str, Any]]) -> str:
     """
     CORRECCIÓN D: Formatea citas visibles de sources.
-    
+
     Incluye referencias EXACTAS a chunk_id, filename, page, offsets.
     """
     if not sources:
         return ""
-    
+
     # CERTIFICACIÓN 2: Chunks citados en salida final
     cited_chunk_ids = [s.get("chunk_id", "N/A") for s in sources]
     print(f"[CERT] CITED_CHUNKS = {cited_chunk_ids}")
-    
-    citations = ["\n\n" + "="*80 + "\nFUENTES DOCUMENTALES CITADAS:\n" + "="*80]
-    
+
+    citations = ["\n\n" + "=" * 80 + "\nFUENTES DOCUMENTALES CITADAS:\n" + "=" * 80]
+
     for i, source in enumerate(sources, 1):
         chunk_id = source.get("chunk_id", "N/A")
         filename = source.get("filename", source.get("document_id", "N/A"))
@@ -79,28 +79,32 @@ def format_sources_citation(sources: List[Dict[str, Any]]) -> str:
         end_char = source.get("end_char")
         section_hint = source.get("section_hint")
         similarity = source.get("similarity_score")
-        
+
         citation = f"\n[{i}] Fuente:"
         citation += f"\n    • Documento: {filename}"
-        
+
         if chunk_id and chunk_id != "N/A":
-            citation += f"\n    • Chunk ID: {chunk_id[:32]}..." if len(chunk_id) > 32 else f"\n    • Chunk ID: {chunk_id}"
-        
+            citation += (
+                f"\n    • Chunk ID: {chunk_id[:32]}..."
+                if len(chunk_id) > 32
+                else f"\n    • Chunk ID: {chunk_id}"
+            )
+
         if page is not None:
             citation += f"\n    • Página: {page}"
-        
+
         if start_char is not None and end_char is not None:
             citation += f"\n    • Posición: caracteres {start_char}-{end_char}"
-        
+
         if section_hint:
             citation += f"\n    • Sección: {section_hint}"
-        
+
         if similarity is not None:
             citation += f"\n    • Relevancia: {similarity:.3f}"
-        
+
         citations.append(citation)
-    
-    citations.append("\n" + "="*80)
+
+    citations.append("\n" + "=" * 80)
     return "\n".join(citations)
 
 
@@ -108,19 +112,19 @@ def wrap_response_with_evidence_notice(
     *,
     answer: str,
     confidence_score: float,
-    sources: List[Dict[str, Any]],
+    sources: list[dict[str, Any]],
 ) -> str:
     """
     REGLA 3: Envuelve respuesta del LLM con aviso de evidencia.
     CORRECCIÓN D: Incluye citas visibles de sources.
-    
+
     Ajusta lenguaje según nivel de confianza:
     - Alta (>= 0.8): Lenguaje estándar
     - Media (0.6-0.8): Lenguaje prudente
     - Baja (< 0.6): Lenguaje muy prudente con advertencias
     """
     num_sources = len(sources)
-    
+
     if confidence_score >= 0.8:
         # Alta confianza: respuesta estándar con evidencia
         header = (
@@ -128,10 +132,10 @@ def wrap_response_with_evidence_notice(
             f"con nivel de confianza alto (score: {confidence_score:.2f}/1.00):\n\n"
         )
         footer = (
-            f"\n\nNota: Esta respuesta se basa exclusivamente en la documentación analizada. "
-            f"Se recomienda verificar las fuentes citadas."
+            "\n\nNota: Esta respuesta se basa exclusivamente en la documentación analizada. "
+            "Se recomienda verificar las fuentes citadas."
         )
-    
+
     elif confidence_score >= 0.6:
         # Confianza media: lenguaje prudente
         header = (
@@ -140,11 +144,11 @@ def wrap_response_with_evidence_notice(
             f"Se recomienda interpretar con prudencia:\n\n"
         )
         footer = (
-            f"\n\n⚠️ ADVERTENCIA: Esta respuesta se basa en evidencia con limitaciones. "
-            f"Es RECOMENDABLE verificar manualmente la documentación original antes de "
-            f"considerar esta información como definitiva para efectos legales."
+            "\n\n⚠️ ADVERTENCIA: Esta respuesta se basa en evidencia con limitaciones. "
+            "Es RECOMENDABLE verificar manualmente la documentación original antes de "
+            "considerar esta información como definitiva para efectos legales."
         )
-    
+
     else:
         # Confianza baja: lenguaje muy prudente
         header = (
@@ -153,14 +157,14 @@ def wrap_response_with_evidence_notice(
             f"INTERPRETAR CON MÁXIMA PRUDENCIA:\n\n"
         )
         footer = (
-            f"\n\n⚠️⚠️ ADVERTENCIA CRÍTICA: Esta respuesta se basa en evidencia débil o inconsistente. "
-            f"NO debe considerarse concluyente. Es OBLIGATORIO verificar manualmente la "
-            f"documentación original antes de tomar decisiones basadas en esta información."
+            "\n\n⚠️⚠️ ADVERTENCIA CRÍTICA: Esta respuesta se basa en evidencia débil o inconsistente. "
+            "NO debe considerarse concluyente. Es OBLIGATORIO verificar manualmente la "
+            "documentación original antes de tomar decisiones basadas en esta información."
         )
-    
+
     # CORRECCIÓN D: Agregar citas visibles
     citations = format_sources_citation(sources)
-    
+
     return header + answer + footer + citations
 
 
@@ -172,17 +176,17 @@ def get_response_type_from_policy_decision(
 ) -> ResponseType:
     """
     Determina el tipo de respuesta según política, score y riesgo de alucinación.
-    
+
     REGLA 3: Clasificación estándar de salidas.
     CORRECCIÓN C: Si hallucination_risk=True → NUNCA RESPUESTA_CON_EVIDENCIA.
     """
     if not cumple_politica:
         return "EVIDENCIA_INSUFICIENTE"
-    
+
     # CORRECCIÓN C: Alto riesgo de alucinación → forzar información parcial
     if hallucination_risk:
         return "INFORMACION_PARCIAL_NO_CONCLUYENTE"
-    
+
     if confidence_score >= 0.6:
         return "RESPUESTA_CON_EVIDENCIA"
     else:
@@ -199,13 +203,12 @@ def print_response_type_decision(
     print(f"\n{'='*80}")
     print(f"[PHRASING] Tipo de respuesta: {response_type}")
     print(f"[PHRASING] Confidence score: {confidence_score:.3f}")
-    
+
     if response_type == "RESPUESTA_CON_EVIDENCIA":
         print(f"[PHRASING] Lenguaje: {'Estándar' if confidence_score >= 0.8 else 'Prudente'}")
     elif response_type == "EVIDENCIA_INSUFICIENTE":
-        print(f"[PHRASING] Lenguaje: Mensaje estándar de evidencia insuficiente")
+        print("[PHRASING] Lenguaje: Mensaje estándar de evidencia insuficiente")
     else:
-        print(f"[PHRASING] Lenguaje: Advertencia de información parcial")
-    
-    print(f"{'='*80}\n")
+        print("[PHRASING] Lenguaje: Advertencia de información parcial")
 
+    print(f"{'='*80}\n")

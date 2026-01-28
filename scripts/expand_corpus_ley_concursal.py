@@ -12,7 +12,9 @@ INSTRUCCIONES:
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.parent
-RAW_FILE = BASE_DIR / "clients_data" / "legal" / "ley_concursal" / "raw" / "ley_concursal_consolidada.txt"
+RAW_FILE = (
+    BASE_DIR / "clients_data" / "legal" / "ley_concursal" / "raw" / "ley_concursal_consolidada.txt"
+)
 
 # Texto consolidado expandido de la Ley Concursal
 # Incluye TODOS los títulos, libros y artículos clave
@@ -314,28 +316,27 @@ Esta ley entrará en vigor a los seis meses de su publicación en el BOE.
 
 def expand_corpus():
     """Expande el corpus legal con el texto completo."""
-    print("="*70)
+    print("=" * 70)
     print("EXPANSIÓN CORPUS LEY CONCURSAL")
-    print("="*70)
-    
+    print("=" * 70)
+
     RAW_FILE.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(RAW_FILE, 'w', encoding='utf-8') as f:
+
+    with open(RAW_FILE, "w", encoding="utf-8") as f:
         f.write(CORPUS_EXPANDIDO)
-    
+
     chars = len(CORPUS_EXPANDIDO)
-    lines = CORPUS_EXPANDIDO.count('\n')
-    articulos = CORPUS_EXPANDIDO.count('Artículo')
-    
+    lines = CORPUS_EXPANDIDO.count("\n")
+    articulos = CORPUS_EXPANDIDO.count("Artículo")
+
     print(f"\n✅ Corpus expandido guardado en: {RAW_FILE}")
-    print(f"\n📊 Estadísticas:")
+    print("\n📊 Estadísticas:")
     print(f"   - Caracteres: {chars:,}")
     print(f"   - Líneas: {lines:,}")
     print(f"   - Artículos: {articulos}")
-    print(f"\n🎯 Siguiente paso:")
-    print(f"   python -m app.rag.legal_rag.ingest_legal --ley --overwrite")
+    print("\n🎯 Siguiente paso:")
+    print("   python -m app.rag.legal_rag.ingest_legal --ley --overwrite")
 
 
 if __name__ == "__main__":
     expand_corpus()
-

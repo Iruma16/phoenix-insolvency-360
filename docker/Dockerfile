@@ -21,25 +21,21 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements desde raíz del proyecto
-COPY ../requirements.txt .
+COPY requirements.txt .
 
 # Instalar dependencias Python
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación desde raíz
-COPY ../app/ ./app/
-COPY ../scripts/ ./scripts/
-COPY ../clients_data/ ./clients_data/
+COPY app/ ./app/
+COPY scripts/ ./scripts/
 
 # Crear directorios necesarios
-RUN mkdir -p clients_data/cases \
-    && mkdir -p clients_data/legal \
-    && mkdir -p clients_data/_vectorstore \
-    && mkdir -p clients_data/logs
+RUN mkdir -p runtime/db
 
 # Exponer puerto para API
 EXPOSE 8000
 
 # Comando por defecto: iniciar API
-CMD ["python", "-m", "uvicorn", "app.api.public:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 

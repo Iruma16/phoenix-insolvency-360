@@ -5,17 +5,16 @@ OBJETIVO: Validar política que bloquea llamadas LLM sin evidencia o presupuesto
 
 PRINCIPIO: LLM SOLO cuando hay evidencia suficiente y presupuesto disponible.
 """
-import pytest
 
 from app.core.finops.policy import (
-    LLMCallPolicy,
     LLMCallDecision,
+    LLMCallPolicy,
 )
-
 
 # ============================
 # TEST 1: DECISION STRUCTURE
 # ============================
+
 
 def test_llm_call_decision_structure():
     """LLMCallDecision debe tener campos obligatorios."""
@@ -24,7 +23,7 @@ def test_llm_call_decision_structure():
         reason="OK",
         degraded_mode=False,
     )
-    
+
     assert decision.allow_call is True
     assert decision.reason == "OK"
     assert decision.degraded_mode is False
@@ -34,10 +33,11 @@ def test_llm_call_decision_structure():
 # TEST 2: POLICY - OK CASES
 # ============================
 
+
 def test_policy_allow_call_when_ok():
     """Policy debe permitir llamada cuando todo OK."""
     policy = LLMCallPolicy()
-    
+
     decision = policy.evaluate(
         case_id="CASE_001",
         phase="llm_explain",
@@ -46,7 +46,7 @@ def test_policy_allow_call_when_ok():
         no_response_reason=None,
         budget_available=True,
     )
-    
+
     assert decision.allow_call is True
     assert decision.reason == "OK"
     assert decision.degraded_mode is False
@@ -56,10 +56,11 @@ def test_policy_allow_call_when_ok():
 # TEST 3: POLICY - BLOCK CASES
 # ============================
 
+
 def test_policy_block_insufficient_evidence():
     """GATE: insufficient_evidence → BLOCK."""
     policy = LLMCallPolicy()
-    
+
     decision = policy.evaluate(
         case_id="CASE_001",
         phase="llm_explain",
@@ -68,7 +69,7 @@ def test_policy_block_insufficient_evidence():
         no_response_reason=None,
         budget_available=True,
     )
-    
+
     assert decision.allow_call is False
     assert decision.reason == "INSUFFICIENT_EVIDENCE"
     assert decision.degraded_mode is True
@@ -77,7 +78,7 @@ def test_policy_block_insufficient_evidence():
 def test_policy_block_no_response():
     """GATE: no_response_reason → BLOCK."""
     policy = LLMCallPolicy()
-    
+
     decision = policy.evaluate(
         case_id="CASE_001",
         phase="llm_explain",
@@ -86,7 +87,7 @@ def test_policy_block_no_response():
         no_response_reason="EVIDENCE_MISSING",  # BLOQUEANTE
         budget_available=True,
     )
-    
+
     assert decision.allow_call is False
     assert "NO_RESPONSE" in decision.reason
     assert decision.degraded_mode is True
@@ -95,7 +96,7 @@ def test_policy_block_no_response():
 def test_policy_block_budget_exceeded():
     """GATE: budget_available=False → BLOCK + degraded_mode."""
     policy = LLMCallPolicy()
-    
+
     decision = policy.evaluate(
         case_id="CASE_001",
         phase="llm_explain",
@@ -104,7 +105,7 @@ def test_policy_block_budget_exceeded():
         no_response_reason=None,
         budget_available=False,  # BLOQUEANTE
     )
-    
+
     assert decision.allow_call is False
     assert decision.reason == "BUDGET_EXCEEDED"
     assert decision.degraded_mode is True
@@ -113,7 +114,7 @@ def test_policy_block_budget_exceeded():
 def test_policy_block_no_evidence():
     """GATE: has_evidence=False → BLOCK."""
     policy = LLMCallPolicy()
-    
+
     decision = policy.evaluate(
         case_id="CASE_001",
         phase="llm_explain",
@@ -122,7 +123,7 @@ def test_policy_block_no_evidence():
         no_response_reason=None,
         budget_available=True,
     )
-    
+
     assert decision.allow_call is False
     assert decision.reason == "NO_EVIDENCE"
     assert decision.degraded_mode is True
@@ -132,10 +133,11 @@ def test_policy_block_no_evidence():
 # TEST 4: GATE PRIORITY
 # ============================
 
+
 def test_policy_gate_priority_insufficient_evidence_first():
     """GATE 1 (insufficient_evidence) tiene prioridad."""
     policy = LLMCallPolicy()
-    
+
     # Múltiples problemas: insufficient_evidence Y budget_exceeded
     decision = policy.evaluate(
         case_id="CASE_001",
@@ -145,7 +147,7 @@ def test_policy_gate_priority_insufficient_evidence_first():
         no_response_reason=None,
         budget_available=False,  # También falla
     )
-    
+
     # Debe retornar el primer gate que falla
     assert decision.allow_call is False
     assert decision.reason == "INSUFFICIENT_EVIDENCE"
@@ -154,7 +156,7 @@ def test_policy_gate_priority_insufficient_evidence_first():
 def test_policy_gate_priority_no_response_second():
     """GATE 2 (no_response_reason) tiene prioridad sobre budget."""
     policy = LLMCallPolicy()
-    
+
     decision = policy.evaluate(
         case_id="CASE_001",
         phase="llm_explain",
@@ -163,7 +165,7 @@ def test_policy_gate_priority_no_response_second():
         no_response_reason="EVIDENCE_WEAK",  # Segundo gate
         budget_available=False,  # También falla
     )
-    
+
     # Debe retornar el segundo gate que falla
     assert decision.allow_call is False
     assert "NO_RESPONSE" in decision.reason
@@ -173,10 +175,11 @@ def test_policy_gate_priority_no_response_second():
 # TEST 5: DEGRADED MODE
 # ============================
 
+
 def test_policy_all_blocks_use_degraded_mode():
     """Todos los bloqueos deben activar degraded_mode."""
     policy = LLMCallPolicy()
-    
+
     # Test insufficient_evidence
     decision1 = policy.evaluate(
         case_id="CASE_001",
@@ -187,7 +190,7 @@ def test_policy_all_blocks_use_degraded_mode():
         budget_available=True,
     )
     assert decision1.degraded_mode is True
-    
+
     # Test no_response_reason
     decision2 = policy.evaluate(
         case_id="CASE_001",
@@ -198,7 +201,7 @@ def test_policy_all_blocks_use_degraded_mode():
         budget_available=True,
     )
     assert decision2.degraded_mode is True
-    
+
     # Test budget_exceeded
     decision3 = policy.evaluate(
         case_id="CASE_001",
@@ -209,7 +212,7 @@ def test_policy_all_blocks_use_degraded_mode():
         budget_available=False,
     )
     assert decision3.degraded_mode is True
-    
+
     # Test no_evidence
     decision4 = policy.evaluate(
         case_id="CASE_001",
@@ -248,4 +251,3 @@ INVARIANTES CERTIFICADOS:
 - INVARIANTE 5: Gates evaluados en orden (insufficient_evidence > no_response > budget > no_evidence)
 - INVARIANTE 6: Todos los bloqueos activan degraded_mode
 """
-

@@ -6,7 +6,6 @@ Variables de configuración del sistema (LEGACY).
 
 Migración en progreso hacia app.core.config.
 """
-from pathlib import Path
 from app.core.config import settings
 
 # =========================================================

@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from typing import Optional, Dict, Any
+from typing import Any, Optional
 
 
 def _norm_text(s: Optional[str]) -> Optional[str]:
@@ -19,7 +19,7 @@ def build_fact_fingerprint(
     date_iso: Optional[str],
     amount_cents: Optional[int],
     counterparty: Optional[str],
-    extra: Optional[Dict[str, Any]] = None,
+    extra: Optional[dict[str, Any]] = None,
 ) -> str:
     """
     Huella estable del hecho.

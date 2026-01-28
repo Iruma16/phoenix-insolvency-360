@@ -26,7 +26,11 @@ pip install -r requirements.txt
 ### 2. Iniciar interfaz web
 
 ```bash
-streamlit run app/ui/streamlit_app.py
+# 1) Iniciar API (en otra terminal)
+uvicorn app.main:app --reload --port 8000
+
+# 2) Iniciar UI
+streamlit run app/ui/streamlit_mvp.py
 ```
 
 Acceso: **http://localhost:8501**
@@ -44,7 +48,7 @@ Acceso: **http://localhost:8501**
 
 ### 1️⃣ UI Web (Streamlit)
 
-**Archivo:** `app/ui/streamlit_app.py` (444 líneas)
+**Archivo:** `app/ui/streamlit_mvp.py`
 
 **Funcionalidades:**
 - Crear/seleccionar casos
@@ -229,7 +233,7 @@ app/
 ├── api/
 │   └── auth.py            # Autenticación JWT
 ├── ui/
-│   └── streamlit_app.py   # Interfaz web
+│   └── streamlit_mvp.py   # Interfaz web (camino oficial)
 └── ...
 
 tests/
@@ -272,7 +276,7 @@ clients_data/
 ### Puerto 8501 en uso
 
 ```bash
-streamlit run app/ui/streamlit_app.py --server.port 8502
+streamlit run app/ui/streamlit_mvp.py --server.port 8502
 ```
 
 ### Error "Module not found"

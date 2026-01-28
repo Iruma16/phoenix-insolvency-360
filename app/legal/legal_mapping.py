@@ -20,7 +20,7 @@ LEGAL_MAP = {
                 "source": "Texto Refundido LC",
                 "boe_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-4855",
                 "last_verified": "2024-12-30",
-                "notes": "Precepto clave en calificación culpable por irregularidades contables"
+                "notes": "Precepto clave en calificación culpable por irregularidades contables",
             },
             {
                 "law": "Ley Concursal",
@@ -29,13 +29,10 @@ LEGAL_MAP = {
                 "source": "Texto Refundido LC",
                 "boe_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-4855",
                 "last_verified": "2024-12-30",
-                "notes": "Presunción de dolo o culpa grave en calificación culpable"
-            }
+                "notes": "Presunción de dolo o culpa grave en calificación culpable",
+            },
         ],
-        "risk_types": [
-            "calificación culpable",
-            "responsabilidad patrimonial personal"
-        ]
+        "risk_types": ["calificación culpable", "responsabilidad patrimonial personal"],
     },
     "delay_filing": {
         "articles": [
@@ -46,7 +43,7 @@ LEGAL_MAP = {
                 "source": "Texto Refundido LC",
                 "boe_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-4855",
                 "last_verified": "2024-12-30",
-                "notes": "Incumplimiento del deber del art. 5 LC - dos meses desde conocimiento de insolvencia"
+                "notes": "Incumplimiento del deber del art. 5 LC - dos meses desde conocimiento de insolvencia",
             },
             {
                 "law": "Ley Concursal",
@@ -55,12 +52,10 @@ LEGAL_MAP = {
                 "source": "Texto Refundido LC",
                 "boe_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-4855",
                 "last_verified": "2024-12-30",
-                "notes": "Plazo de 2 meses desde conocimiento de insolvencia"
-            }
+                "notes": "Plazo de 2 meses desde conocimiento de insolvencia",
+            },
         ],
-        "risk_types": [
-            "calificación culpable"
-        ]
+        "risk_types": ["calificación culpable"],
     },
     "document_inconsistency": {
         "articles": [
@@ -71,7 +66,7 @@ LEGAL_MAP = {
                 "source": "Texto Refundido LC",
                 "boe_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-4855",
                 "last_verified": "2024-12-30",
-                "notes": "Aplicable a documentos presentados con la solicitud y durante el concurso"
+                "notes": "Aplicable a documentos presentados con la solicitud y durante el concurso",
             },
             {
                 "law": "Ley Concursal",
@@ -80,12 +75,10 @@ LEGAL_MAP = {
                 "source": "Texto Refundido LC",
                 "boe_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-4855",
                 "last_verified": "2024-12-30",
-                "notes": "Presunción de dolo o culpa grave si hay inexactitud grave en documentos"
-            }
+                "notes": "Presunción de dolo o culpa grave si hay inexactitud grave en documentos",
+            },
         ],
-        "risk_types": [
-            "calificación culpable"
-        ]
+        "risk_types": ["calificación culpable"],
     },
     "documentation_gap": {
         "articles": [
@@ -96,7 +89,7 @@ LEGAL_MAP = {
                 "source": "Texto Refundido LC",
                 "boe_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-4855",
                 "last_verified": "2024-12-30",
-                "notes": "Incumplimiento de deberes de colaboración e información al administrador concursal"
+                "notes": "Incumplimiento de deberes de colaboración e información al administrador concursal",
             },
             {
                 "law": "Ley Concursal",
@@ -105,11 +98,9 @@ LEGAL_MAP = {
                 "source": "Texto Refundido LC",
                 "boe_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-4855",
                 "last_verified": "2024-12-30",
-                "notes": "Obligación de facilitar información y documentación necesaria"
-            }
+                "notes": "Obligación de facilitar información y documentación necesaria",
+            },
         ],
-        "risk_types": [
-            "calificación culpable"
-        ]
-    }
+        "risk_types": ["calificación culpable"],
+    },
 }

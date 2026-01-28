@@ -15,24 +15,25 @@ En producción, non-strict es un RIESGO DE SEGURIDAD.
 Capa de validación adicional sin modificar lógica core.
 """
 import os
-from typing import Any, Optional, List
 import sys
+from typing import Any, Optional
 
 
 class AccessViolationError(Exception):
     """Error de violación de acceso cross-case."""
+
     pass
 
 
 def _check_strict_mode_safe(strict: bool, operation: str) -> None:
     """
     Verifica que modo non-strict NO se use en producción.
-    
+
     Emite WARNING si non-strict en producción.
     """
     if not strict:
         env = os.getenv("ENVIRONMENT", "dev").lower()
-        
+
         if env in ["production", "prod"]:
             # ⚠️ CRÍTICO: non-strict en producción
             warning = (
@@ -44,14 +45,11 @@ def _check_strict_mode_safe(strict: bool, operation: str) -> None:
 
 
 def assert_case_id_match(
-    operation: str,
-    expected_case_id: str,
-    actual_value: Any,
-    strict: bool = True
+    operation: str, expected_case_id: str, actual_value: Any, strict: bool = True
 ) -> None:
     """
     Assert defensivo de case_id.
-    
+
     Args:
         operation: Nombre de la operación (para logging)
         expected_case_id: case_id esperado
@@ -61,9 +59,9 @@ def assert_case_id_match(
     """
     # Verificar modo strict seguro
     _check_strict_mode_safe(strict, operation)
-    
+
     actual_case_id = None
-    
+
     # Extraer case_id del valor
     if hasattr(actual_value, "case_id"):
         actual_case_id = actual_value.case_id
@@ -72,7 +70,7 @@ def assert_case_id_match(
     else:
         # No tiene case_id, puede ser válido en algunos contextos
         return
-    
+
     if actual_case_id != expected_case_id:
         error_msg = (
             f"[SECURITY] CROSS_CASE_ACCESS_ATTEMPT: "
@@ -80,87 +78,79 @@ def assert_case_id_match(
             f"expected_case_id={expected_case_id} "
             f"actual_case_id={actual_case_id}"
         )
-        
+
         print(error_msg, file=sys.stderr)
         print(f"[CERT] ACCESS_VIOLATION_DETECTED operation={operation}")
-        
+
         if strict:
             raise AccessViolationError(error_msg)
 
 
-def validate_chunk_belongs_to_case(
-    chunk: Any,
-    case_id: str,
-    strict: bool = True
-) -> bool:
+def validate_chunk_belongs_to_case(chunk: Any, case_id: str, strict: bool = True) -> bool:
     """
     Valida que un chunk pertenezca al case_id esperado.
-    
+
     Args:
         strict: ⚠️ strict=False NO debe usarse en producción
-    
+
     Returns:
         True si es válido, False si no (en modo non-strict)
-    
+
     Raises:
         AccessViolationError si strict=True y no coincide
     """
     # Verificar modo strict seguro
     _check_strict_mode_safe(strict, "validate_chunk")
-    
+
     if not chunk:
         return True  # Chunk None es válido (puede no existir)
-    
+
     chunk_case_id = getattr(chunk, "case_id", None)
-    
+
     if chunk_case_id and chunk_case_id != case_id:
         error_msg = (
             f"[SECURITY] Chunk {getattr(chunk, 'chunk_id', 'unknown')} "
             f"pertenece a case {chunk_case_id}, esperado {case_id}"
         )
-        
+
         print(error_msg, file=sys.stderr)
         print(f"[CERT] CHUNK_CASE_ID_MISMATCH chunk={getattr(chunk, 'chunk_id', 'unknown')}")
-        
+
         if strict:
             raise AccessViolationError(error_msg)
         return False
-    
+
     return True
 
 
-def validate_document_belongs_to_case(
-    document: Any,
-    case_id: str,
-    strict: bool = True
-) -> bool:
+def validate_document_belongs_to_case(document: Any, case_id: str, strict: bool = True) -> bool:
     """
     Valida que un documento pertenezca al case_id esperado.
-    
+
     Args:
         strict: ⚠️ strict=False NO debe usarse en producción
     """
     # Verificar modo strict seguro
     _check_strict_mode_safe(strict, "validate_document")
-    
+
     if not document:
         return True
-    
+
     doc_case_id = getattr(document, "case_id", None)
-    
+
     if doc_case_id and doc_case_id != case_id:
         error_msg = (
             f"[SECURITY] Document {getattr(document, 'document_id', 'unknown')} "
             f"pertenece a case {doc_case_id}, esperado {case_id}"
         )
-        
+
         print(error_msg, file=sys.stderr)
         print(f"[CERT] DOCUMENT_CASE_ID_MISMATCH doc={getattr(document, 'document_id', 'unknown')}")
-        
+
         if strict:
             raise AccessViolationError(error_msg)
         return False
-    
+
     return True
 
 
@@ -169,11 +159,11 @@ def log_access_attempt(
     case_id: str,
     resource_type: str,
     resource_id: Optional[str] = None,
-    success: bool = True
+    success: bool = True,
 ) -> None:
     """
     Loguea intento de acceso para auditoría.
-    
+
     Args:
         operation: Tipo de operación (READ, WRITE, DELETE)
         case_id: case_id del contexto
@@ -182,7 +172,7 @@ def log_access_attempt(
         success: Si el acceso fue exitoso
     """
     status = "SUCCESS" if success else "DENIED"
-    
+
     log_line = (
         f"[AUDIT] ACCESS_LOG "
         f"operation={operation} "
@@ -191,32 +181,28 @@ def log_access_attempt(
         f"resource_id={resource_id or 'N/A'} "
         f"status={status}"
     )
-    
+
     print(log_line)
 
 
-def filter_results_by_case_id(
-    results: List[Any],
-    case_id: str,
-    strict: bool = False
-) -> List[Any]:
+def filter_results_by_case_id(results: list[Any], case_id: str, strict: bool = False) -> list[Any]:
     """
     Filtra defensivamente resultados para asegurar case_id.
-    
+
     Args:
         results: Lista de objetos con .case_id
         case_id: case_id esperado
         strict: Si True, loguea violaciones detectadas
-    
+
     Returns:
         Lista filtrada solo con objetos del case_id correcto
     """
     filtered = []
     violations = 0
-    
+
     for item in results:
         item_case_id = getattr(item, "case_id", None)
-        
+
         if item_case_id is None:
             # Sin case_id, permitir por defecto
             filtered.append(item)
@@ -230,11 +216,10 @@ def filter_results_by_case_id(
                 print(
                     f"[SECURITY] Filtered out item with case_id={item_case_id} "
                     f"(expected {case_id})",
-                    file=sys.stderr
+                    file=sys.stderr,
                 )
-    
+
     if violations > 0:
         print(f"[CERT] CROSS_CASE_ITEMS_FILTERED count={violations} expected_case_id={case_id}")
-    
-    return filtered
 
+    return filtered

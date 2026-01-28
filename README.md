@@ -203,8 +203,8 @@ python scripts/generate_case_report.py CASE_RETAIL_001
 ### Opción 2: API REST
 
 ```bash
-# Iniciar servidor
-python app/api/public.py
+# Iniciar servidor (camino oficial)
+uvicorn app.main:app --reload --port 8000
 
 # En otra terminal:
 # Crear caso

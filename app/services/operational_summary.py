@@ -8,7 +8,8 @@ Resumen de la operacionalización de PHOENIX.
 
 def print_operational_summary():
     """Imprime resumen de operacionalización."""
-    print("""
+    print(
+        """
 ================================================================================
 ✅ FASE 9 — OPERACIONALIZACIÓN PHOENIX COMPLETADA
 ================================================================================
@@ -195,7 +196,7 @@ TESTS PROSECUTOR (9 tests):
 
 EJECUTAR TESTS:
 ```bash
-cd /Users/irumabragado/Documents/procesos/202512_phoenix-legal
+cd phoenix-legal
 python3 -m pytest tests/test_rag_certification_invariants.py -v
 python3 -m pytest tests/test_prosecutor_certification_invariants.py -v
 ```
@@ -262,9 +263,9 @@ Añadió CONTROL y CONFIANZA.
 ESTADO: ✅ FASE 9 COMPLETADA - PHOENIX OPERACIONALIZADO
 
 ================================================================================
-""")
+"""
+    )
 
 
 if __name__ == "__main__":
     print_operational_summary()
-

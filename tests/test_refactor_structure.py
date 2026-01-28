@@ -4,19 +4,18 @@ Verifica imports y estructura sin ejecutar código completo.
 """
 
 import sys
-import importlib
 from pathlib import Path
 
 
 def test_imports():
     """Test que verifica que los imports funcionan correctamente"""
-    
+
     print("=" * 80)
     print("TEST: Verificación de imports y estructura")
     print("=" * 80)
-    
+
     errors = []
-    
+
     # Test 1: Verificar que retrieve.py no tiene LLM
     print("\n1️⃣ Verificando que app/rag/case_rag/retrieve.py NO tiene LLM...")
     try:
@@ -39,16 +38,23 @@ def test_imports():
                     errors.append("❌ retrieve.py NO tiene 'context_text' (debe tenerlo)")
                 if "answer:" in content and "context_text" not in content.split("answer:")[0]:
                     # Si tiene answer: en la definición del dataclass, es un problema
-                    if "@dataclass" in content and "answer:" in content.split("@dataclass")[1].split("def ")[0]:
-                        errors.append("❌ RAGInternalResult todavía tiene campo 'answer' (debe ser 'context_text')")
+                    if (
+                        "@dataclass" in content
+                        and "answer:" in content.split("@dataclass")[1].split("def ")[0]
+                    ):
+                        errors.append(
+                            "❌ RAGInternalResult todavía tiene campo 'answer' (debe ser 'context_text')"
+                        )
                 print("   ✅ retrieve.py no contiene llamadas a LLM")
     except Exception as e:
         errors.append(f"❌ Error verificando retrieve.py: {e}")
-    
+
     # Test 2: Verificar que response_builder.py existe y tiene LLM
     print("\n2️⃣ Verificando que app/agents/base/response_builder.py tiene LLM...")
     try:
-        response_builder_path = Path(__file__).parent.parent / "app" / "agents" / "base" / "response_builder.py"
+        response_builder_path = (
+            Path(__file__).parent.parent / "app" / "agents" / "base" / "response_builder.py"
+        )
         if not response_builder_path.exists():
             errors.append("❌ response_builder.py no existe")
         else:
@@ -56,12 +62,14 @@ def test_imports():
             if "build_llm_answer" not in content:
                 errors.append("❌ response_builder.py no tiene función 'build_llm_answer'")
             elif "chat.completions" not in content:
-                errors.append("❌ response_builder.py NO contiene 'chat.completions' (debe tenerlo)")
+                errors.append(
+                    "❌ response_builder.py NO contiene 'chat.completions' (debe tenerlo)"
+                )
             else:
                 print("   ✅ response_builder.py contiene LLM correctamente")
     except Exception as e:
         errors.append(f"❌ Error verificando response_builder.py: {e}")
-    
+
     # Test 3: Verificar que rag.py usa response_builder
     print("\n3️⃣ Verificando que app/rag/case_rag/rag.py usa response_builder...")
     try:
@@ -78,11 +86,13 @@ def test_imports():
                 print("   ✅ rag.py usa response_builder correctamente")
     except Exception as e:
         errors.append(f"❌ Error verificando rag.py: {e}")
-    
+
     # Test 4: Verificar que agent_2_prosecutor usa ambas funciones
     print("\n4️⃣ Verificando que agent_2_prosecutor usa retrieve + response_builder...")
     try:
-        logic_path = Path(__file__).parent.parent / "app" / "agents" / "agent_2_prosecutor" / "logic.py"
+        logic_path = (
+            Path(__file__).parent.parent / "app" / "agents" / "agent_2_prosecutor" / "logic.py"
+        )
         if not logic_path.exists():
             errors.append("❌ logic.py no existe")
         else:
@@ -95,11 +105,11 @@ def test_imports():
                 print("   ✅ agent_2_prosecutor usa ambas funciones correctamente")
     except Exception as e:
         errors.append(f"❌ Error verificando logic.py: {e}")
-    
+
     # Test 5: Verificar estructura de archivos
     print("\n5️⃣ Verificando estructura de archivos...")
     base_dir = Path(__file__).parent.parent
-    
+
     required_files = [
         "app/rag/case_rag/retrieve.py",
         "app/rag/case_rag/rag.py",
@@ -107,19 +117,19 @@ def test_imports():
         "app/agents/base/response_builder.py",
         "app/agents/agent_2_prosecutor/logic.py",
     ]
-    
+
     for file_path in required_files:
         full_path = base_dir / file_path
         if not full_path.exists():
             errors.append(f"❌ Archivo no existe: {file_path}")
         else:
             print(f"   ✅ {file_path} existe")
-    
+
     # Resumen
     print("\n" + "=" * 80)
     print("RESUMEN")
     print("=" * 80)
-    
+
     if errors:
         print(f"\n❌ Se encontraron {len(errors)} error(es):")
         for error in errors:
@@ -144,4 +154,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

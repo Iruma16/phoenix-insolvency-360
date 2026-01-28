@@ -34,4 +34,3 @@ Reglas:
   next_actions (lista de strings).
 
 """
-

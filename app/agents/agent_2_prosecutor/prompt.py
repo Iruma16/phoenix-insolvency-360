@@ -99,4 +99,3 @@ lo detectará el Administrador Concursal o el Juez.
 Tu función es que el abogado del deudor
 NUNCA llegue al juzgado a ciegas.
 """
-

@@ -3,31 +3,30 @@ API Endpoints para Balance de Situación Concursal.
 
 FASE 1.3: Balance de Situación Automático
 """
-from typing import List, Optional
 from datetime import date, datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.models.balance_concursal_output import BalanceConcursalOutput
-from app.models.financial_statement import BalanceSheet, IncomeStatement
 from app.models.credit import Credit
-from app.models.balance_situacion import BalanceSituacion
+from app.models.financial_statement import BalanceSheet, IncomeStatement
 from app.services.balance_concursal_service import BalanceConcursalService
 from app.services.balance_persistence import BalancePersistenceService
-
 
 router = APIRouter(prefix="/cases/{case_id}/balance-concursal", tags=["Balance Concursal"])
 
 
 class BalanceConcursalRequest(BaseModel):
     """Request para análisis de balance concursal."""
+
     balance: BalanceSheet
-    creditos: List[Credit]
+    creditos: list[Credit]
     pyg: Optional[IncomeStatement] = None
-    impagos_exigibles: Optional[List[dict]] = None
+    impagos_exigibles: Optional[list[dict]] = None
     concurso_date: Optional[date] = None
 
 
@@ -49,7 +48,7 @@ def analyze_balance_concursal(
 ) -> BalanceConcursalOutput:
     """
     Analiza un balance de situación concursal completo.
-    
+
     Flujo:
     1. Clasifica créditos según TRLC
     2. Calcula ratios financieros
@@ -58,7 +57,7 @@ def analyze_balance_concursal(
     """
     service = BalanceConcursalService(concurso_date=request.concurso_date)
     persistence = BalancePersistenceService()
-    
+
     try:
         # 1. Analizar
         output = service.analyze_balance_concursal(
@@ -68,26 +67,27 @@ def analyze_balance_concursal(
             pyg=request.pyg,
             impagos_exigibles=request.impagos_exigibles,
         )
-        
+
         # 2. Persistir en BD
-        balance_db = persistence.persist_balance(
+        persistence.persist_balance(
             db=db,
             output=output,
-            created_by="api_user"  # TODO: Obtener usuario real del token JWT
+            created_by="api_user",  # TODO: Obtener usuario real del token JWT
         )
-        
+
         return output
-        
+
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al analizar balance concursal: {str(e)}"
+            detail=f"Error al analizar balance concursal: {str(e)}",
         )
 
 
 class BalanceSummary(BaseModel):
     """Resumen de balance para listado."""
+
     balance_id: str
     case_id: str
     version: int
@@ -111,13 +111,13 @@ def get_active_balance(
     """Obtiene el balance activo de un caso."""
     persistence = BalancePersistenceService()
     balance = persistence.get_active_balance(db, case_id)
-    
+
     if not balance:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró balance activo para caso {case_id}"
+            detail=f"No se encontró balance activo para caso {case_id}",
         )
-    
+
     return BalanceSummary(
         balance_id=balance.balance_id,
         case_id=balance.case_id,
@@ -132,18 +132,18 @@ def get_active_balance(
 
 @router.get(
     "/history",
-    response_model=List[BalanceSummary],
+    response_model=list[BalanceSummary],
     summary="Obtener histórico de balances",
     description="Obtiene el histórico completo de balances de un caso.",
 )
 def get_balance_history(
     case_id: str,
     db: Session = Depends(get_db),
-) -> List[BalanceSummary]:
+) -> list[BalanceSummary]:
     """Obtiene el histórico de balances de un caso."""
     persistence = BalancePersistenceService()
     balances = persistence.get_balance_history(db, case_id)
-    
+
     return [
         BalanceSummary(
             balance_id=b.balance_id,

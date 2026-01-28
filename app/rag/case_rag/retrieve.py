@@ -1,50 +1,48 @@
 from __future__ import annotations
 
-from typing import List, Literal, Optional
 from dataclasses import dataclass
 from datetime import date
+from typing import Literal, Optional
 
-from sqlalchemy.orm import Session
 from openai import OpenAI
+from sqlalchemy.orm import Session
 
 from app.core.variables import (
-    RAG_AUTO_BUILD_EMBEDDINGS,
     EMBEDDING_MODEL,
-    RAG_MIN_SIMILARITY_SCORE,
-    RAG_WEAK_RESPONSE_MAX_DISTANCE,
-    RAG_HALLUCINATION_RISK_THRESHOLD,
     LEGAL_QUALITY_SCORE_BLOCK_THRESHOLD,
     LEGAL_QUALITY_SCORE_WARNING_THRESHOLD,
+    RAG_AUTO_BUILD_EMBEDDINGS,
+    RAG_HALLUCINATION_RISK_THRESHOLD,
     RAG_MIN_CHUNKS_REQUIRED,
+    RAG_MIN_SIMILARITY_SCORE,
     RAG_TRACE_DECISIONS,
+    RAG_WEAK_RESPONSE_MAX_DISTANCE,
 )
-from app.services.embeddings_pipeline import (
-    get_case_collection,
-    build_embeddings_for_case,
+from app.models.document import Document
+from app.models.document_chunk import DocumentChunk
+from app.rag.evidence import (
+    NoResponseReasonCode,
+    RetrievalEvidence,
+    apply_evidence_gates,
+    build_retrieval_evidence,
+    log_evidence_decision,
 )
-from app.services.vectorstore_versioning import (
-    get_active_version,
-    get_active_version_path,
+from app.rag.evidence_enforcer import (
+    validate_chunk_has_location,
+    validate_chunks_exist,
+    validate_retrieval_result,
 )
 from app.services.document_chunk_pipeline import (
     build_document_chunks_for_case,
 )
 from app.services.document_quality import get_document_quality_summary
-from app.models.document import Document
-from app.models.document_chunk import DocumentChunk
-from app.rag.evidence import (
-    build_retrieval_evidence,
-    apply_evidence_gates,
-    log_evidence_decision,
-    RetrievalEvidence,
-    NoResponseReasonCode,
+from app.services.embeddings_pipeline import (
+    build_embeddings_for_case,
+    get_case_collection,
 )
-from app.rag.evidence_enforcer import (
-    validate_chunks_exist,
-    validate_chunk_has_location,
-    validate_retrieval_result,
+from app.services.vectorstore_versioning import (
+    get_active_version,
 )
-
 
 # =========================================================
 # ESTADOS INTERNOS RAG
@@ -66,9 +64,9 @@ ConfidenceLevel = Literal["alta", "media", "baja"]
 class RAGInternalResult:
     status: RAGStatus
     context_text: str  # Contexto crudo concatenado de chunks
-    sources: List[dict]  # Lista de chunks con metadatos y scores
+    sources: list[dict]  # Lista de chunks con metadatos y scores
     confidence: ConfidenceLevel
-    warnings: List[str]
+    warnings: list[str]
     hallucination_risk: bool = False  # True si hay alto riesgo de alucinación
     evidence: Optional[RetrievalEvidence] = None  # Evidencia verificable (Endurecimiento #4)
     no_response_reason: Optional[NoResponseReasonCode] = None  # Código si NO_RESPONSE
@@ -78,18 +76,18 @@ class RAGInternalResult:
 # FUNCIÓN RAG (CEREBRO ÚNICO)
 # =========================================================
 
+
 def rag_answer_internal(
     *,
     db: Session,
     case_id: str,
     question: str,
     top_k: int,
-    doc_types: Optional[List[str]] = None,
+    doc_types: Optional[list[str]] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> RAGInternalResult:
-
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     # --------------------------------------------------
     # 0️⃣ EVALUAR CALIDAD DOCUMENTAL Y RIESGO LEGAL
@@ -98,7 +96,7 @@ def rag_answer_internal(
     quality_score = quality_summary["quality_score"]
     legal_risks = quality_summary.get("legal_risks", [])
     critical_docs_missing = quality_summary.get("critical_documents_missing", 0)
-    
+
     # ✅ BLOQUEO: Si la calidad es muy baja, NO permitir conclusiones automáticas
     if quality_score < LEGAL_QUALITY_SCORE_BLOCK_THRESHOLD:
         return RAGInternalResult(
@@ -108,11 +106,12 @@ def rag_answer_internal(
             confidence="baja",
             warnings=[
                 f"⚠️ BLOQUEO POR CALIDAD: Score {quality_score:.1f}/100 (umbral mínimo: {LEGAL_QUALITY_SCORE_BLOCK_THRESHOLD})",
-                "Se requieren conclusiones manuales hasta que la documentación esté completamente procesada."
-            ] + legal_risks,
+                "Se requieren conclusiones manuales hasta que la documentación esté completamente procesada.",
+            ]
+            + legal_risks,
             hallucination_risk=True,  # Baja calidad = alto riesgo de alucinación
         )
-    
+
     # ✅ ALERTA: Documentos críticos sin embeddings
     if critical_docs_missing > 0:
         warnings.extend(legal_risks)
@@ -120,34 +119,34 @@ def rag_answer_internal(
             f"⚠️ ALERTA LEGAL: {critical_docs_missing} documento(s) legal(es) crítico(s) "
             "sin procesamiento completo. Las conclusiones pueden estar incompletas."
         )
-    
+
     # ✅ ADVERTENCIA: Calidad baja pero no bloqueante
     if quality_score < LEGAL_QUALITY_SCORE_WARNING_THRESHOLD:
         warnings.append(
             f"⚠️ Calidad documental baja ({quality_score:.1f}/100). "
             "Riesgo elevado de alucinación. Se recomienda revisar conclusiones manualmente."
         )
-    
+
     # ✅ Baja calidad → Alta probabilidad de alucinación
     # Ajustar umbral de riesgo de alucinación basado en calidad
     quality_adjusted_hallucination_threshold = RAG_HALLUCINATION_RISK_THRESHOLD
     if quality_score < 75:
         # Si calidad < 75, ser más estricto con riesgo de alucinación
         quality_adjusted_hallucination_threshold = RAG_HALLUCINATION_RISK_THRESHOLD * 0.85
-    
+
     # --------------------------------------------------
     # 1️⃣ Validar caso + documentos
     # --------------------------------------------------
     from sqlalchemy import or_
-    
+
     query = db.query(Document).filter(
         Document.case_id == case_id,
         # FASE 2A: Excluir documentos duplicados marcados para exclusión
         or_(
             Document.duplicate_action.is_(None),
             Document.duplicate_action == "pending",
-            Document.duplicate_action == "keep_both"
-        )
+            Document.duplicate_action == "keep_both",
+        ),
     )
 
     if doc_types:
@@ -182,11 +181,9 @@ def rag_answer_internal(
     except Exception:
         # Si falla validación, intentar generar chunks automáticamente
         chunks_count = 0
-    
+
     if chunks_count == 0:
-        warnings.append(
-            "No había chunks y se ha ejecutado el chunking automáticamente."
-        )
+        warnings.append("No había chunks y se ha ejecutado el chunking automáticamente.")
 
         build_document_chunks_for_case(
             db=db,
@@ -218,7 +215,7 @@ def rag_answer_internal(
     # --------------------------------------------------
     # CAMBIO: Ahora verificamos que existe una versión ACTIVE válida
     active_version = get_active_version(case_id)
-    
+
     if not active_version:
         # No existe versión activa
         if not RAG_AUTO_BUILD_EMBEDDINGS:
@@ -230,11 +227,9 @@ def rag_answer_internal(
                 warnings=warnings,
                 hallucination_risk=False,
             )
-        
+
         # Generar embeddings automáticamente
-        warnings.append(
-            "El índice semántico no existía y se ha generado automáticamente."
-        )
+        warnings.append("El índice semántico no existía y se ha generado automáticamente.")
         try:
             version_id = build_embeddings_for_case(db=db, case_id=case_id)
             warnings.append(f"Nueva versión creada: {version_id}")
@@ -247,11 +242,11 @@ def rag_answer_internal(
                 warnings=warnings + [f"Error generando embeddings: {e}"],
                 hallucination_risk=False,
             )
-    
+
     # Obtener colección de la versión activa (o None para usar ACTIVE)
     try:
         collection = get_case_collection(case_id, version=None)  # None = usar ACTIVE
-        
+
         # Validar que la colección no esté vacía
         if collection.count() == 0:
             warnings.append("La versión activa del vectorstore está vacía.")
@@ -264,7 +259,7 @@ def rag_answer_internal(
                     warnings=warnings,
                     hallucination_risk=False,
                 )
-            
+
             # Regenerar embeddings
             warnings.append("Regenerando embeddings...")
             try:
@@ -295,10 +290,14 @@ def rag_answer_internal(
     # --------------------------------------------------
     # Generar embedding de la pregunta usando el mismo modelo que los embeddings almacenados
     openai_client = OpenAI()
-    question_embedding = openai_client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=[question],
-    ).data[0].embedding
+    question_embedding = (
+        openai_client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=[question],
+        )
+        .data[0]
+        .embedding
+    )
 
     results = collection.query(
         query_embeddings=[question_embedding],
@@ -333,30 +332,32 @@ def rag_answer_internal(
             # ✅ FILTRAR POR SCORE MÍNIMO DE SIMILARIDAD
             if distance > RAG_MIN_SIMILARITY_SCORE:
                 continue  # Saltar si la distancia es mayor al umbral
-            
+
             # Validar texto
             if text is None or not text.strip():
                 continue
-            
+
             # Validar metadatos
             if meta is None:
                 continue
-            
+
             document_id = meta.get("document_id")
             chunk_index = meta.get("chunk_index")
-            
+
             if document_id is None or chunk_index is None:
                 continue
-            
+
             # Convertir tipos si es necesario (ChromaDB puede devolver strings)
             document_id = str(document_id)
             try:
                 chunk_index = int(chunk_index)
             except (ValueError, TypeError):
                 continue  # Si no se puede convertir a int, saltar este elemento
-            
+
             # ✅ Incluir distancia en los datos
-            valid_pairs.append((text, {"document_id": document_id, "chunk_index": chunk_index}, distance))
+            valid_pairs.append(
+                (text, {"document_id": document_id, "chunk_index": chunk_index}, distance)
+            )
         except Exception as e:
             # Si hay algún error procesando este elemento, saltarlo
             print(f"[WARN] Error procesando elemento en validación: {e}")
@@ -365,15 +366,18 @@ def rag_answer_internal(
     # REGLA 4: Umbral mínimo de contexto (BLOQUEANTE)
     if len(valid_pairs) < RAG_MIN_CHUNKS_REQUIRED:
         if RAG_TRACE_DECISIONS:
-            print(f"[RAG DECISIÓN] ❌ BLOQUEO: {len(valid_pairs)} chunks < {RAG_MIN_CHUNKS_REQUIRED} mínimo requerido")
-            print(f"[RAG DECISIÓN] Motivo: EVIDENCIA_INSUFICIENTE")
-        
+            print(
+                f"[RAG DECISIÓN] ❌ BLOQUEO: {len(valid_pairs)} chunks < {RAG_MIN_CHUNKS_REQUIRED} mínimo requerido"
+            )
+            print("[RAG DECISIÓN] Motivo: EVIDENCIA_INSUFICIENTE")
+
         return RAGInternalResult(
             status="NO_RELEVANT_CONTEXT",
             context_text="",  # Sin contexto válido encontrado
             sources=[],
             confidence="baja",
-            warnings=warnings + [
+            warnings=warnings
+            + [
                 f"Se encontraron {len(valid_pairs)} fragmento(s) relevante(s), "
                 f"pero se requieren al menos {RAG_MIN_CHUNKS_REQUIRED} para generar una respuesta fundamentada."
             ],
@@ -382,10 +386,10 @@ def rag_answer_internal(
 
     # ✅ Determinar riesgo de alucinación y respuesta débil basado en la mejor distancia
     # Usar umbral ajustado por calidad documental (baja calidad → más estricto)
-    best_distance = valid_pairs[0][2] if valid_pairs else float('inf')
+    best_distance = valid_pairs[0][2] if valid_pairs else float("inf")
     hallucination_risk = best_distance > quality_adjusted_hallucination_threshold
     is_weak_response = best_distance > RAG_WEAK_RESPONSE_MAX_DISTANCE
-    
+
     # ✅ Baja calidad documental aumenta riesgo de alucinación
     if quality_score < LEGAL_QUALITY_SCORE_WARNING_THRESHOLD:
         # Si calidad es baja, marcar como riesgo de alucinación incluso con mejor similitud
@@ -398,7 +402,7 @@ def rag_answer_internal(
     # ✅ Añadir warnings orientados a valor legal (no técnico)
     if is_weak_response:
         warnings.append(
-            f"⚠️ La información encontrada tiene baja relevancia para la consulta. "
+            "⚠️ La información encontrada tiene baja relevancia para la consulta. "
             "Se recomienda revisar manualmente la respuesta y contrastarla con la documentación original."
         )
 
@@ -414,7 +418,7 @@ def rag_answer_internal(
         # Los tipos ya están validados y convertidos en el paso anterior
         document_id = meta["document_id"]
         chunk_index = meta["chunk_index"]
-        
+
         # Obtener chunk desde BD para metadata completa (chunk_id, page, offsets)
         # ✅ SEGURIDAD: Filtrar por case_id para prevenir acceso cross-case
         chunk = (
@@ -426,11 +430,11 @@ def rag_answer_internal(
             )
             .first()
         )
-        
+
         # ✅ SEGURIDAD: Si el chunk no pertenece a este case_id, skipear
         if not chunk:
             continue  # Chunk no encontrado o no pertenece a este caso
-        
+
         # FASE 4: Validar que el chunk tiene location obligatoria
         try:
             validate_chunk_has_location(chunk)
@@ -439,7 +443,7 @@ def rag_answer_internal(
             if RAG_TRACE_DECISIONS:
                 print(f"[RAG] ⚠️ Chunk sin location válida skipeado: {e}")
             continue
-        
+
         # Construir fuente con TODA la metadata necesaria para citación
         source = {
             "document_id": document_id,
@@ -447,7 +451,7 @@ def rag_answer_internal(
             "content": text,
             "similarity_score": round(distance, 4),
         }
-        
+
         if chunk:
             # REGLA 3: Metadata obligatoria para citación precisa
             source["chunk_id"] = chunk.chunk_id
@@ -455,14 +459,12 @@ def rag_answer_internal(
             source["start_char"] = chunk.start_char
             source["end_char"] = chunk.end_char
             source["section_hint"] = chunk.section_hint
-            
+
             # Obtener filename para citación
             if chunk.document:
                 source["filename"] = chunk.document.filename
-        
-        context_blocks.append(
-            f"[Documento {document_id} | Chunk {chunk_index}]\n{text}"
-        )
+
+        context_blocks.append(f"[Documento {document_id} | Chunk {chunk_index}]\n{text}")
         sources.append(source)
 
     context = "\n\n".join(context_blocks)
@@ -476,7 +478,7 @@ def rag_answer_internal(
     except Exception as validation_error:
         if RAG_TRACE_DECISIONS:
             print(f"[RAG] ❌ Validación de evidencia falló: {validation_error}")
-        
+
         # Retornar NO_RELEVANT_CONTEXT con información del error
         return RAGInternalResult(
             status="NO_RELEVANT_CONTEXT",
@@ -494,26 +496,27 @@ def rag_answer_internal(
     # --------------------------------------------------
     evidence = build_retrieval_evidence(sources)
     reason_code = apply_evidence_gates(evidence)
-    
+
     # Logging obligatorio
     log_evidence_decision(
         case_id=case_id,
         evidence=evidence,
         reason_code=reason_code,
     )
-    
+
     # GATE BLOQUEANTE: Si evidencia insuficiente → NO_RESPONSE
     if reason_code:
         if RAG_TRACE_DECISIONS:
             print(f"[RAG DECISIÓN] ❌ NO_RESPONSE: {reason_code.value}")
             print(f"[RAG DECISIÓN] Evidence stats: {evidence.get_stats()}")
-        
+
         return RAGInternalResult(
             status="NO_RELEVANT_CONTEXT",
             context_text="",
             sources=[],
             confidence="baja",
-            warnings=warnings + [
+            warnings=warnings
+            + [
                 f"NO_RESPONSE: {reason_code.value}",
                 f"Valid chunks: {evidence.valid_chunks}/{evidence.total_chunks}",
                 f"Avg similarity: {evidence.avg_similarity:.4f}",
@@ -522,7 +525,7 @@ def rag_answer_internal(
             evidence=evidence,
             no_response_reason=reason_code,
         )
-    
+
     # ✅ Determinar confianza basada en cantidad, calidad de similitud Y calidad documental
     if len(valid_pairs) < top_k:
         warnings.append(
@@ -535,7 +538,7 @@ def rag_answer_internal(
         # Si tenemos suficientes resultados, la confianza depende de:
         # 1. Calidad de similitud (distancia)
         # 2. Calidad documental del caso (quality_score)
-        
+
         # Baja calidad documental reduce confianza
         if quality_score < 65:
             confidence = "baja"  # Calidad muy baja = baja confianza
@@ -554,22 +557,24 @@ def rag_answer_internal(
     # 6️⃣ Devolver contexto crudo (sin LLM)
     # --------------------------------------------------
     # RAG solo recupera contexto, NO genera respuestas
-    
+
     # REGLA 6: Decisión trazable
     if RAG_TRACE_DECISIONS:
         print(f"\n{'='*80}")
         print(f"[RAG DECISIÓN] case_id={case_id}")
-        print(f"[RAG DECISIÓN] ✅ RESPUESTA_CON_EVIDENCIA")
+        print("[RAG DECISIÓN] ✅ RESPUESTA_CON_EVIDENCIA")
         print(f"[RAG DECISIÓN] Chunks recuperados: {len(sources)}")
         print(f"[RAG DECISIÓN] Confianza: {confidence}")
         print(f"[RAG DECISIÓN] Riesgo alucinación: {'SÍ' if hallucination_risk else 'NO'}")
         print(f"[RAG DECISIÓN] Calidad documental: {quality_score:.1f}/100")
-        print(f"[RAG DECISIÓN] Chunks usados:")
+        print("[RAG DECISIÓN] Chunks usados:")
         for i, src in enumerate(sources, 1):
-            print(f"  {i}. chunk_id={src.get('chunk_id', 'N/A')[:16]}... | "
-                  f"doc={src['document_id'][:8]}... | "
-                  f"score={src['similarity_score']:.3f} | "
-                  f"page={src.get('page', 'N/A')}")
+            print(
+                f"  {i}. chunk_id={src.get('chunk_id', 'N/A')[:16]}... | "
+                f"doc={src['document_id'][:8]}... | "
+                f"score={src['similarity_score']:.3f} | "
+                f"page={src.get('page', 'N/A')}"
+            )
         print(f"{'='*80}\n")
 
     return RAGInternalResult(
@@ -582,4 +587,3 @@ def rag_answer_internal(
         evidence=evidence,  # ✅ Evidencia verificable
         no_response_reason=None,  # Sin bloqueo, evidencia válida
     )
-

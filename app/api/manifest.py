@@ -12,13 +12,12 @@ PROHIBIDO:
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.case import Case
 from app.trace.manifest import HardManifest
-
 
 router = APIRouter(
     prefix="/cases/{case_id}",
@@ -44,7 +43,7 @@ def create_manifest(
 ) -> HardManifest:
     """
     Crea un HardManifest certificando la ejecución del caso.
-    
+
     Proceso:
     1. Verificar que el caso existe
     2. Obtener último ExecutionTrace (debe estar completado)
@@ -57,14 +56,14 @@ def create_manifest(
        - execution_limits (qué NO hace el sistema)
        - finops_snapshot (si existe)
        - signed_at (timestamp de certificación)
-    
+
     Args:
         case_id: ID del caso
         db: Sesión de base de datos
-        
+
     Returns:
         HardManifest certificando la ejecución
-        
+
     Raises:
         HTTPException 404: Si el caso no existe
         HTTPException 404: Si no existe trace para el caso
@@ -76,17 +75,16 @@ def create_manifest(
     case = db.query(Case).filter(Case.case_id == case_id).first()
     if not case:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Caso '{case_id}' no encontrado"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
         )
-    
+
     # TODO: En una implementación real, aquí se:
     # 1. Consultaría el último ExecutionTrace del caso en BD
     # 2. Verificaría que está completado (completed_at != None)
     # 3. Verificaría que no existe manifest para ese trace_id
     # 4. Crearía el HardManifest usando la función del módulo trace.manifest
     # 5. Persistiría el manifest en BD
-    
+
     # NOTA: La persistencia del trace y manifest en BD no está implementada en FASE 6.
     # FASE 6 solo define los modelos Pydantic y funciones de generación.
     # Aquí necesitaríamos:
@@ -95,13 +93,13 @@ def create_manifest(
     # 3. Consultar el último trace del caso
     # 4. Usar create_manifest() de app/trace/manifest.py
     # 5. Persistir el manifest en BD
-    
+
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=(
             f"No se encontró trace de ejecución para el caso '{case_id}'. "
             "El manifest solo puede generarse a partir de un trace completo."
-        )
+        ),
     )
 
 
@@ -112,4 +110,3 @@ def create_manifest(
 # PUT /cases/{case_id}/manifest → PROHIBIDO (no se edita manifest)
 # DELETE /cases/{case_id}/manifest → PROHIBIDO (no se borra manifest)
 # POST /cases/{case_id}/manifest/regenerate → PROHIBIDO (no se regenera)
-

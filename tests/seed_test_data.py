@@ -1,5 +1,4 @@
 from datetime import datetime
-from pathlib import Path
 
 from app.core.database import get_db
 from app.core.variables import DATA
@@ -9,6 +8,7 @@ from app.models.document import Document
 # =========================================================
 # SEED DE DATOS DE PRUEBA (CONTROLADO Y VÁLIDO)
 # =========================================================
+
 
 def main():
     db = next(get_db())

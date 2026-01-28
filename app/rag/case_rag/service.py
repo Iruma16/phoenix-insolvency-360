@@ -34,4 +34,3 @@ def query_case_rag(
     )
 
     return result.context_text
-

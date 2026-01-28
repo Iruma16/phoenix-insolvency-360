@@ -3,31 +3,30 @@ Motor de reglas para el Agente Legal.
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Optional
 
-from .models import Rulebook, Rule
-from .rule_evaluator import RuleEvaluator
-from .schema import LegalRisk, LegalAgentResult
 from .logic import _extract_allowed_articles, _normalize_article_reference
+from .models import Rule, Rulebook
+from .rule_evaluator import RuleEvaluator
+from .schema import LegalAgentResult, LegalRisk
 
 
 def _filter_legal_articles(
-    legal_articles: List[str],
-    allowed_articles: set,
-    legal_context: str
+    legal_articles: list[str], allowed_articles: set, legal_context: str
 ) -> tuple:
     """Filtra artículos legales, dejando solo los permitidos."""
     valid_articles = []
     discarded_articles = []
-    
+
     for article_ref in legal_articles:
         normalized = _normalize_article_reference(article_ref)
         if normalized and normalized in allowed_articles:
             valid_articles.append(article_ref)
         else:
             discarded_articles.append(article_ref)
-    
+
     return valid_articles, discarded_articles
+
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ class RuleEngine:
         self.legal_context = legal_context
         self.allowed_articles = _extract_allowed_articles(legal_context)
 
-    def evaluate_rules(self, variables: Dict[str, Any]) -> List[LegalRisk]:
+    def evaluate_rules(self, variables: dict[str, Any]) -> list[LegalRisk]:
         """
         Evalúa todas las reglas del rulebook.
 
@@ -59,7 +58,7 @@ class RuleEngine:
         """
         evaluator = RuleEvaluator(variables)
         risks = []
-        
+
         for rule in self.rulebook.rules:
             try:
                 risk = self._evaluate_rule(rule, evaluator, variables)
@@ -68,14 +67,11 @@ class RuleEngine:
             except Exception as e:
                 logger.warning(f"Error evaluando regla {rule.rule_id}: {e}")
                 continue
-        
+
         return risks
 
     def _evaluate_rule(
-        self,
-        rule: Rule,
-        evaluator: RuleEvaluator,
-        variables: Dict[str, Any]
+        self, rule: Rule, evaluator: RuleEvaluator, variables: dict[str, Any]
     ) -> Optional[LegalRisk]:
         """
         Evalúa una regla individual.
@@ -93,38 +89,36 @@ class RuleEngine:
             for var_name in rule.trigger.variables_required:
                 if var_name not in variables:
                     missing_vars.append(var_name)
-            
+
             if missing_vars:
                 logger.debug(f"Regla {rule.rule_id}: faltan variables {missing_vars}")
                 return None
-            
+
             trigger_result = evaluator.evaluate(rule.trigger.condition)
             if trigger_result is not True:
                 return None
-            
+
             severity = evaluator.evaluate_severity(rule.severity_logic.dict())
             if not severity:
                 severity = "indeterminado"
-            
+
             confidence = evaluator.evaluate_confidence(rule.confidence_logic.dict())
             if not confidence:
                 confidence = "indeterminado"
-            
+
             if confidence == "indeterminate":
                 confidence = "indeterminado"
-            
+
             filtered_articles, discarded_articles = _filter_legal_articles(
-                rule.article_refs,
-                self.allowed_articles,
-                self.legal_context
+                rule.article_refs, self.allowed_articles, self.legal_context
             )
-            
+
             if discarded_articles:
                 confidence = "indeterminado"
-            
+
             description = evaluator.format_template(rule.outputs.description_template, {})
             recommendation = evaluator.format_template(rule.outputs.recommendation_template, {})
-            
+
             evidence_status = "suficiente"
             if filtered_articles == [] and rule.article_refs != []:
                 evidence_status = "falta"
@@ -132,7 +126,7 @@ class RuleEngine:
                 evidence_status = "insuficiente"
             elif confidence == "indeterminado":
                 evidence_status = "insuficiente"
-            
+
             return LegalRisk(
                 risk_type=rule.risk_type,
                 description=description,
@@ -147,10 +141,7 @@ class RuleEngine:
             return None
 
     def build_result(
-        self,
-        case_id: str,
-        risks: List[LegalRisk],
-        legal_context: str = ""
+        self, case_id: str, risks: list[LegalRisk], legal_context: str = ""
     ) -> LegalAgentResult:
         """
         Construye el resultado final del Agente Legal.
@@ -173,14 +164,14 @@ class RuleEngine:
                     missing_data=[],
                     legal_basis=[],
                 )
-            
+
             all_basis = []
-            
+
             for risk in risks:
                 all_basis.extend(risk.legal_articles)
-            
+
             unique_basis = list(set(all_basis))
-            
+
             confidence_levels = [risk.severity for risk in risks]
             if any(s in ("critica", "critical", "alta", "high") for s in confidence_levels):
                 overall_confidence = "media"
@@ -188,15 +179,15 @@ class RuleEngine:
                 overall_confidence = "media"
             else:
                 overall_confidence = "baja"
-            
+
             if any(risk.severity == "indeterminado" for risk in risks):
                 overall_confidence = "indeterminado"
-            
+
             conclusion_parts = [f"Se detectaron {len(risks)} riesgo(s) legal(es)."]
             if unique_basis:
                 conclusion_parts.append(f"Artículos relevantes: {', '.join(unique_basis[:5])}")
             legal_conclusion = " ".join(conclusion_parts)
-            
+
             return LegalAgentResult(
                 case_id=case_id,
                 legal_risks=risks,

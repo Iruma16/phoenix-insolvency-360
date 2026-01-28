@@ -13,26 +13,27 @@ Modo PERMISSIVE: Documento rechazado pero pipeline continúa con otros
 """
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Literal, Optional
 from enum import Enum
+from pathlib import Path
+from typing import Optional
 
-from app.core.logger import logger
 from app.core.exceptions import DocumentValidationError
+from app.core.logger import logger
 from app.services.document_pre_ingestion_validation import (
-    validate_document_pre_ingestion,
     PreIngestionValidationResult,
     log_pre_ingestion_validation,
+    validate_document_pre_ingestion,
 )
 
 
 class ValidationMode(str, Enum):
     """
     Modo de validación fail-fast.
-    
+
     STRICT: Documento inválido → EXCEPCIÓN (bloquea todo)
     PERMISSIVE: Documento inválido → LOG + SKIP (continúa con otros)
     """
+
     STRICT = "strict"
     PERMISSIVE = "permissive"
 
@@ -45,30 +46,30 @@ def validate_document_failfast(
 ) -> PreIngestionValidationResult:
     """
     Ejecuta validación fail-fast pre-ingesta.
-    
+
     Args:
         file_path: Ruta del archivo a validar
         extracted_text: Texto extraído del documento
         case_id: ID del caso (para logging)
         mode: Modo de validación (STRICT o PERMISSIVE)
-        
+
     Returns:
         PreIngestionValidationResult
-        
+
     Raises:
         DocumentValidationError: Si mode=STRICT y documento es inválido
     """
     logger.info(f"[FAIL-FAST] Validando documento: {file_path.name} (modo={mode.value})")
-    
+
     # Ejecutar validación completa
     result = validate_document_pre_ingestion(
         file_path=file_path,
         extracted_text=extracted_text,
     )
-    
+
     # Logging estructurado obligatorio
     log_pre_ingestion_validation(case_id=case_id, result=result)
-    
+
     # Comportamiento según modo
     if not result.is_valid:
         if mode == ValidationMode.STRICT:
@@ -90,19 +91,18 @@ def validate_document_failfast(
             )
     else:
         logger.info(f"[FAIL-FAST] ✅ Documento válido: {file_path.name}")
-    
+
     return result
 
 
 def should_skip_document(result: PreIngestionValidationResult) -> bool:
     """
     Determina si un documento debe ser skipped basado en el resultado de validación.
-    
+
     Args:
         result: Resultado de validación
-        
+
     Returns:
         True si el documento debe ser skipped (no procesar chunking/embeddings)
     """
     return not result.is_valid
-

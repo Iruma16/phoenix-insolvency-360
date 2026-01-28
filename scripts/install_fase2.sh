@@ -46,6 +46,6 @@ echo ""
 echo "🎉 Instalación completada"
 echo ""
 echo "Para iniciar la UI web:"
-echo "  streamlit run app/ui/streamlit_app.py"
+echo "  streamlit run app/ui/streamlit_mvp.py"
 echo ""
 
