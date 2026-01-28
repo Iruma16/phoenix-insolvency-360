@@ -283,7 +283,7 @@ build_report (PDF final)
 DATABASE_URL=sqlite:///clients_data/phoenix_legal.db
 
 # OpenAI (opcional, para LLM)
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=your_openai_api_key_here
 
 # Embedding model
 EMBEDDING_MODEL=text-embedding-3-small
