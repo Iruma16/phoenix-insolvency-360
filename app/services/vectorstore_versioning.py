@@ -606,20 +606,26 @@ def update_active_pointer(case_id: str, version: str) -> None:
 
     logger.info(f"[VERSIONADO] Actualizando ACTIVE: case_id={case_id}, version={version}")
 
-    # Eliminar puntero ACTIVE anterior si existe
-    if active_path.exists():
-        if active_path.is_symlink():
-            active_path.unlink()
-        elif active_path.is_file():
+    # Asegurar que el directorio raíz del caso existe (robustez ante cwd/FS raros)
+    active_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Eliminar puntero ACTIVE anterior si existe.
+    # Nota: Path.exists() devuelve False si ACTIVE es un symlink roto, así que
+    # primero comprobamos is_symlink().
+    if active_path.is_symlink():
+        active_path.unlink()
+    elif active_path.exists():
+        if active_path.is_file():
             active_path.unlink()
         elif active_path.is_dir():
             # NUNCA debería ser un directorio, pero por seguridad
             logger.warning("[VERSIONADO] ACTIVE es un directorio (inesperado). Eliminando...")
             shutil.rmtree(active_path)
 
-    # Intentar crear symlink
+    # Intentar crear symlink (relativo) para evitar symlinks rotos.
+    # El target debe ser relativo al directorio del link (ACTIVE) para que funcione en cualquier cwd.
     try:
-        active_path.symlink_to(version_path, target_is_directory=True)
+        active_path.symlink_to(Path(version_path.name), target_is_directory=True)
         logger.info(f"[VERSIONADO] Symlink creado: {active_path} -> {version_path}")
         return
     except (OSError, NotImplementedError) as e:

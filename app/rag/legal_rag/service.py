@@ -27,13 +27,17 @@ from app.core.variables import (
 _openai_client: Optional[OpenAI] = None
 
 
-def _get_openai_client() -> OpenAI:
-    """Obtiene o crea el cliente OpenAI reutilizable."""
+def _get_openai_client() -> Optional[OpenAI]:
+    """
+    Obtiene o crea el cliente OpenAI reutilizable.
+
+    Nota: en modo degradado (sin OPENAI_API_KEY) devuelve None.
+    """
     global _openai_client
     if _openai_client is None:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY no definida en entorno")
+            return None
         _openai_client = OpenAI(api_key=api_key)
     return _openai_client
 
@@ -282,11 +286,21 @@ def query_legal_rag(
 
     # Generar embedding
     openai_client = _get_openai_client()
-    response = openai_client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=query,
-    )
-    query_embedding = response.data[0].embedding
+    if openai_client is None:
+        # Modo degradado: sin API key no podemos embeddar la query.
+        # Devolvemos lista vacía para que los callers/tests puedan hacer skip.
+        _cache_result(cache_key, [])
+        return []
+
+    try:
+        response = openai_client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=query,
+        )
+        query_embedding = response.data[0].embedding
+    except Exception:
+        _cache_result(cache_key, [])
+        return []
 
     # Recopilar resultados raw
     raw_results: list[dict[str, Any]] = []

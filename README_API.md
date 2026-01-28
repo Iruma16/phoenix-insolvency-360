@@ -1,214 +1,22 @@
-# PHOENIX LEGAL - API REST
+# Phoenix Legal — API (mini guía)
 
-## 🚀 Inicio Rápido
+La documentación principal está en `README.md`. Aquí solo lo mínimo para probar la API.
 
-### Iniciar el servidor
-
-```bash
-cd phoenix-legal
-source .venv/bin/activate
-uvicorn app.main:app --reload --port 8000
-```
-
-El servidor estará disponible en: `http://localhost:8000`
-
-### Documentación interactiva
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
----
-
-## 📡 Endpoints (camino oficial)
-
-### 1. GET `/` - Información del servicio
+## Ejecutar
 
 ```bash
-curl http://localhost:8000/
+make run-api
 ```
 
-**Respuesta**:
-```json
-{
-  "service": "Phoenix Legal API",
-  "version": "1.0.0",
-  "status": "operational",
-  "endpoints": [...]
-}
-```
+## Docs
 
----
+- Swagger: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
 
-### 2. POST `/api/cases` - Crear caso
+## Health
 
 ```bash
-curl -X POST http://localhost:8000/api/cases \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Caso Demo", "client_ref": "REF-001"}'
+curl http://localhost:8000/health
 ```
 
-**Respuesta**:
-```json
-{
-  "case_id": "CASE_001",
-  "status": "created",
-  "paths": {
-    "documents": "clients_data/cases/CASE_001/documents",
-    "reports": "clients_data/cases/CASE_001/reports"
-  },
-  "message": "Caso CASE_001 creado correctamente"
-}
-```
-
----
-
-### 3. POST `/api/cases/{case_id}/documents` - Subir documentos
-
-```bash
-curl -X POST http://localhost:8000/api/cases/<case_id>/documents \
-  -F "files=@/path/to/balance.pdf"
-```
-
-**Respuesta**:
-```json
-{
-  "case_id": "CASE_001",
-  "filename": "balance.pdf",
-  "size": 45678,
-  "path": "clients_data/cases/CASE_001/documents/balance.pdf",
-  "message": "Documento balance.pdf subido correctamente"
-}
-```
-
----
-
-### 4. GET `/api/cases/{case_id}/financial-analysis` - Análisis financiero (ejemplo)
-
-```bash
-curl http://localhost:8000/api/cases/<case_id>/financial-analysis
-```
-
-**Respuesta**:
-```json
-{
-  "case_id": "CASE_001",
-  "status": "completed",
-  "overall_risk": "high",
-  "risks_count": 4,
-  "legal_findings_count": 4,
-  "pdf_path": "clients_data/cases/CASE_001/reports/phoenix_legal_report_CASE_001_20241230_120000.pdf",
-  "message": "Análisis completado. PDF generado: ..."
-}
-```
-
----
-
-### 5. GET `/api/cases/{case_id}/legal-report/pdf` - Descargar PDF
-
-```bash
-curl http://localhost:8000/api/cases/<case_id>/legal-report/pdf \
-  --output informe.pdf
-```
-
-**Respuesta**: Archivo PDF
-
----
-
-## 🔧 Ejemplo Completo
-
-```bash
-# 1. Crear caso
-curl -X POST http://localhost:8000/cases \
-  -H "Content-Type: application/json" \
-  -d '{"case_id": "CASE_DEMO", "company_name": "Demo SL"}'
-
-# 2. Subir documentos
-curl -X POST http://localhost:8000/cases/CASE_DEMO/documents \
-  -F "file=@balance.txt"
-
-curl -X POST http://localhost:8000/cases/CASE_DEMO/documents \
-  -F "file=@acta.txt"
-
-# 3. Analizar
-curl -X POST http://localhost:8000/cases/CASE_DEMO/analyze
-
-# 4. Descargar PDF
-curl http://localhost:8000/cases/CASE_DEMO/reports/latest \
-  --output informe_demo.pdf
-```
-
----
-
-## ✅ Tests
-
-```bash
-# Tests de API
-pytest tests/test_api_cases.py -v
-pytest tests/test_api_reports.py -v
-
-# Todos los tests
-pytest tests/test_api_*.py -v
-```
-
----
-
-## 🔑 Configuración
-
-### Variables de entorno
-
-```bash
-# Opcional: API key para agentes LLM
-export OPENAI_API_KEY="sk-..."
-
-# El sistema funciona sin API key (modo heurístico)
-```
-
----
-
-## 📊 Códigos de Estado
-
-| Código | Significado |
-|--------|-------------|
-| 200 | OK - Operación exitosa |
-| 201 | Created - Caso creado |
-| 400 | Bad Request - Datos inválidos |
-| 404 | Not Found - Recurso no encontrado |
-| 409 | Conflict - Caso duplicado |
-| 500 | Internal Server Error - Error del servidor |
-
----
-
-## 🎯 Notas Importantes
-
-1. **El sistema funciona sin LLM**: Si no hay `OPENAI_API_KEY`, el análisis usa solo heurísticas
-2. **Los PDFs se generan siempre**: Independiente de si hay LLM o no
-3. **Casos persistentes**: Los casos se guardan en `clients_data/cases/`
-4. **Documentos soportados**: TXT, PDF (más formatos próximamente)
-
----
-
-## 🐛 Troubleshooting
-
-### Error: "Caso no existe"
-```bash
-# Solución: Crear el caso primero
-curl -X POST http://localhost:8000/cases -d '{"case_id": "CASE_X"}'
-```
-
-### Error: "No hay documentos"
-```bash
-# Solución: Subir al menos un documento
-curl -X POST http://localhost:8000/cases/CASE_X/documents -F "file=@doc.txt"
-```
-
-### Error: "No hay reportes"
-```bash
-# Solución: Ejecutar el análisis primero
-curl -X POST http://localhost:8000/cases/CASE_X/analyze
-```
-
----
-
-**Versión**: 1.0.0  
-**Fecha**: 30 de diciembre de 2024
 

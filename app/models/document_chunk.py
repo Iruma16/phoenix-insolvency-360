@@ -219,6 +219,19 @@ class DocumentChunk(Base):
         comment="Sección/encabezado inferido o NULL",
     )
 
+    # -------------------------------------------------------------------------
+    # Compatibilidad legacy
+    # -------------------------------------------------------------------------
+    @property
+    def page(self) -> Optional[int]:
+        """
+        Alias legacy usado por partes del RAG/timeline.
+
+        El modelo moderno usa `page_start` / `page_end`. Para compatibilidad,
+        exponemos `page` como la primera página (si existe).
+        """
+        return self.page_start
+
     # Estrategia de chunking aplicada
     chunking_strategy: Mapped[Optional[str]] = mapped_column(
         String(100),

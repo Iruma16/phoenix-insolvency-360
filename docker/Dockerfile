@@ -28,7 +28,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación desde raíz
 COPY app/ ./app/
-COPY scripts/ ./scripts/
 
 # Crear directorios necesarios
 RUN mkdir -p runtime/db

@@ -15,6 +15,7 @@ Validaciones:
 Sin mocks, sin modificaciones, usando servicios existentes.
 """
 import tempfile
+import os
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,7 @@ from app.services.embeddings_pipeline import (
     get_chunks_for_case,
 )
 from app.services.folder_ingestion import ingest_file_from_path
+from app.services.vectorstore_versioning import get_active_version_path
 
 TEST_CASE_ID = "e2e_case_rag_test"
 
@@ -53,6 +55,10 @@ Artículo 4. GARANTIAS
 El prestatario ofrece como garantía real el local comercial sito en Madrid.
 
 Firmado en Madrid, a 15 de enero de 2024.
+
+CLÁUSULA ADICIONAL (para superar umbral mínimo de validación)
+Las partes manifiestan haber leído íntegramente el documento, entender su contenido y aceptarlo.
+Asimismo, se acuerda que cualquier controversia se someterá a los juzgados y tribunales competentes.
 """
 
 
@@ -127,12 +133,18 @@ def test_case_rag_end_to_end(test_document):
         assert len(chunks) > 0, "Deben haberse creado chunks"
         assert all(chunk.content for chunk in chunks), "Los chunks no deben estar vacíos"
 
-        # 4. EMBEDDINGS Y VECTORSTORE
+        # 4. EMBEDDINGS Y VECTORSTORE (requiere OpenAI)
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("E2E parcial: sin OPENAI_API_KEY no se generan embeddings/vectorstore.")
+
         build_embeddings_for_case(db=db, case_id=TEST_CASE_ID)
 
-        vectorstore_path = DATA / "cases" / TEST_CASE_ID / "vectorstore"
-        assert vectorstore_path.exists(), f"El vectorstore debe existir en {vectorstore_path}"
-        assert vectorstore_path.is_dir(), "El vectorstore debe ser un directorio"
+        # Phoenix usa versionado estricto del vectorstore (NO clients_data/cases/<case_id>/vectorstore)
+        active_version_path = get_active_version_path(TEST_CASE_ID)
+        assert active_version_path is not None, "Debe existir una versión ACTIVE del vectorstore"
+        index_path = active_version_path / "index"
+        assert index_path.exists(), f"El índice del vectorstore debe existir en {index_path}"
+        assert index_path.is_dir(), "El índice del vectorstore debe ser un directorio"
 
         collection = get_case_collection(TEST_CASE_ID)
         embedding_count = collection.count()

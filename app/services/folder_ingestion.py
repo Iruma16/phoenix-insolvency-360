@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logger import logger
 from app.core.variables import DATA
-from app.models.document import Document
+from app.models.document import Document, calculate_file_hash, get_file_size, get_mime_type
 from app.services.document_parsing_validation import (
     ParsingStatus,
     calculate_parsing_metrics,
@@ -427,9 +427,17 @@ def ingest_file_from_path(
 
     file_format = EXTENSION_TO_FORMAT.get(extension, extension.lstrip("."))
 
+    # Cadena de custodia / integridad: campos obligatorios (NOT NULL en DB)
+    sha256_hash = calculate_file_hash(Path(storage_path))
+    file_size_bytes = get_file_size(Path(storage_path))
+    mime_type = get_mime_type(filename)
+
     document = Document(
         case_id=case_id,
         filename=filename,
+        sha256_hash=sha256_hash,
+        file_size_bytes=file_size_bytes,
+        mime_type=mime_type,
         doc_type=doc_type,
         source=source or "folder_ingestion",
         date_start=date_start,
