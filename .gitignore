@@ -9,6 +9,7 @@ runs/
 artifacts/
 outputs/
 logs/
+reports/
 
 # --- DATOS (NO VERSIONAR) ---
 clients_data/**/cases/
@@ -22,6 +23,9 @@ clients_data/**/documents/processed/
 clients_data/default/
 clients_data/**/.DS_Store
 runtime/
+
+# Carpetas de demo locales (no versionar)
+case_retail_demo_sl_2026/
 
 # Datos de demo grandes (NO versionar; usar solo `data/sample/`)
 data/demo_ready/
@@ -37,6 +41,7 @@ tests/coverage_html/
 tests/reports/
 .pytest_cache/
 .coverage
+.coverage*
 htmlcov/
 
 # --- ENTORNOS Y LIBRERÍAS ---
@@ -58,6 +63,14 @@ __pycache__/
 Thumbs.db
 temp.pdf
 *.log
+
+# --- DUPLICADOS ACCIDENTALES (macOS Finder) ---
+* 2.py
+* 2.txt
+* 2.yaml
+* 2.toml
+Makefile 2
+.pre-commit-config 2.yaml
 
 # --- STREAMLIT ---
 .streamlit/secrets.toml
