@@ -79,6 +79,24 @@ CHUNKING_STRATEGIES = {
         "overlap": 0,
         "detect_sections": False,
     },
+    "csv": {
+        "name": "table_structured",
+        "max_chars": 5000,
+        "overlap": 0,  # Sin overlap en tablas
+        "detect_sections": False,
+    },
+    "email": {
+        "name": "plain_text",
+        "max_chars": 3000,
+        "overlap": 150,
+        "detect_sections": False,
+    },
+    "image": {
+        "name": "plain_text",
+        "max_chars": 3000,
+        "overlap": 150,
+        "detect_sections": False,
+    },
 }
 
 # Patrones para detectar encabezados legales (REGLA 4)
@@ -172,7 +190,13 @@ def _determine_extraction_method(tipo_documento: str) -> ExtractionMethod:
         return ExtractionMethod.DOCX_TEXT
     elif tipo_lower == "txt":
         return ExtractionMethod.TXT
-    elif tipo_lower in ("table", "excel", "xlsx", "xls"):
+    elif tipo_lower in ("email", "eml", "msg"):
+        # Emails se tratan como texto plano (no hay páginas)
+        return ExtractionMethod.TXT
+    elif tipo_lower in ("image", "jpg", "jpeg", "png", "tif", "tiff"):
+        # Imágenes: texto proviene de OCR
+        return ExtractionMethod.OCR
+    elif tipo_lower in ("table", "excel", "xlsx", "xls", "csv"):
         return ExtractionMethod.TABLE
     else:
         # Tipo no mapeable → UNKNOWN (ingesta debe validar antes)

@@ -39,10 +39,13 @@ st.set_page_config(
     page_title="Phoenix Legal - MVP", page_icon="⚖️", layout="wide", initial_sidebar_state="expanded"
 )
 
+# Bump this cuando cambie la API del cliente (evita bugs por cache viejo)
+CLIENT_API_VERSION = 2
+
 
 # Inicializar cliente API
 @st.cache_resource
-def get_api_client():
+def get_api_client(_v: int = CLIENT_API_VERSION):
     base_url = os.getenv("PHOENIX_API_BASE_URL")
     if not base_url:
         raise RuntimeError(
@@ -80,6 +83,11 @@ def get_financial_analysis_cached(case_id: str):
 
 
 client = get_api_client()
+# Fallback defensivo: si Streamlit reutiliza un cache antiguo del cliente,
+# aseguramos que los métodos nuevos existan.
+if not hasattr(client, "exclude_document") or not hasattr(client, "generate_economic_report"):
+    base_url = os.getenv("PHOENIX_API_BASE_URL") or "http://localhost:8000"
+    client = PhoenixLegalClient(base_url=base_url)
 
 # =========================================
 # SIDEBAR: HEALTH CHECK + SELECTOR DE CASOS
@@ -99,6 +107,7 @@ except Exception as e:
 st.sidebar.subheader("📁 Casos")
 
 # Listar casos existentes
+cases = []
 try:
     cases = client.list_cases()
     if cases:
@@ -115,6 +124,7 @@ try:
 except Exception as e:
     st.sidebar.error(f"Error al cargar casos: {e}")
     st.session_state["selected_case_id"] = None
+    cases = []
 
 # =========================================
 # PANTALLA PRINCIPAL
@@ -127,7 +137,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
         "📤 Documentos",
         "📊 Análisis Financiero",
         "⚠️ Alertas",
-        "📄 Informe Legal",
+        "📄 Informe Económico",
         "🔍 Duplicados",
         "🚨 Riesgos Culpabilidad",
     ]
@@ -224,56 +234,116 @@ with tab2:
             key="file_uploader",
         )
 
+        # Estado de confirmación para duplicados (persistente entre reruns)
+        if "pending_upload_files" not in st.session_state:
+            st.session_state["pending_upload_files"] = None
+        if "pending_duplicates" not in st.session_state:
+            st.session_state["pending_duplicates"] = None
+        if "awaiting_upload_confirm" not in st.session_state:
+            st.session_state["awaiting_upload_confirm"] = False
+
+        def _reset_pending_upload():
+            st.session_state["pending_upload_files"] = None
+            st.session_state["pending_duplicates"] = None
+            st.session_state["awaiting_upload_confirm"] = False
+
+        # Paso 1: preparar bytes + check duplicados al pulsar "Subir Archivos"
         if uploaded_files and st.button("📤 Subir Archivos", type="primary"):
             try:
-                # Preparar archivos para check de duplicados
-                files_data = []
-                for file in uploaded_files:
-                    file.seek(0)
-                    content = file.read()
-                    files_data.append((file.name, content))  # ✅ Solo nombre y contenido
-                    file.seek(0)
+                files_data: list[tuple[str, bytes]] = []
+                for f in uploaded_files:
+                    f.seek(0)
+                    content = f.read()
+                    files_data.append((f.name, content))
 
-                # Check duplicados
+                st.session_state["pending_upload_files"] = files_data
+
                 with st.spinner("Verificando duplicados..."):
                     duplicates = client.check_duplicates_before_upload(case_id, files_data)
 
-                if duplicates:
-                    st.warning(f"⚠️ Se detectaron {len(duplicates)} archivo(s) duplicado(s)")
+                duplicates_only = [d for d in (duplicates or []) if d.get("is_duplicate") is True]
+                if duplicates_only:
+                    st.session_state["pending_duplicates"] = duplicates_only
+                    st.session_state["awaiting_upload_confirm"] = True
+                else:
+                    st.session_state["pending_duplicates"] = []
+                    st.session_state["awaiting_upload_confirm"] = False
 
-                    for dup in duplicates:
-                        st.write(f"- **{dup['filename']}**: {dup['duplicate_type']}")
-
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("✅ Subir de todos modos"):
-                            st.session_state["upload_confirmed"] = True
-                            st.rerun()
-                    with col2:
-                        if st.button("❌ Cancelar"):
-                            st.info("Subida cancelada")
-                            st.stop()
-
-                # Si no hay duplicados o usuario confirmó, subir
-                if not duplicates or st.session_state.get("upload_confirmed"):
-                    with st.spinner(f"Subiendo {len(uploaded_files)} archivo(s)..."):
-                        files_for_upload = [
-                            (file.name, file.getvalue())  # ✅ Solo nombre y contenido
-                            for file in uploaded_files
-                        ]
-                        result = client.upload_documents(case_id, files_for_upload)
-
-                    st.success(f"✅ {result['uploaded_count']} documento(s) subido(s)")
-
-                    if result.get("errors"):
-                        st.warning(f"⚠️ {len(result['errors'])} error(es)")
-                        for error in result["errors"]:
-                            st.error(f"- {error['filename']}: {error['error']}")
-
-                    st.session_state["upload_confirmed"] = False
-                    st.rerun()
-
+                st.rerun()
             except Exception as e:
+                _reset_pending_upload()
+                st.error(f"Error al subir documentos: {e}")
+
+        # Paso 2: si hay duplicados, pedir confirmación (en un rerun separado)
+        if st.session_state.get("awaiting_upload_confirm") and st.session_state.get(
+            "pending_upload_files"
+        ):
+            duplicates_only = st.session_state.get("pending_duplicates") or []
+            st.warning(
+                f"⚠️ Se detectaron {len(duplicates_only)} archivo(s) duplicado(s) (binario exacto)"
+            )
+            for dup in duplicates_only:
+                dup_of = dup.get("duplicate_of_filename") or dup.get("duplicate_of") or "N/A"
+                dup_of_id = dup.get("duplicate_of_document_id")
+                dup_type = dup.get("duplicate_type") or "unknown"
+                suffix = f" ({str(dup_of_id)[:8]}...)" if dup_of_id else ""
+                st.write(f"- **{dup['filename']}**: {dup_type} (duplica a: {dup_of}{suffix})")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Subir de todos modos", type="primary"):
+                    try:
+                        files_data = st.session_state["pending_upload_files"]
+                        with st.spinner(f"Subiendo {len(files_data)} archivo(s)..."):
+                            result = client.upload_documents(
+                                case_id,
+                                files_data,
+                                force_upload=True,
+                            )
+                        _reset_pending_upload()
+                        st.session_state["upload_confirmed"] = False
+                        st.success(f"✅ {len(result) if isinstance(result, list) else 0} documento(s) subido(s)")
+                        st.rerun()
+                    except Exception as e:
+                        _reset_pending_upload()
+                        st.error(f"Error al subir documentos: {e}")
+            with col2:
+                if st.button("❌ Cancelar"):
+                    _reset_pending_upload()
+                    st.info("Subida cancelada")
+                    st.stop()
+
+        # Paso 3: si NO hay duplicados pendientes, subir directamente usando los mismos bytes chequeados
+        if (
+            not st.session_state.get("awaiting_upload_confirm")
+            and st.session_state.get("pending_upload_files")
+            and st.session_state.get("pending_duplicates") == []
+        ):
+            try:
+                files_data = st.session_state["pending_upload_files"]
+                with st.spinner(f"Subiendo {len(files_data)} archivo(s)..."):
+                    result = client.upload_documents(case_id, files_data, force_upload=False)
+
+                _reset_pending_upload()
+
+                # El backend devuelve lista[DocumentSummary].
+                if isinstance(result, list):
+                    st.success(f"✅ {len(result)} documento(s) subido(s)")
+                    failed = [
+                        d
+                        for d in result
+                        if (d.get("status") in ("failed", "rejected")) or d.get("error_message")
+                    ]
+                    if failed:
+                        st.warning(f"⚠️ {len(failed)} documento(s) con error/rechazado")
+                        for d in failed:
+                            st.error(f"- {d.get('filename')}: {d.get('error_message') or 'error'}")
+                else:
+                    st.success("✅ Subida completada")
+
+                st.rerun()
+            except Exception as e:
+                _reset_pending_upload()
                 st.error(f"Error al subir documentos: {e}")
 
         st.markdown("---")
@@ -288,11 +358,21 @@ with tab2:
                         doc["status"], "⚪"
                     )
 
-                    with st.expander(f"{status_color} {doc['filename']}"):
+                    with st.expander(
+                        f"{status_color} {doc['filename']} ({doc['document_id'][:8]}...)"
+                    ):
                         st.write(f"**ID:** `{doc['document_id']}`")
                         st.write(f"**Estado:** {doc['status']}")
                         st.write(f"**Chunks:** {doc['chunks_count']}")
                         st.write(f"**Subido:** {doc['created_at']}")
+                        if st.button("🗑️ Eliminar (soft delete)", key=f"del_{doc['document_id']}"):
+                            client.exclude_document(
+                                case_id=case_id,
+                                document_id=doc["document_id"],
+                                reason="Excluido manualmente desde UI (soft-delete).",
+                                excluded_by="streamlit_ui",
+                            )
+                            st.rerun()
                         if doc["status"] == "failed":
                             st.error(f"Error: {doc['error_message']}")
             else:
@@ -472,20 +552,70 @@ with tab4:
                 with st.spinner("Analizando calidad de datos..."):
                     alerts = client.get_analysis_alerts(case_id)
 
-                if alerts:
-                    st.warning(f"⚠️ Se detectaron {len(alerts)} alerta(s)")
+                # Agrupar por tipo (contrato real del backend: alert_type/description/evidence)
+                by_type = {}
+                for a in (alerts or []):
+                    t = a.get("alert_type", "UNKNOWN")
+                    by_type.setdefault(t, []).append(a)
 
-                    for alert in alerts:
-                        severity_color = {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(
-                            alert["severity"], "⚪"
-                        )
+                def _section(title: str, types: list[str]):
+                    items = []
+                    for t in types:
+                        items.extend(by_type.get(t, []))
+                    st.subheader(title)
+                    if not items:
+                        st.success("✅ No hay")
+                        return
+                    st.warning(f"⚠️ {len(items)} alerta(s)")
+                    for alert in items:
+                        atype = alert.get("alert_type", "UNKNOWN")
+                        emoji = {
+                            "INCONSISTENT_DATA": "🔴",
+                            "TEMPORAL_INCONSISTENCY": "🔴",
+                            "SUSPICIOUS_PATTERN": "🕵️",
+                            "MISSING_DATA": "🟡",
+                            "DUPLICATED_DATA": "🟡",
+                        }.get(atype, "⚪")
+                        title_line = f"{emoji} {atype}"
+                        with st.expander(title_line):
+                            st.write(f"**Descripción:** {alert.get('description', '')}")
+                            evidence = alert.get("evidence") or []
+                            st.write(f"**Documentos implicados:** {len(evidence)}")
+                            for ev in evidence[:5]:
+                                loc = ev.get("location") or {}
+                                pages = ""
+                                if loc.get("page_start") is not None:
+                                    pages = f" pág. {loc.get('page_start')}-{loc.get('page_end')}"
+                                st.write(
+                                    f"- **{ev.get('filename','?')}**{pages} "
+                                    f"(doc_id: {str(ev.get('document_id',''))[:8]}..., "
+                                    f"chunk_id: {str(ev.get('chunk_id',''))[:12]}...)"
+                                )
+                                content = (ev.get("content") or "").strip()
+                                if content:
+                                    st.caption(content[:200])
 
-                        with st.expander(f"{severity_color} {alert['alert_type']}"):
-                            st.write(f"**Mensaje:** {alert['message']}")
-                            if alert.get("evidence"):
-                                st.write(f"**Evidencia:** {len(alert['evidence'])} documento(s)")
-                else:
-                    st.success("✅ No se detectaron problemas de calidad en los datos")
+                st.info(f"Total alertas: {len(alerts or [])}")
+                _section(
+                    "🕵️ Patrones sospechosos (posible fraude)",
+                    ["SUSPICIOUS_PATTERN"],
+                )
+                _section(
+                    "⏱️ Inconsistencias temporales",
+                    ["TEMPORAL_INCONSISTENCY"],
+                )
+                _section(
+                    "📄 Datos faltantes",
+                    ["MISSING_DATA"],
+                )
+                _section(
+                    "🧬 Datos duplicados",
+                    ["DUPLICATED_DATA"],
+                )
+                _section(
+                    "⚠️ Datos inconsistentes",
+                    ["INCONSISTENT_DATA"],
+                )
             except Exception as e:
                 st.error(f"Error al verificar alertas: {e}")
 
@@ -494,57 +624,54 @@ with tab4:
 # =========================================
 
 with tab5:
-    st.header("📄 Informe Legal")
+    st.header("📄 Informe de Situación Económica (Cliente)")
 
     if not st.session_state.get("selected_case_id"):
         st.warning("⚠️ Selecciona o crea un caso primero")
     else:
         case_id = st.session_state["selected_case_id"]
 
-        col1, col2 = st.columns(2)
+        # Botón: Generar informe (sin descargar)
+        if st.button("📝 Generar Informe Económico", type="primary", key="econ_generate"):
+            try:
+                with st.spinner("Generando informe (LLM+RAG) e indexando..."):
+                    client.generate_economic_report(case_id)
+                st.success("✅ Informe generado")
+            except Exception as e:
+                st.error(f"Error al generar informe: {e}")
 
-        with col1:
-            if st.button("📝 Generar Informe", type="primary"):
+        st.markdown("---")
+        col_e1, col_e2 = st.columns(2)
+        with col_e1:
+            if st.button("⬇️ Descargar Informe Económico (PDF)", key="econ_pdf"):
                 try:
-                    with st.spinner("Generando informe legal..."):
-                        report = client.generate_legal_report(case_id)
-
-                    st.success("✅ Informe generado")
-
-                    st.subheader("📋 Resumen del Informe")
-                    st.write(f"**ID del Informe:** `{report['report_id']}`")
-                    st.write(f"**Generado:** {report['generated_at']}")
-                    st.write(f"**Hallazgos:** {len(report.get('findings', []))}")
-
-                    if report.get("findings"):
-                        st.subheader("🔍 Hallazgos Principales")
-                        findings = report["findings"]
-                        for i, finding in enumerate(findings, 1):
-                            with st.expander(f"{i}. {finding.get('title', 'Sin título')}"):
-                                st.write(finding.get("description", "Sin descripción"))
-                                if finding.get("evidence"):
-                                    st.write(
-                                        f"**Evidencia:** {len(finding['evidence'])} documento(s)"
-                                    )
-
-                except Exception as e:
-                    st.error(f"Error al generar informe: {e}")
-
-        with col2:
-            if st.button("⬇️ Descargar PDF Certificado"):
-                try:
-                    with st.spinner("Generando PDF..."):
-                        pdf_content = client.download_pdf_report(case_id)
-
+                    with st.spinner("Preparando descarga..."):
+                        pdf_content = client.download_economic_report_pdf(case_id)
                     st.download_button(
-                        label="📥 Descargar PDF",
+                        label="📥 Descargar PDF económico",
                         data=pdf_content,
-                        file_name=f"informe_legal_{case_id[:8]}.pdf",
+                        file_name=f"informe_situacion_economica_{case_id[:8]}.pdf",
                         mime="application/pdf",
+                        key="econ_pdf_dl",
                     )
-                    st.success("✅ PDF generado")
+                    st.success("✅ PDF listo para descargar")
                 except Exception as e:
                     st.error(f"Error al descargar PDF: {e}")
+
+        with col_e2:
+            st.subheader("📧 Enviar por email (Gmail)")
+            to_email = st.text_input(
+                "Email del cliente",
+                placeholder="cliente@ejemplo.com",
+                key="econ_to_email",
+            )
+            if st.button("📨 Enviar informe por email", key="econ_email_send", type="primary"):
+                try:
+                    with st.spinner("Enviando email..."):
+                        client.email_economic_report(case_id, to_email=to_email)
+                    st.success("✅ Email enviado")
+                except Exception as e:
+                    st.error(f"Error enviando email: {e}")
 
 # =========================================
 # TAB 6: GESTIÓN DE DUPLICADOS (BLINDADA)

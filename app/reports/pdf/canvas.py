@@ -40,7 +40,7 @@ class NumberedCanvas(canvas.Canvas):
 
     def draw_page_number(self, page_count: int) -> None:
         """
-        Dibuja número de página y marca de agua.
+        Dibuja número de página.
         Solo se llama cuando page_count es conocido.
         """
         self.saveState()
@@ -50,12 +50,5 @@ class NumberedCanvas(canvas.Canvas):
         # Número de página (inferior derecha)
         page_number_text = f"Página {self._pageNumber} de {page_count}"
         self.drawRightString(A4[0] - 2 * cm, 1.5 * cm, page_number_text)
-
-        # Marca de agua "BORRADOR TÉCNICO" (diagonal centro)
-        self.setFont("Helvetica-Bold", 50)
-        self.setFillColorRGB(0.9, 0.9, 0.9, alpha=0.3)
-        self.translate(A4[0] / 2, A4[1] / 2)
-        self.rotate(45)
-        self.drawCentredString(0, 0, "BORRADOR TÉCNICO")
 
         self.restoreState()

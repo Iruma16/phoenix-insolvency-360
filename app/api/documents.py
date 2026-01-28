@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import re
 import tempfile
 from datetime import datetime, timedelta
 
@@ -53,13 +54,40 @@ from app.services.duplicate_cascade import (
     invalidate_pairs_for_document,
 )
 from app.services.duplicate_validation import validate_batch_action, validate_duplicate_decision
-from app.services.ingesta import ingerir_archivo
+from app.services.ingesta import ParsingResult, ingerir_archivo
 from app.services.ingestion_failfast import ValidationMode
 
 router = APIRouter(
     prefix="/cases/{case_id}/documents",
     tags=["documents"],
 )
+
+# parsing_rejection_reason está protegido por CHECK constraint (ver app/models/document.py).
+# Por tanto aquí SOLO persistimos códigos permitidos y ponemos el detalle técnico en parsing_metrics.
+_ALLOWED_PARSING_REJECTION_REASONS = {
+    "NO_TEXT_EXTRACTED",
+    "TOO_FEW_CHARACTERS",
+    "TOO_FEW_PAGES",
+    "LOW_TEXT_DENSITY",
+    "LOW_EXTRACTION_RATIO",
+    "PARSER_ERROR",
+}
+
+def _normalize_root_filename(filename: str) -> str:
+    if not filename:
+        return filename
+    base, ext = os.path.splitext(filename)
+    base = base.strip()
+    ext = ext.strip()
+
+    # Sufijos típicos de duplicados creados por SO/navegador
+    base2 = re.sub(r"\s*\(\d+\)\s*$", "", base)  # "(1)", "(2)"...
+    base2 = re.sub(r"\s+\d+\s*$", "", base2)  # " 2", " 3"...
+    base2 = re.sub(r"\s*-\s*copia\s*$", "", base2, flags=re.IGNORECASE)  # "- copia"
+    base2 = re.sub(r"\s*copy\s*$", "", base2, flags=re.IGNORECASE)  # "copy"
+    base2 = base2.strip()
+
+    return f"{base2}{ext}" if base2 else filename
 
 
 # =========================================================
@@ -381,6 +409,10 @@ def _build_document_summary(document: Document, db: Session) -> DocumentSummary:
 async def ingest_documents(
     case_id: str,
     files: list[UploadFile] = File(...),
+    force_upload: bool = Query(
+        False,
+        description="Si True, permite subir duplicados binarios creando un documento nuevo (marcado como duplicado).",
+    ),
     db: Session = Depends(get_db),
 ) -> list[DocumentSummary]:
     """
@@ -418,6 +450,7 @@ async def ingest_documents(
     for file in files:
         temp_file_path = None
         start_time = datetime.utcnow().timestamp()  # FASE 2A: Para métricas de processing_time
+        binary_duplicate_of: Document | None = None
         try:
             # Leer contenido del archivo
             content = await file.read()
@@ -449,6 +482,7 @@ async def ingest_documents(
                 .filter(
                     Document.case_id == case_id,  # Mismo caso
                     Document.sha256_hash == sha256_hash,
+                    Document.deleted_at.is_(None),  # No considerar borrados (soft-delete)
                 )
                 .first()
             )
@@ -458,12 +492,16 @@ async def ingest_documents(
                     f"⚠️ DUPLICADO BINARIO detectado ANTES de parsear: {file.filename} "
                     f"(hash coincide con {existing_doc.filename}, document_id={existing_doc.document_id})"
                 )
-                # Retornar el documento existente sin parsear/almacenar
-                results.append(_build_document_summary(existing_doc, db))
-                # Limpiar archivo temporal
-                if temp_file_path and os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
-                continue
+                if not force_upload:
+                    # Retornar el documento existente sin parsear/almacenar
+                    results.append(_build_document_summary(existing_doc, db))
+                    # Limpiar archivo temporal
+                    if temp_file_path and os.path.exists(temp_file_path):
+                        os.unlink(temp_file_path)
+                    continue
+                # Si el usuario fuerza la subida, creamos un documento nuevo,
+                # pero lo marcamos como duplicado del existente.
+                binary_duplicate_of = existing_doc
 
             # 4. Generar document_id ANTES de almacenar
             import uuid
@@ -471,12 +509,14 @@ async def ingest_documents(
             document_id = str(uuid.uuid4())
 
             # 5. Almacenar archivo original con integridad legal
+            # Guardar con “nombre raíz” estable (evita variantes tipo "(1)" / " 2")
+            effective_filename = _normalize_root_filename(file.filename)
             storage_metadata = store_document_file(
                 client_id="default",  # TODO: obtener de configuración o case
                 case_id=case_id,
                 document_id=document_id,
                 original_file_path=temp_file_path,
-                original_filename=file.filename,  # Preservar nombre original
+                original_filename=effective_filename,
             )
 
             logger.info(f"Archivo almacenado: {storage_metadata['storage_path']}")
@@ -518,7 +558,13 @@ async def ingest_documents(
                     retention_until=datetime.utcnow() + timedelta(days=365 * 6),  # 6 años
                     # Parsing
                     parsing_status="rejected",
-                    parsing_rejection_reason="Documento rechazado en validación pre-ingesta",
+                    # IMPORTANTE: esta columna tiene CHECK constraint (códigos, no texto libre)
+                    parsing_rejection_reason="PARSER_ERROR",
+                    parsing_metrics={
+                        "failure_stage": "parse",
+                        "failure_type": "PARSER_ERROR",
+                        "detail": "ingerir_archivo devolvió None (formato no soportado o fallo de parsing)",
+                    },
                     raw_text=None,  # FASE 1: Sin texto válido
                     # Deduplicación (valores por defecto para documentos rechazados)
                     content_hash=None,
@@ -535,6 +581,57 @@ async def ingest_documents(
                 results.append(_build_document_summary(doc, db))
                 continue
 
+            # -------------------------------------------------
+            # Normalizar retorno de ingesta:
+            # - ParsingResult para texto
+            # - DataFrame (CSV/Excel) → convertir a ParsingResult con texto tabular
+            # -------------------------------------------------
+            if not isinstance(parsing_result, ParsingResult):
+                # Evitar importar pandas a nivel global en este módulo (startup más ligero)
+                try:
+                    import pandas as pd  # type: ignore
+
+                    if isinstance(parsing_result, pd.DataFrame):
+                        df = parsing_result
+                        ext = os.path.splitext(file.filename)[1].lower()
+                        doc_kind = "csv" if ext == ".csv" else "excel"
+                        # Representación estable y legible para chunking/RAG
+                        text_tabular = df.to_string(index=False)
+
+                        parsing_result = ParsingResult(
+                            texto=text_tabular,
+                            num_paginas=1,
+                            tipo_documento=doc_kind,
+                            page_offsets=None,
+                            structured_data={
+                                "tabular": {
+                                    "rows": int(df.shape[0]),
+                                    "cols": int(df.shape[1]),
+                                    "columns": [str(c) for c in df.columns],
+                                }
+                            },
+                        )
+                    else:
+                        # Tipo inesperado: degradar a string para no romper el endpoint
+                        parsing_result = ParsingResult(
+                            texto=str(parsing_result),
+                            num_paginas=1,
+                            tipo_documento="unknown",
+                            page_offsets=None,
+                            structured_data=None,
+                        )
+                except Exception as conv_err:
+                    logger.error(
+                        f"Error normalizando retorno de ingesta para {file.filename}: {conv_err}"
+                    )
+                    parsing_result = ParsingResult(
+                        texto="",
+                        num_paginas=0,
+                        tipo_documento="unknown",
+                        page_offsets=None,
+                        structured_data=None,
+                    )
+
             # =====================================================
             # FASE 2A: DEDUPLICACIÓN
             # =====================================================
@@ -547,20 +644,30 @@ async def ingest_documents(
             content_hash = None
             document_embedding_dict = None
 
+            # Si viene de duplicado BINARIO (force_upload), pre-marcar como duplicado
+            if binary_duplicate_of is not None:
+                is_duplicate = True
+                duplicate_of_document_id = binary_duplicate_of.document_id
+                duplicate_similarity = 1.0
+                duplicate_action = "pending"
+
             # 1. Calcular content_hash del texto normalizado
-            if parsing_result and parsing_result.texto:
+            if parsing_result.texto:
                 content_hash = calculate_content_hash(parsing_result.texto)
                 logger.info(f"Content hash calculado: {content_hash[:16]}...")
 
                 # 2. Verificar duplicado EXACTO por content_hash
-                content_duplicate = (
-                    db.query(Document)
-                    .filter(
-                        Document.case_id == case_id,
-                        Document.content_hash == content_hash,
+                content_duplicate = None
+                if not is_duplicate:
+                    content_duplicate = (
+                        db.query(Document)
+                        .filter(
+                            Document.case_id == case_id,
+                            Document.content_hash == content_hash,
+                            Document.deleted_at.is_(None),
+                        )
+                        .first()
                     )
-                    .first()
-                )
 
                 if content_duplicate:
                     logger.warning(
@@ -703,7 +810,11 @@ async def ingest_documents(
             except Exception as e:
                 logger.error(f"Error en chunking de {file.filename}: {e}")
                 doc.parsing_status = "failed"
-                doc.parsing_rejection_reason = str(e)
+                doc.parsing_rejection_reason = "PARSER_ERROR"
+                doc.parsing_metrics = (doc.parsing_metrics or {}) | {
+                    "chunking_error": str(e),
+                    "chunking_failure_stage": "chunking",
+                }
                 db.commit()
 
             results.append(_build_document_summary(doc, db))
@@ -711,6 +822,12 @@ async def ingest_documents(
         except DocumentValidationError as e:
             # Error de validación (STRICT mode)
             logger.error(f"Error de validación en {file.filename}: {e.message}")
+            reject_code = (e.details or {}).get("reject_code")
+            rejection_reason = (
+                reject_code
+                if isinstance(reject_code, str) and reject_code in _ALLOWED_PARSING_REJECTION_REASONS
+                else "PARSER_ERROR"
+            )
 
             # Registrar documento con error (con integridad legal si storage_metadata existe)
             if "storage_metadata" in locals() and storage_metadata:
@@ -732,7 +849,12 @@ async def ingest_documents(
                     legal_hold=False,
                     retention_until=datetime.utcnow() + timedelta(days=365 * 6),
                     parsing_status="rejected",
-                    parsing_rejection_reason=e.message,
+                    parsing_rejection_reason=rejection_reason,
+                    parsing_metrics={
+                        "failure_stage": "pre_ingestion_validation",
+                        "error_code": e.code,
+                        "detail": e.to_dict(),
+                    },
                     raw_text=None,
                     # Deduplicación
                     content_hash=None,
@@ -761,7 +883,12 @@ async def ingest_documents(
                     legal_hold=False,
                     retention_until=datetime.utcnow() + timedelta(days=365 * 6),
                     parsing_status="rejected",
-                    parsing_rejection_reason=e.message,
+                    parsing_rejection_reason=rejection_reason,
+                    parsing_metrics={
+                        "failure_stage": "pre_ingestion_validation",
+                        "error_code": e.code,
+                        "detail": e.to_dict(),
+                    },
                     raw_text=None,
                     # Deduplicación
                     content_hash=None,
@@ -801,7 +928,12 @@ async def ingest_documents(
                     legal_hold=False,
                     retention_until=datetime.utcnow() + timedelta(days=365 * 6),
                     parsing_status="failed",
-                    parsing_rejection_reason=str(e),
+                    parsing_rejection_reason="PARSER_ERROR",
+                    parsing_metrics={
+                        "failure_stage": "api_ingest_documents",
+                        "failure_type": type(e).__name__,
+                        "detail": str(e),
+                    },
                     raw_text=None,
                     # Deduplicación
                     content_hash=None,
@@ -830,7 +962,12 @@ async def ingest_documents(
                     legal_hold=False,
                     retention_until=datetime.utcnow() + timedelta(days=365 * 6),
                     parsing_status="failed",
-                    parsing_rejection_reason=str(e),
+                    parsing_rejection_reason="PARSER_ERROR",
+                    parsing_metrics={
+                        "failure_stage": "api_ingest_documents",
+                        "failure_type": type(e).__name__,
+                        "detail": str(e),
+                    },
                     raw_text=None,
                     # Deduplicación
                     content_hash=None,
@@ -851,7 +988,8 @@ async def ingest_documents(
             if temp_file_path and os.path.exists(temp_file_path):
                 try:
                     os.unlink(temp_file_path)
-                    logger.debug(f"Archivo temporal eliminado: {temp_file_path}")
+                    # logger es estructurado; no garantiza .debug()
+                    logger.info(f"Archivo temporal eliminado: {temp_file_path}")
                 except Exception as cleanup_error:
                     logger.warning(
                         f"No se pudo eliminar archivo temporal {temp_file_path}: {cleanup_error}"
@@ -900,7 +1038,10 @@ def list_documents(
     # Obtener documentos del caso
     documents = (
         db.query(Document)
-        .filter(Document.case_id == case_id)
+        .filter(
+            Document.case_id == case_id,
+            Document.deleted_at.is_(None),  # Soft-delete: no listar excluidos
+        )
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -1558,7 +1699,11 @@ async def check_duplicates_before_upload(
             # Verificar duplicado BINARIO
             existing_doc = (
                 db.query(Document)
-                .filter(Document.case_id == case_id, Document.sha256_hash == sha256_hash)
+                .filter(
+                    Document.case_id == case_id,
+                    Document.sha256_hash == sha256_hash,
+                    Document.deleted_at.is_(None),  # No considerar borrados (soft-delete)
+                )
                 .first()
             )
 
@@ -1570,7 +1715,11 @@ async def check_duplicates_before_upload(
                         "file_size": len(content),
                         "is_duplicate": True,
                         "duplicate_type": "binary",
+                        # Compatibilidad hacia atrás (UI antigua)
                         "duplicate_of": existing_doc.filename,
+                        # Campos explícitos para evitar confusión
+                        "duplicate_of_document_id": existing_doc.document_id,
+                        "duplicate_of_filename": existing_doc.filename,
                         "duplicate_similarity": 1.0,
                         "should_upload": False,
                         "message": f"Este archivo es idéntico a '{existing_doc.filename}' ya subido.",

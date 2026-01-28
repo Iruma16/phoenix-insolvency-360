@@ -21,6 +21,7 @@ from app.api.balance_concursal import router as balance_concursal_router
 from app.api.cases import router as cases_router
 from app.api.chunks import router as chunks_router
 from app.api.documents import router as documents_router
+from app.api.economic_report import router as economic_report_router
 from app.api.financial_analysis import router as financial_analysis_router
 from app.api.legal_report import (
     router as legal_report_router,
@@ -61,6 +62,7 @@ def root():
             "trace": "/api/cases/{case_id}/trace",
             "manifest": "/api/cases/{case_id}/manifest",
             "pdf_report": "/api/cases/{case_id}/legal-report/pdf",
+            "economic_report_pdf": "/api/cases/{case_id}/economic-report/pdf",
             "timeline": "/api/cases/{case_id}/timeline",
         },
     }
@@ -83,6 +85,7 @@ app.include_router(legal_report_router, prefix="/api")  # ✅ RE-HABILITADO
 app.include_router(trace_router, prefix="/api")
 app.include_router(manifest_router, prefix="/api")
 app.include_router(pdf_report_router, prefix="/api")
+app.include_router(economic_report_router, prefix="/api")
 
 # Routers v2
 app.include_router(v2_auditor_router)

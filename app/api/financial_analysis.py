@@ -61,6 +61,30 @@ from app.services.timeline_viz import analyze_timeline_statistics, detect_suspic
 logger = logging.getLogger(__name__)
 
 
+def _to_financial_timeline_events(timeline_obj) -> list[dict]:
+    """
+    Convierte Timeline (FASE B2) a contrato TimelineEvent (FASE endurecida).
+    Evita colisión de tipos: timeline_builder.TimelineEvent != financial_analysis.TimelineEvent
+    """
+    events = []
+    for e in getattr(timeline_obj, "events", []) or []:
+        event_type = getattr(e, "event_type", None)
+        event_type_str = event_type.value if hasattr(event_type, "value") else str(event_type)
+        evidence = getattr(e, "evidence", None)
+        evidence_dict = evidence.model_dump() if hasattr(evidence, "model_dump") else evidence
+
+        events.append(
+            {
+                "date": getattr(e, "date", None),
+                "event_type": event_type_str,
+                "description": getattr(e, "description", ""),
+                "amount": getattr(e, "amount", None),
+                "evidence": evidence_dict,
+            }
+        )
+    return events
+
+
 router = APIRouter(
     prefix="/cases/{case_id}",
     tags=["financial-analysis"],
@@ -279,6 +303,7 @@ def get_financial_analysis(
         # 4. EXTRAER TIMELINE DE EVENTOS (FASE B2 MEJORADO)
         # ═══════════════════════════════════════════════════════
         timeline = []
+        timeline_events_for_insolvency = []
         timeline_stats = None
         timeline_patterns = None
 
@@ -290,8 +315,10 @@ def get_financial_analysis(
                 db, case_id, concurso_date=None
             )  # TODO: pasar fecha de concurso si existe
 
-            # Convertir a lista de TimelineEvent original para compatibilidad
-            timeline = timeline_obj.events
+            # Convertir a contrato FinancialAnalysisResult.timeline (dicts compatibles con Pydantic)
+            timeline = _to_financial_timeline_events(timeline_obj)
+            # Mantener también los eventos originales (objetos) para análisis interno
+            timeline_events_for_insolvency = getattr(timeline_obj, "events", []) or []
 
             # Generar estadísticas y patrones
             timeline_stats = analyze_timeline_statistics(timeline_obj)
@@ -306,6 +333,7 @@ def get_financial_analysis(
             # Fallback a timeline básico
             try:
                 timeline = extract_timeline_from_documents(db, case_id, case=case)
+                timeline_events_for_insolvency = timeline  # en fallback, pueden ser objetos
                 logger.warning(f"⚠️ [B2] Using fallback basic timeline ({len(timeline)} events)")
             except Exception as e2:
                 logger.exception(f"Error in fallback timeline for case {case_id}: {e2}")
@@ -321,7 +349,7 @@ def get_financial_analysis(
             insolvency = detect_insolvency_signals(
                 balance=balance,
                 profit_loss=profit_loss,
-                timeline_events=timeline,
+                timeline_events=timeline_events_for_insolvency,
             )
             if insolvency:
                 logger.info(

@@ -372,7 +372,14 @@ class Document(Base):
             name="ck_documents_doc_type",
         ),
         CheckConstraint(
-            "parsing_status IS NULL OR parsing_status IN ('PARSED_OK', 'PARSED_INVALID')",
+            # Históricamente el proyecto ha usado estados simples de pipeline
+            # (pending/completed/failed/rejected). Algunas migraciones/etapas
+            # introdujeron valores más “validación hard” (PARSED_OK/PARSED_INVALID).
+            # Aceptamos ambos para compatibilidad y para que la ingesta no falle.
+            "parsing_status IS NULL OR parsing_status IN ("
+            "'pending','completed','failed','rejected',"
+            "'PARSED_OK','PARSED_INVALID'"
+            ")",
             name="ck_documents_parsing_status",
         ),
         CheckConstraint(

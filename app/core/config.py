@@ -7,6 +7,7 @@ Este módulo centraliza toda la configuración del sistema con:
 - Valores por defecto seguros
 - Separación por entornos (dev/staging/prod)
 """
+import os
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -99,6 +100,17 @@ class Settings(BaseSettings):
     llm_max_retries: int = Field(
         default=2, env="LLM_MAX_RETRIES", ge=0, le=5, description="Reintentos máximos para LLM"
     )
+
+    # =========================================================
+    # EMAIL (SMTP) - Gmail
+    # =========================================================
+
+    smtp_host: Optional[str] = Field(default=None, env="SMTP_HOST")
+    smtp_port: Optional[int] = Field(default=None, env="SMTP_PORT")
+    smtp_user: Optional[str] = Field(default=None, env="SMTP_USER")
+    smtp_password: Optional[str] = Field(default=None, env="SMTP_PASSWORD")
+    smtp_use_tls: bool = Field(default=True, env="SMTP_USE_TLS")
+    mail_from: Optional[str] = Field(default=None, env="MAIL_FROM")
 
     # =========================================================
     # FASE 2A: EXTRACCIÓN ESTRUCTURADA (Feature Flags)
@@ -381,7 +393,9 @@ class Settings(BaseSettings):
     # Pydantic v2 (pydantic-settings): permitir variables extra en `.env`
     # (ej: PHOENIX_API_BASE_URL es usada por la UI, pero no es crítica para la API).
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Usar ruta absoluta para que funcione independientemente del cwd
+        # (p.ej. cuando se ejecuta via uvicorn desde otro directorio).
+        env_file=str(Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         validate_assignment=True,
@@ -407,6 +421,9 @@ def get_settings() -> Settings:
 
     if _settings is None:
         _settings = Settings()
+        # Asegurar compatibilidad con librerías que leen OPENAI_API_KEY de env (OpenAI SDK).
+        if _settings.openai_api_key and not os.getenv("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = _settings.openai_api_key
 
     return _settings
 

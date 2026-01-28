@@ -40,6 +40,7 @@ from app.services.ingesta import ParsingResult, ingerir_archivo
 #
 # =========================================================
 
+MIN_CHUNKABLE_TEXT_LEN = 100  # docs muy cortos: 1 chunk mínimo vs ruido
 
 def build_document_chunks_for_case(
     db: Session,
@@ -449,15 +450,17 @@ def build_document_chunks_for_single_document(
         print("[WARN] El documento está vacío tras la lectura")
         return
 
-    # Skip documentos muy cortos (< 500 chars)
-    if len(text) < 500:
+    # Aplicar chunking con metadata completa
+    tipo_doc = result.tipo_documento if isinstance(result, ParsingResult) else "txt"
+
+    # Skip documentos muy cortos (ruido) SOLO para tipos donde el chunking aporta poco.
+    # Para email/imagen (OCR) queremos 1 chunk mínimo aunque el texto sea corto,
+    # para que el documento no quede en pending con chunks_count=0.
+    if len(text) < MIN_CHUNKABLE_TEXT_LEN and tipo_doc not in ("email", "image"):
         print(f"[SKIP] Documento muy corto ({len(text)} chars), omitiendo chunking")
         doc.parsing_status = "completed"
         db.commit()
         return
-
-    # Aplicar chunking con metadata completa
-    tipo_doc = result.tipo_documento if isinstance(result, ParsingResult) else "txt"
 
     page_mapping = None
     if isinstance(result, ParsingResult) and result.page_offsets:

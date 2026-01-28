@@ -478,6 +478,17 @@ def normalizar_datos_banco(df: "pd.DataFrame") -> "pd.DataFrame":
         f"🏦 [BANCO] Mapeo columnas → Fecha:{col_fecha}, Concepto:{col_concepto}, Importe:{col_importe}"
     )
 
+    # Si no podemos mapear suficientes columnas típicas de extracto bancario,
+    # NO debemos “recortar” el DF a Fecha/Concepto/Importe porque destruiría
+    # CSVs que NO son extractos (p. ej. resúmenes financieros con columnas propias).
+    mapped = [c for c in (col_fecha, col_concepto, col_importe) if c]
+    if len(mapped) < 2:
+        print(
+            "⚠️ [BANCO] No hay suficientes columnas bancarias mapeables; "
+            "se devuelve el CSV/Excel sin normalizar."
+        )
+        return df
+
     nuevas_cols = {}
     if col_fecha:
         nuevas_cols[col_fecha] = "Fecha"
@@ -490,7 +501,8 @@ def normalizar_datos_banco(df: "pd.DataFrame") -> "pd.DataFrame":
         df.rename(columns=nuevas_cols, inplace=True)
         print(f"✅ [BANCO] Columnas renombradas: {nuevas_cols}")
     else:
-        print("⚠️ [BANCO] No se pudo mapear automáticamente")
+        # Esta rama debería ser rara porque arriba devolvemos df si mapeo <2.
+        print("⚠️ [BANCO] No se pudo mapear automáticamente (fallback)")
 
     for c in ["Fecha", "Concepto", "Importe"]:
         if c not in df.columns:

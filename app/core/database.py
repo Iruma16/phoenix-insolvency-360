@@ -7,6 +7,7 @@ Características:
 - Migraciones con Alembic
 - Singleton pattern para engine
 """
+from pathlib import Path
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine, event, pool
@@ -71,6 +72,22 @@ def get_engine():
             )
 
         else:
+            # SQLite: asegurar que el directorio del fichero existe.
+            # Si el path no existe, sqlite3 lanza: "unable to open database file".
+            if database_url.startswith("sqlite:///"):
+                sqlite_path = database_url[len("sqlite:///") :]
+                # Evitar casos especiales
+                if sqlite_path and sqlite_path != ":memory:" and not sqlite_path.startswith("file:"):
+                    try:
+                        Path(sqlite_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+                    except Exception as e:
+                        logger.warning(
+                            "Could not create SQLite directory",
+                            action="db_sqlite_dir_warning",
+                            sqlite_path=sqlite_path,
+                            error=str(e),
+                        )
+
             # SQLite: Sin pool, WAL mode
             _engine = create_engine(
                 database_url,

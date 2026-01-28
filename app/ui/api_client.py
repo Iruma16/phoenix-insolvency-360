@@ -178,7 +178,9 @@ class PhoenixLegalClient:
         response.raise_for_status()
         return response.json()
 
-    def upload_documents(self, case_id: str, files: list[tuple]) -> list[dict[str, Any]]:
+    def upload_documents(
+        self, case_id: str, files: list[tuple], *, force_upload: bool = False
+    ) -> list[dict[str, Any]]:
         """
         Sube documentos a un caso.
 
@@ -219,7 +221,9 @@ class PhoenixLegalClient:
         print(f"[DEBUG] URL: {self.base_url}/api/cases/{case_id}/documents")
 
         response = self.session.post(
-            f"{self.base_url}/api/cases/{case_id}/documents", files=files_payload
+            f"{self.base_url}/api/cases/{case_id}/documents",
+            params={"force_upload": "true"} if force_upload else None,
+            files=files_payload,
         )
 
         print(f"[DEBUG] Response status: {response.status_code}")
@@ -325,6 +329,16 @@ class PhoenixLegalClient:
             Lista de DocumentSummary
         """
         response = self.session.get(f"{self.base_url}/api/cases/{case_id}/documents")
+        response.raise_for_status()
+        return response.json()
+
+    def exclude_document(
+        self, case_id: str, document_id: str, *, reason: str, excluded_by: str
+    ) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/documents/{document_id}/exclude",
+            params={"reason": reason, "excluded_by": excluded_by},
+        )
         response.raise_for_status()
         return response.json()
 
@@ -557,6 +571,38 @@ class PhoenixLegalClient:
         response = self.session.get(f"{self.base_url}/api/cases/{case_id}/legal-report/pdf")
         response.raise_for_status()
         return response.content
+
+    # =========================================
+    # INFORME ECONÓMICO (CLIENTE) - OPCIÓN A
+    # =========================================
+
+    def get_economic_report(self, case_id: str, *, use_llm: bool = False) -> dict[str, Any]:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/economic-report",
+            params={"use_llm": str(bool(use_llm)).lower()},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def download_economic_report_pdf(self, case_id: str) -> bytes:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/economic-report/pdf")
+        response.raise_for_status()
+        return response.content
+
+    def email_economic_report(self, case_id: str, *, to_email: str) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/economic-report/email",
+            json={"to_email": to_email},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def generate_economic_report(self, case_id: str) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/economic-report/generate",
+        )
+        response.raise_for_status()
+        return response.json()
 
     # =========================================
     # TIMELINE PAGINADO (ESCALABLE)
