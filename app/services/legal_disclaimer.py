@@ -17,34 +17,33 @@ Todos los outputs deben incluir disclaimer adecuado.
 
 DISCLAIMER_TECHNICAL = """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️  IMPORTANTE — NATURALEZA DEL SISTEMA
+⚠️  IMPORTANTE — ALCANCE DEL DOCUMENTO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Este documento ha sido generado por Phoenix Legal, un sistema de asistencia 
-técnica automatizada para el análisis preliminar de riesgos legales concursales.
+Este documento se elabora a partir de la documentación aportada en el expediente
+y los datos disponibles a la fecha de emisión.
 
-• NO constituye asesoramiento legal ni dictamen jurídico.
-• NO sustituye la revisión por parte de asesor legal cualificado.
-• Las conclusiones se basan en reglas deterministas y análisis automatizado.
-• Se recomienda validación profesional antes de tomar decisiones legales.
+• Cuando un dato no conste o no pueda verificarse con evidencia, se indicará expresamente.
+• El contenido tiene finalidad informativa/operativa para orientar próximos pasos.
+• Se recomienda contrastar y completar el expediente antes de adoptar decisiones con efectos jurídicos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """.strip()
 
 
 DISCLAIMER_UI_DEMO = """
-⚠️ **DEMO TÉCNICA — NO CONSTITUYE ASESORAMIENTO LEGAL**
+⚠️ **NOTA**
 
-Este sistema es una demostración técnica de capacidades de análisis automatizado.
-Los resultados deben ser validados por asesor legal cualificado.
+Este documento se basa en la documentación aportada en el expediente.
+Si faltan datos relevantes, el informe lo indicará expresamente.
 """.strip()
 
 
 DISCLAIMER_DEGRADED = """
-⚠️  ANÁLISIS GENERADO SIN MODELO DE LENGUAJE
+⚠️  ALCANCE LIMITADO
 
-Las conclusiones presentadas se basan exclusivamente en reglas legales 
-deterministas y no incluyen interpretación contextualizada por modelo de lenguaje.
+No consta evidencia suficiente para determinadas conclusiones.
+Se recomienda aportar documentación adicional para completar el expediente.
 """.strip()
 
 

@@ -4,6 +4,7 @@ UI MVP para Phoenix Legal conectada con FastAPI backend.
 Versión refactorizada con componentes reutilizables y caché.
 """
 import os
+import inspect
 
 import streamlit as st
 
@@ -631,47 +632,294 @@ with tab5:
     else:
         case_id = st.session_state["selected_case_id"]
 
-        # Botón: Generar informe (sin descargar)
-        if st.button("📝 Generar Informe Económico", type="primary", key="econ_generate"):
-            try:
-                with st.spinner("Generando informe (LLM+RAG) e indexando..."):
-                    client.generate_economic_report(case_id)
-                st.success("✅ Informe generado")
-            except Exception as e:
-                st.error(f"Error al generar informe: {e}")
+        # -------------------------
+        # Estado (cabecera fija)
+        # -------------------------
+        status_data: dict = {}
+        try:
+            status_data = client.get_economic_report_status(case_id)
+        except Exception as e:
+            st.error(f"Error al cargar estado del informe: {e}")
+            status_data = {"has_generated": False, "validation": {"status": "UNKNOWN"}, "mode": "BORRADOR"}
+
+        case_name = status_data.get("case_name") or "—"
+        has_generated = bool(status_data.get("has_generated"))
+        generated_at = status_data.get("generated_at") or "—"
+        validation = status_data.get("validation") or {}
+        validation_status = validation.get("status") or "UNKNOWN"
+        validated_at = validation.get("validated_at") or "—"
+        mode = status_data.get("mode") or "BORRADOR"
+        dirty = bool(status_data.get("dirty_since_last_validation"))
+
+        export_badge = "PASS ✅" if validation_status == "PASS" else ("BLOQUEADO ⛔" if validation_status == "FAIL" else "PENDIENTE")
+        mode_badge = "PUBLICABLE" if mode == "PUBLICABLE" else "BORRADOR"
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown("**Caso**")
+            st.caption(f"{case_name} ({case_id[:8]}...)")
+        with c2:
+            st.markdown("**Estado informe**")
+            st.caption(("Generado" if has_generated else "No generado") + f" · {generated_at}")
+        with c3:
+            st.markdown("**Export cliente**")
+            st.caption(f"{export_badge} · {validated_at}")
+        with c4:
+            st.markdown("**Modo**")
+            st.caption(mode_badge + (" · cambios pendientes" if dirty else ""))
 
         st.markdown("---")
-        col_e1, col_e2 = st.columns(2)
-        with col_e1:
-            if st.button("⬇️ Descargar Informe Económico (PDF)", key="econ_pdf"):
-                try:
-                    with st.spinner("Preparando descarga..."):
-                        pdf_content = client.download_economic_report_pdf(case_id)
-                    st.download_button(
-                        label="📥 Descargar PDF económico",
-                        data=pdf_content,
-                        file_name=f"informe_situacion_economica_{case_id[:8]}.pdf",
-                        mime="application/pdf",
-                        key="econ_pdf_dl",
-                    )
-                    st.success("✅ PDF listo para descargar")
-                except Exception as e:
-                    st.error(f"Error al descargar PDF: {e}")
 
-        with col_e2:
-            st.subheader("📧 Enviar por email (Gmail)")
-            to_email = st.text_input(
-                "Email del cliente",
-                placeholder="cliente@ejemplo.com",
-                key="econ_to_email",
-            )
-            if st.button("📨 Enviar informe por email", key="econ_email_send", type="primary"):
+        # -------------------------
+        # Barra de acciones rápidas (inline)
+        # -------------------------
+        can_export = bool(mode == "PUBLICABLE" and validation_status == "PASS" and not dirty)
+        supports_disabled = "disabled" in inspect.signature(st.button).parameters
+
+        a1, a2, a3, a4 = st.columns([1.2, 1.3, 1.2, 1.1])
+        with a1:
+            if st.button("📝 Generar borrador", type="primary", key="econ_generate_v2"):
                 try:
-                    with st.spinner("Enviando email..."):
-                        client.email_economic_report(case_id, to_email=to_email)
-                    st.success("✅ Email enviado")
+                    with st.spinner("Generando informe..."):
+                        client.generate_economic_report(case_id)
+                    st.success("✅ Informe generado (BORRADOR)")
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"Error enviando email: {e}")
+                    st.error(f"Error al generar informe: {e}")
+        with a2:
+            if st.button("✅ Generar con cambios (versión cliente)", key="econ_validate"):
+                try:
+                    with st.spinner("Generando versión cliente (con cambios) y preparando PDF..."):
+                        res = client.validate_economic_report_client_export(case_id)
+                    if res.get("validation_status") == "PASS":
+                        st.success("✅ Versión cliente generada — informe PUBLICABLE")
+                    else:
+                        st.error("⛔ No se pudo generar versión cliente — revisa motivos")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al generar con cambios: {e}")
+        with a3:
+            btn_kwargs = {"disabled": (not can_export)} if supports_disabled else {}
+            if st.button("⬇️ Descargar PDF cliente", key="econ_pdf_v2", **btn_kwargs):
+                if not can_export:
+                    st.warning("⚠️ Genera con cambios antes de descargar. Ejecutando…")
+                    try:
+                        client.validate_economic_report_client_export(case_id)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"No se pudo generar con cambios: {e}")
+                else:
+                    try:
+                        with st.spinner("Preparando descarga..."):
+                            pdf_content = client.download_economic_report_pdf(case_id, audience="client")
+                        st.download_button(
+                            label="📥 Descargar PDF económico (cliente)",
+                            data=pdf_content,
+                            file_name=f"informe_situacion_economica_{case_id[:8]}.pdf",
+                            mime="application/pdf",
+                            key="econ_pdf_dl_v2",
+                        )
+                    except Exception as e:
+                        st.error(f"Error al descargar PDF: {e}")
+        with a4:
+            to_email_quick = st.text_input(
+                "Email",
+                placeholder="cliente@ejemplo.com",
+                key="econ_to_email_quick",
+                label_visibility="collapsed",
+            )
+            btn_kwargs = {"disabled": (not can_export)} if supports_disabled else {}
+            if st.button("📨 Enviar email", key="econ_email_send_v2", **btn_kwargs):
+                if not can_export:
+                    st.warning("⚠️ Genera con cambios antes de enviar. Ejecutando…")
+                    try:
+                        client.validate_economic_report_client_export(case_id)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"No se pudo generar con cambios: {e}")
+                else:
+                    try:
+                        with st.spinner("Enviando email..."):
+                            client.email_economic_report(case_id, to_email=to_email_quick)
+                        st.success("✅ Email enviado (PDF validado)")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error enviando email: {e}")
+
+        st.markdown("---")
+
+        # -------------------------
+        # Subtabs internas
+        # -------------------------
+        tprev, tedit, tstruct = st.tabs(["👁️ Vista previa", "✍️ Edición del abogado (Adenda)", "🧩 Correcciones estructuradas"])
+
+        # Panel derecho común
+        def _render_right_panel():
+            v = status_data.get("validation") or {}
+            v_status = v.get("status") or "UNKNOWN"
+            if v_status == "PASS" and mode == "PUBLICABLE" and not dirty:
+                st.success("✅ Exportación cliente: PASS (PUBLICABLE)")
+            elif v_status == "FAIL":
+                st.error("⛔ Exportación cliente: BLOQUEADA (BORRADOR)")
+            else:
+                st.warning("⚠️ Exportación cliente: sin validar / pendiente")
+
+            reasons = v.get("reasons") or []
+            with st.expander("Ver motivos (Rxx)"):
+                if not reasons:
+                    st.write("—")
+                else:
+                    for r in reasons[:20]:
+                        st.write(f"- **{r.get('rule_id','R?')}** ({r.get('section','?')}): {r.get('message','')}")
+
+            with st.expander("Historial de cambios"):
+                hist = status_data.get("history") or []
+                if not hist:
+                    st.write("—")
+                else:
+                    for h in reversed(hist[-30:]):
+                        st.write(f"- {h.get('at','')} — **{h.get('action','')}**: {h.get('detail','')}")
+
+        with tprev:
+            col_main, col_side = st.columns([3.3, 1.2])
+            with col_main:
+                st.subheader("Vista previa por secciones (híbrida)")
+                if not has_generated:
+                    st.info("No hay informe generado todavía. Usa “Generar borrador”.")
+                else:
+                    # Si está PUBLICABLE, mostrar el PDF cliente validado (vista exacta)
+                    if can_export:
+                        try:
+                            pdf_client = client.download_economic_report_pdf(case_id, audience="client")
+                            st.download_button(
+                                "📥 Descargar PDF cliente validado",
+                                data=pdf_client,
+                                file_name=f"informe_cliente_validado_{case_id[:8]}.pdf",
+                                mime="application/pdf",
+                                key="econ_pdf_client_validated_dl",
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        st.info("El PDF cliente solo se habilita tras validación PASS (modo PUBLICABLE).")
+                    try:
+                        preview = client.get_economic_report_sections(case_id)
+                        for sec in preview.get("sections") or []:
+                            title = sec.get("title") or sec.get("id")
+                            content = sec.get("content_md") or "—"
+                            with st.expander(title, expanded=(sec.get("id") in ("1", "5", "8"))):
+                                st.markdown(content)
+                    except Exception as e:
+                        st.error(f"No se pudo cargar la vista previa: {e}")
+            with col_side:
+                _render_right_panel()
+
+        with tedit:
+            col_main, col_side = st.columns([3.3, 1.2])
+            with col_main:
+                st.subheader("Adenda del abogado (V1)")
+                add = status_data.get("addendum") or {}
+                default_text = add.get("text") or ""
+                default_include = bool(add.get("include_in_pdf", True))
+                default_place = add.get("placement") or "before_signature"
+
+                include_in_pdf = st.checkbox("Incluir en PDF cliente", value=default_include, key="econ_add_include")
+                placement = st.selectbox(
+                    "Ubicación",
+                    options=["before_signature", "after_block_8"],
+                    format_func=lambda x: "Antes de firma (default)" if x == "before_signature" else "Tras bloque 8",
+                    index=0 if default_place == "before_signature" else 1,
+                    key="econ_add_place",
+                )
+                edited_by = st.text_input("Editado por", value="abogado", key="econ_add_by")
+                add_text = st.text_area(
+                    "Texto de la adenda",
+                    value=default_text,
+                    height=220,
+                    key="econ_add_text",
+                    placeholder="Añade matices jurídicos, advertencias o próximos pasos del despacho (sin inventar hechos).",
+                )
+                if st.button("💾 Guardar borrador", key="econ_add_save", type="primary"):
+                    try:
+                        client.save_economic_report_addendum(
+                            case_id,
+                            text=add_text,
+                            include_in_pdf=include_in_pdf,
+                            placement=placement,
+                            edited_by=edited_by,
+                        )
+                        st.success("✅ Adenda guardada (BORRADOR)")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error guardando adenda: {e}")
+
+                st.caption("Después de guardar, ejecuta “Generar con cambios (versión cliente)” para pasar a PUBLICABLE.")
+            with col_side:
+                _render_right_panel()
+
+        with tstruct:
+            col_main, col_side = st.columns([3.3, 1.2])
+            with col_main:
+                st.subheader("Correcciones estructuradas")
+                if not has_generated:
+                    st.info("Genera primero el informe para poder editar (deudas/hitos).")
+                else:
+                    try:
+                        editables = client.get_economic_report_editables(case_id)
+                        expected_version = int(editables.get("overrides_version") or 0)
+                        debts = list(editables.get("debts") or [])
+                        timeline = list(editables.get("timeline") or [])
+
+                        st.caption(
+                            "Regla: cualquier corrección exige **Evidencia/justificación** (mín. 10 caracteres). "
+                            "Solo se aplican filas donde rellenes la columna “evidence”."
+                        )
+
+                        with st.expander("Deudas (editar campos clave)", expanded=True):
+                            edited_debts = st.data_editor(
+                                debts,
+                                key="econ_debts_editor",
+                                use_container_width=True,
+                                num_rows="dynamic",
+                                disabled=[
+                                    "debt_id",
+                                ],
+                            )
+
+                        with st.expander("Timeline / hitos (editar o excluir)", expanded=False):
+                            edited_tl = st.data_editor(
+                                timeline,
+                                key="econ_timeline_editor",
+                                use_container_width=True,
+                                num_rows="dynamic",
+                                disabled=[
+                                    "event_key",
+                                    "event_type",
+                                ],
+                            )
+
+                        edited_by = st.text_input("Editado por", value="abogado", key="econ_overrides_by")
+
+                        if st.button("✅ Aplicar cambios al borrador", key="econ_overrides_apply", type="primary"):
+                            # Filtrar: solo filas con evidencia no vacía
+                            debt_overrides = [r for r in (edited_debts or []) if str((r or {}).get("evidence") or "").strip()]
+                            timeline_overrides = [r for r in (edited_tl or []) if str((r or {}).get("evidence") or "").strip()]
+                            try:
+                                client.apply_economic_report_overrides(
+                                    case_id,
+                                    expected_version=expected_version,
+                                    edited_by=edited_by,
+                                    debt_overrides=debt_overrides,
+                                    timeline_overrides=timeline_overrides,
+                                )
+                                st.success("✅ Correcciones aplicadas (BORRADOR). Regenera/valida antes de exportar.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error aplicando correcciones: {e}")
+                    except Exception as e:
+                        st.error(f"No se pudieron cargar datos editables: {e}")
+            with col_side:
+                _render_right_panel()
 
 # =========================================
 # TAB 6: GESTIÓN DE DUPLICADOS (BLINDADA)

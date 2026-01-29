@@ -22,6 +22,7 @@ MEJORAS:
 - Performance tracking
 - ✅ OPTIMIZACIÓN N+1: Eager loading de documentos y chunks
 """
+import hashlib
 import logging
 import time
 from datetime import datetime
@@ -73,8 +74,33 @@ def _to_financial_timeline_events(timeline_obj) -> list[dict]:
         evidence = getattr(e, "evidence", None)
         evidence_dict = evidence.model_dump() if hasattr(evidence, "model_dump") else evidence
 
+        # ID estable: no depende de la descripción (para permitir overrides robustos).
+        try:
+            d = getattr(e, "date", None)
+            ds = d.date().isoformat() if d else ""
+        except Exception:
+            ds = ""
+        doc_id = ""
+        chunk_id = ""
+        page = ""
+        try:
+            doc_id = str(getattr(evidence, "document_id", "") or "")
+            chunk_id = str(getattr(evidence, "chunk_id", "") or "")
+            page = str(getattr(evidence, "page", "") or "")
+        except Exception:
+            pass
+        amt = getattr(e, "amount", None)
+        amt_s = ""
+        try:
+            amt_s = f"{float(amt):.2f}"
+        except Exception:
+            amt_s = ""
+        raw = "|".join([ds, event_type_str, doc_id, chunk_id, page, amt_s])
+        event_id = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
         events.append(
             {
+                "event_id": event_id,
                 "date": getattr(e, "date", None),
                 "event_type": event_type_str,
                 "description": getattr(e, "description", ""),

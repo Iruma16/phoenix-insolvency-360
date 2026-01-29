@@ -995,6 +995,18 @@ async def ingest_documents(
                         f"No se pudo eliminar archivo temporal {temp_file_path}: {cleanup_error}"
                     )
 
+    # Si el expediente cambia, el informe cliente debe marcarse como BORRADOR (pending validation)
+    try:
+        from app.api.economic_report import mark_client_report_dirty
+
+        mark_client_report_dirty(
+            case_id,
+            actor="documents",
+            detail="Cambio en documentos del expediente (ingesta).",
+        )
+    except Exception:
+        pass
+
     return results
 
 
@@ -1315,6 +1327,18 @@ async def resolve_duplicate_action(
             detail=f"Error guardando decisión: {str(e)}",
         )
 
+    # Si el expediente cambia, el informe cliente debe marcarse como BORRADOR (pending validation)
+    try:
+        from app.api.economic_report import mark_client_report_dirty
+
+        mark_client_report_dirty(
+            case_id,
+            actor=request.decided_by or "documents",
+            detail="Cambio en documentos del expediente (decisión sobre duplicados).",
+        )
+    except Exception:
+        pass
+
     # ✅ NUEVO RETURN: Estado completo del par con decision_version
     return DuplicateDecisionResponse(
         pair_id=pair.pair_id,
@@ -1516,6 +1540,18 @@ async def exclude_document_from_analysis(
         # Añadir warnings al response
         if cascade_result.warnings:
             result["warnings"] = cascade_result.warnings
+
+        # Si el expediente cambia, el informe cliente debe marcarse como BORRADOR (pending validation)
+        try:
+            from app.api.economic_report import mark_client_report_dirty
+
+            mark_client_report_dirty(
+                case_id,
+                actor=excluded_by or "documents",
+                detail="Cambio en documentos del expediente (exclusión).",
+            )
+        except Exception:
+            pass
 
         return result
 

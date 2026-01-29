@@ -9,6 +9,7 @@ Mejoras críticas:
 - Evidence completa por crédito/evento
 """
 import re
+import hashlib
 from datetime import datetime
 from typing import Optional
 
@@ -169,6 +170,88 @@ def classify_credit_type(text: str, filename: str) -> tuple[CreditType, int]:
     return (CreditType.ORDINARY, 60)
 
 
+def _infer_creditor_and_security(
+    text: str, filename: str
+) -> tuple[Optional[str], str, Optional[bool], Optional[str], Optional[str]]:
+    """
+    Inferencia determinista (sin inventar) para PRD:
+    - creditor_type: normalizado
+    - creditor_name: solo si se identifica con claridad (AEAT/TGSS/entidad conocida)
+    - has_security: True solo si hay indicio explícito; None si no consta
+    """
+    t = (text or "").lower()
+    f = (filename or "").lower()
+    blob = f"{f}\n{t}"
+
+    def _snippet(haystack: str, needle: str, *, radius: int = 90) -> Optional[str]:
+        try:
+            idx = haystack.lower().find(needle.lower())
+            if idx < 0:
+                return None
+            start = max(0, idx - radius)
+            end = min(len(haystack), idx + len(needle) + radius)
+            return haystack[start:end].strip()[:300]
+        except Exception:
+            return None
+
+    # Garantía real: solo si hay indicio explícito
+    has_security: Optional[bool] = None
+    security_type: Optional[str] = None
+    security_excerpt: Optional[str] = None
+    if any(x in blob for x in ["garantía real", "garantia real", "hipoteca", "hipoteca inscrita"]):
+        has_security = True
+        security_type = "mortgage" if "hipoteca" in blob else "other"
+        security_excerpt = (
+            _snippet(text or "", "hipoteca")
+            or _snippet(text or "", "garantía real")
+            or _snippet(text or "", "garantia real")
+        )
+    elif any(x in blob for x in ["prenda", "prenda inscrita", "garantía prendaria", "garantia prendaria"]):
+        has_security = True
+        security_type = "pledge"
+        security_excerpt = (
+            _snippet(text or "", "prenda")
+            or _snippet(text or "", "garantía prendaria")
+            or _snippet(text or "", "garantia prendaria")
+        )
+    elif any(x in blob for x in ["reserva de dominio", "reserva dominio"]):
+        has_security = True
+        security_type = "reservation_of_title"
+        security_excerpt = _snippet(text or "", "reserva de dominio") or _snippet(text or "", "reserva dominio")
+
+    # Acreedor / tipo
+    if any(x in blob for x in ["aeat", "agencia tributaria", "hacienda"]):
+        return ("AEAT", "public", has_security, security_type, security_excerpt)
+    if any(x in blob for x in ["tgss", "tesorería general", "tesoreria general", "seguridad social"]):
+        return ("TGSS", "public", has_security, security_type, security_excerpt)
+
+    # Bancos (nombre si se reconoce, si no solo tipo)
+    bank_map = [
+        ("CaixaBank", ["caixabank", "la caixa", "caixa bank"]),
+        ("Banco Santander", ["santander", "banco santander"]),
+        ("BBVA", ["bbva"]),
+        ("Sabadell", ["sabadell", "banco sabadell"]),
+        ("Unicaja", ["unicaja"]),
+        ("ING", ["ing"]),
+    ]
+    for name, keys in bank_map:
+        if any(k in blob for k in keys):
+            return (name, "bank", has_security, security_type, security_excerpt)
+    if any(k in blob for k in ["banco", "bank", "entidad financiera", "prestamo", "préstamo", "crédito bancario", "credito bancario"]):
+        return (None, "bank", has_security, security_type, security_excerpt)
+
+    if any(k in blob for k in ["nómina", "nomina", "salario", "indemnización", "indemnizacion"]):
+        return (None, "employee", has_security, security_type, security_excerpt)
+    if any(k in blob for k in ["arrendamiento", "alquiler", "arrendador"]):
+        return (None, "landlord", has_security, security_type, security_excerpt)
+    if any(k in blob for k in ["proveedor", "factura", "suministro"]):
+        return (None, "supplier", has_security, security_type, security_excerpt)
+    if any(k in blob for k in ["socio", "administrador", "familiar", "pariente", "amigo"]):
+        return (None, "related_party", has_security, security_type, security_excerpt)
+
+    return (None, "other", has_security, security_type, security_excerpt)
+
+
 # =========================================================
 # EXTRACCIÓN DE FECHAS (ENDURECIDA)
 # =========================================================
@@ -234,6 +317,69 @@ def extract_date_from_document(text: str, filename: str) -> Optional[tuple[datet
     return None
 
 
+def extract_period_from_text(text: str) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """
+    Extrae un período asociado a una deuda.
+
+    Regla PRD: no inventar fechas. Solo devuelve YYYY-MM-DD cuando el texto lo contiene.
+    En caso contrario, devuelve (None, None, note).
+    """
+    t = (text or "")
+
+    # Rango con fechas exactas
+    m = re.search(
+        r"(?:desde|del)\s+(\d{1,2}[/-]\d{1,2}[/-]\d{4})\s+(?:hasta|al)\s+(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
+        t,
+        re.IGNORECASE,
+    )
+    if m:
+        d1, d2 = m.group(1), m.group(2)
+        # Normalizar a YYYY-MM-DD si es d/m/y
+        def _norm(d: str) -> Optional[str]:
+            d = d.replace("-", "/")
+            parts = d.split("/")
+            if len(parts) == 3 and len(parts[2]) == 4:
+                day, month, year = parts
+                try:
+                    return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+                except Exception:
+                    return None
+            return None
+
+        s = _norm(d1)
+        e = _norm(d2)
+        if s and e:
+            return (s, e, None, m.group(0)[:300])
+
+    # Rango de años (sin día/mes)
+    m = re.search(r"(?:ejercicios?|años?)\s+(\d{4})\s*(?:-|–|a|hasta)\s*(\d{4})", t, re.IGNORECASE)
+    if m:
+        y1, y2 = m.group(1), m.group(2)
+        return (None, None, f"Entre los ejercicios {y1}–{y2} (sin constancia de fechas exactas).", m.group(0)[:300])
+
+    m = re.search(r"\b(\d{4})\s*(?:-|–)\s*(\d{4})\b", t)
+    if m:
+        y1, y2 = m.group(1), m.group(2)
+        return (None, None, f"Entre los ejercicios {y1}–{y2} (sin constancia de fechas exactas).", m.group(0)[:300])
+
+    m = re.search(r"(?:ejercicio)\s+(\d{4})", t, re.IGNORECASE)
+    if m:
+        y = m.group(1)
+        return (None, None, f"Ejercicio {y} (sin constancia de fechas exactas).", m.group(0)[:300])
+
+    # Mes/año o periodo parcial (no se normaliza a YYYY-MM-DD)
+    m = re.search(r"\b(0?[1-9]|1[0-2])[/-](\d{4})\b", t)
+    if m:
+        mm, yy = m.group(1), m.group(2)
+        return (None, None, f"En torno a {int(mm):02d}/{yy} (sin constancia de fechas exactas).", m.group(0)[:300])
+    m = re.search(r"\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de?\s*(\d{4})\b", t, re.IGNORECASE)
+    if m:
+        mes, yy = m.group(1), m.group(2)
+        return (None, None, f"En torno a {mes.lower()} {yy} (sin constancia de fechas exactas).", m.group(0)[:300])
+
+    return (None, None, None, None)
+
+
 # =========================================================
 # CLASIFICACIÓN DE CRÉDITOS
 # =========================================================
@@ -278,7 +424,8 @@ def classify_credits_from_documents(
         if not chunks:
             continue
 
-        full_text = "\n".join([chunk.content for chunk in chunks if chunk.content])[:1000]
+        # Robustez: ampliar ventana para captar períodos/garantías que no están al inicio.
+        full_text = "\n".join([chunk.content for chunk in chunks if chunk.content])[:8000]
 
         # Extraer importe (con confidence)
         amount_result = extract_amount_near_keyword(full_text)
@@ -286,9 +433,15 @@ def classify_credits_from_documents(
             continue
 
         amount, amount_excerpt, amount_confidence = amount_result
+        amount_conf = "exact" if int(amount_confidence) >= 80 else "approx"
 
         # Clasificar (con confidence)
         credit_type, classification_confidence = classify_credit_type(full_text, doc.filename)
+
+        creditor_name, creditor_type, has_security, security_type, security_excerpt = _infer_creditor_and_security(
+            full_text, doc.filename
+        )
+        period_start, period_end, period_note, period_excerpt = extract_period_from_text(full_text)
 
         # Generar descripción
         if credit_type == CreditType.PRIVILEGED_SPECIAL:
@@ -309,11 +462,7 @@ def classify_credits_from_documents(
                 description = "Crédito ordinario"
 
         # Nombre acreedor
-        creditor = None
-        if "hacienda" in doc.filename.lower() or "aeat" in full_text.lower():
-            creditor = "AEAT"
-        elif "ss" in doc.filename.lower() or "seguridad" in doc.filename.lower():
-            creditor = "Seguridad Social / TGSS"
+        creditor = creditor_name
 
         # Crear Evidence con excerpt real del importe
         chunk = chunks[0] if chunks else None
@@ -326,6 +475,15 @@ def classify_credits_from_documents(
                 credit_type=credit_type,
                 amount=amount,
                 creditor_name=creditor,
+                creditor_type=creditor_type,
+                amount_confidence=amount_conf,
+                period_start=period_start,
+                period_end=period_end,
+                period_note=period_note,
+                period_excerpt=period_excerpt,
+                has_security=has_security,
+                security_type=security_type,
+                security_excerpt=security_excerpt,
                 description=description,
                 evidence=evidence,
             )
@@ -375,7 +533,8 @@ def extract_timeline_from_documents(
         if not chunks:
             continue
 
-        full_text = "\n".join([chunk.content for chunk in chunks if chunk.content])[:500]
+        # Robustez: ampliar ventana para detectar ejecución/embargo aunque no esté al inicio.
+        full_text = "\n".join([chunk.content for chunk in chunks if chunk.content])[:2000]
 
         # Detectar tipo de evento
         event_type = None
@@ -416,9 +575,34 @@ def extract_timeline_from_documents(
 
             chunk = chunks[0] if chunks else None
             excerpt = full_text[:200] if full_text else doc.filename
+            # ID estable: no depende del texto de descripción (permite overrides robustos)
+            try:
+                ds = event_date.date().isoformat() if event_date else ""
+            except Exception:
+                ds = ""
+            try:
+                doc_id = str(getattr(doc, "document_id", "") or "")
+            except Exception:
+                doc_id = ""
+            try:
+                chunk_id = str(getattr(chunk, "chunk_id", "") or "") if chunk else ""
+            except Exception:
+                chunk_id = ""
+            try:
+                page = str(getattr(chunk, "page_start", "") or "") if chunk else ""
+            except Exception:
+                page = ""
+            amt_s = ""
+            try:
+                amt_s = f"{float(amount):.2f}" if amount is not None else ""
+            except Exception:
+                amt_s = ""
+            raw = "|".join([ds, str(event_type), doc_id, chunk_id, page, amt_s])
+            event_id = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
             events.append(
                 TimelineEvent(
+                    event_id=event_id,
                     date=event_date,
                     event_type=event_type,
                     description=description,

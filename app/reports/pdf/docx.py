@@ -47,12 +47,12 @@ def generate_docx_report(legal_report, case) -> bytes:
         doc.add_paragraph(f"Generado: {legal_report.generated_at.strftime('%d/%m/%Y %H:%M')}")
         doc.add_paragraph()
 
-        # Disclaimer
+        # Alcance
         disclaimer_para = doc.add_paragraph()
         disclaimer_run = disclaimer_para.add_run(
-            "AVISO LEGAL: Este informe es un análisis técnico preliminar generado automáticamente. "
-            "NO constituye asesoramiento legal ni dictamen jurídico. Requiere revisión y validación por "
-            "profesional legal cualificado antes de tomar decisiones."
+            "ALCANCE: Este informe es un documento de trabajo elaborado a partir de la documentación aportada "
+            "en el expediente y los datos disponibles a la fecha de emisión. "
+            "Cuando un dato no conste en el expediente o no pueda verificarse, se indicará expresamente."
         )
         disclaimer_run.font.color.rgb = RGBColor(220, 38, 38)
         disclaimer_run.bold = True

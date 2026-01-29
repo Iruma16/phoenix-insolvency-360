@@ -1,6 +1,8 @@
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
+from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
+from typing import Optional
 
 from .styles import COLOR_GRAY
 
@@ -14,9 +16,10 @@ class NumberedCanvas(canvas.Canvas):
     2. Segunda: renderizar con total de páginas conocido
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, footer_last_page: Optional[str] = None, **kwargs):
         super().__init__(*args, **kwargs)
         self._saved_page_states = []
+        self._footer_last_page = footer_last_page
 
     def showPage(self):
         """Primera pasada: guardar estado sin renderizar número."""
@@ -50,5 +53,16 @@ class NumberedCanvas(canvas.Canvas):
         # Número de página (inferior derecha)
         page_number_text = f"Página {self._pageNumber} de {page_count}"
         self.drawRightString(A4[0] - 2 * cm, 1.5 * cm, page_number_text)
+
+        # Footer solo en última página (inferior izquierda, multilínea)
+        if self._footer_last_page and self._pageNumber == page_count:
+            self.setFont("Helvetica", 8)
+            max_w = A4[0] - (4 * cm)  # márgenes laterales 2cm + 2cm
+            lines = simpleSplit(self._footer_last_page, "Helvetica", 8, max_w)
+            # Posicionar ligeramente por encima del número de página
+            y = 1.25 * cm
+            for line in lines[::-1]:
+                self.drawString(2 * cm, y, line)
+                y += 0.35 * cm
 
         self.restoreState()

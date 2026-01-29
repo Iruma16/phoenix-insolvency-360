@@ -101,12 +101,12 @@ def render_pdf(report_payload: dict[str, Any], output_path: str) -> str:
     # HECHOS DEL CASO
     story.append(Paragraph("<a name='sec_hechos'/>HECHOS EXTRAÍDOS DEL CASO", style_heading))
     story.extend(_render_case_facts(report_payload, style_body))
-    story.append(PageBreak())
+    story.append(Spacer(1, 0.5 * cm))
 
     # HALLAZGOS Y RIESGOS
     story.append(Paragraph("<a name='sec_hallazgos'/>HALLAZGOS Y RIESGOS", style_heading))
     story.extend(_render_findings(report_payload, style_body))
-    story.append(PageBreak())
+    story.append(Spacer(1, 0.5 * cm))
 
     # RECOMENDACIONES ESTRATÉGICAS (si existe síntesis)
     if report_payload.get("synthesis"):
@@ -114,19 +114,7 @@ def render_pdf(report_payload: dict[str, Any], output_path: str) -> str:
             Paragraph("<a name='sec_recomendaciones'/>RECOMENDACIONES ESTRATÉGICAS", style_heading)
         )
         story.extend(_render_strategic_recommendations(report_payload, style_body))
-        story.append(PageBreak())
-
-    # ANÁLISIS LLM (si existe)
-    auditor_llm = report_payload.get("auditor_llm", {})
-    prosecutor_llm = report_payload.get("prosecutor_llm", {})
-    if (auditor_llm and auditor_llm.get("llm_enabled")) or (
-        prosecutor_llm and prosecutor_llm.get("llm_enabled")
-    ):
-        story.append(
-            Paragraph("<a name='sec_llm'/>ANÁLISIS CON INTELIGENCIA ARTIFICIAL", style_heading)
-        )
-        story.extend(_render_llm_analysis(report_payload, style_body))
-        story.append(PageBreak())
+        story.append(Spacer(1, 0.5 * cm))
 
     # ARTÍCULOS TRLC RELEVANTES
     story.append(Paragraph("<a name='sec_trlc'/>ARTÍCULOS TRLC RELEVANTES", style_heading))
@@ -136,7 +124,7 @@ def render_pdf(report_payload: dict[str, Any], output_path: str) -> str:
     # TRAZABILIDAD
     story.append(Paragraph("<a name='sec_trazabilidad'/>EVIDENCIAS Y TRAZABILIDAD", style_heading))
     story.extend(_render_traceability(report_payload, style_body))
-    story.append(PageBreak())
+    story.append(Spacer(1, 0.5 * cm))
 
     # DISCLAIMER
     story.append(Paragraph("<a name='sec_disclaimer'/>AVISO LEGAL", style_heading))
@@ -169,9 +157,31 @@ def _render_cover_page(payload: dict, style_title, style_body, style_small) -> l
     elements.append(Paragraph(case_info, style_body))
     elements.append(Spacer(1, 3 * cm))
 
+    # Firma (opcional) desde entorno para que el PDF tenga forma de despacho
+    try:
+        import os
+
+        lawyer = (os.getenv("LAWYER_NAME") or "").strip()
+        coleg = (os.getenv("LAWYER_COLLEGIATE_NUMBER") or "").strip()
+        if lawyer and coleg:
+            firm = (os.getenv("LAW_FIRM") or "").strip()
+            bar = (os.getenv("LAWYER_BAR_ASSOCIATION") or "").strip()
+            city = (os.getenv("LAWYER_OFFICE_CITY") or "").strip()
+            lines = [f"<b>Abogado responsable:</b> {lawyer}", f"<b>Nº colegiado:</b> {coleg}"]
+            if bar:
+                lines.append(f"<b>Colegio:</b> {bar}")
+            if firm:
+                lines.append(f"<b>Despacho:</b> {firm}")
+            if city:
+                lines.append(f"<b>Sede:</b> {city}")
+            elements.append(Paragraph("<br/>".join(lines), style_body))
+            elements.append(Spacer(1, 0.5 * cm))
+    except Exception:
+        pass
+
     elements.append(
         Paragraph(
-            "Este informe ha sido generado automáticamente por Phoenix Legal System", style_small
+            "Documento de trabajo elaborado a partir de la documentación aportada", style_small
         )
     )
 
@@ -546,20 +556,12 @@ def _render_disclaimer(style_body, style_small) -> list:
     elements: list[Any] = []
 
     disclaimer_text = """
-    <b>AVISO IMPORTANTE:</b><br/><br/>
-    Este informe ha sido generado automáticamente por Phoenix Legal System mediante
-    análisis algorítmico de documentación aportada y consulta a bases de datos legales.
+    <b>ALCANCE DEL DOCUMENTO:</b><br/><br/>
+    Este informe se elabora a partir de la documentación aportada en el expediente y los datos disponibles a la fecha
+    de emisión. Cuando un dato no conste o no pueda verificarse con evidencia, se indicará expresamente.
     <br/><br/>
-    El presente informe tiene carácter orientativo y NO sustituye el criterio profesional
-    de un abogado especializado en derecho concursal. Los hallazgos y recomendaciones aquí
-    expuestos deben ser validados por un profesional cualificado antes de tomar cualquier
-    decisión legal o empresarial.
-    <br/><br/>
-    Phoenix Legal System no asume responsabilidad por decisiones tomadas basándose
-    exclusivamente en este informe sin la debida supervisión profesional.
-    <br/><br/>
-    Para más información o para una revisión profesional de este caso, consulte con
-    un abogado especializado en derecho concursal.
+    El contenido tiene finalidad informativa/operativa para orientar próximos pasos. Se recomienda contrastar y completar
+    el expediente antes de adoptar decisiones con efectos jurídicos.
     """
 
     elements.append(Paragraph(disclaimer_text, style_body))

@@ -170,6 +170,27 @@ class CreditClassification(BaseModel):
     credit_type: CreditType
     amount: float = Field(..., gt=0, description="Importe > 0")
     creditor_name: Optional[str] = None
+    creditor_type: Optional[str] = Field(
+        None,
+        description="Tipo normalizado del acreedor (public/bank/supplier/employee/landlord/related_party/other)",
+    )
+    amount_confidence: Optional[str] = Field(
+        None,
+        description="Confianza del importe extraído (exact/approx/unknown). Si no consta, None.",
+    )
+    period_start: Optional[str] = Field(None, description="Inicio período (YYYY-MM-DD) si consta")
+    period_end: Optional[str] = Field(None, description="Fin período (YYYY-MM-DD) si consta")
+    period_note: Optional[str] = Field(None, description="Nota de período si no consta fecha exacta")
+    period_excerpt: Optional[str] = Field(None, description="Extracto breve que soporta el período (si consta)")
+    has_security: Optional[bool] = Field(
+        None,
+        description="Garantía real: True si consta, None si no consta (no afirmar sin evidencia)",
+    )
+    security_type: Optional[str] = Field(
+        None,
+        description="Tipo de garantía (mortgage/pledge/reservation_of_title/other) si consta",
+    )
+    security_excerpt: Optional[str] = Field(None, description="Extracto breve que soporta la garantía (si consta)")
     description: str
     evidence: Evidence
 
@@ -260,7 +281,12 @@ class InsolvencyDetection(BaseModel):
 class TimelineEvent(BaseModel):
     """Evento en el timeline con evidencia."""
 
-    date: datetime
+    # Identificador estable del evento (para edición/overrides y trazabilidad en UI).
+    # Se rellena cuando es posible; si no, puede quedar vacío.
+    event_id: Optional[str] = None
+
+    # En salida a cliente puede faltar o ser inválida (epoch/default); se sanea a None.
+    date: Optional[datetime] = None
     event_type: str  # "embargo", "factura_vencida", "reclamacion"
     description: str
     amount: Optional[float] = None
@@ -663,7 +689,7 @@ def detect_insolvency_signals(
         confidence = ConfidenceLevel.MEDIUM if balance else ConfidenceLevel.LOW
 
     elif signals_impago:  # Embargos = señal más fuerte
-        assessment = f"Señales compatibles con insolvencia actual ({total_signals} indicadores, incluye impagos efectivos)"
+        assessment = "Concurren múltiples señales objetivas compatibles con un escenario de insolvencia actual (incluye impagos efectivos)."
         # Alta confianza si tenemos balance + impagos documentados
         confidence = (
             ConfidenceLevel.HIGH
@@ -672,13 +698,11 @@ def detect_insolvency_signals(
         )
 
     elif signals_exigibilidad and signals_contables:
-        assessment = (
-            f"Señales de tensión financiera ({total_signals} indicadores: contables + exigibilidad)"
-        )
+        assessment = "Concurren señales objetivas compatibles con tensión financiera (contables y de exigibilidad)."
         confidence = ConfidenceLevel.MEDIUM
 
     elif signals_contables:
-        assessment = f"Señales contables de alerta ({len(signals_contables)} indicadores)"
+        assessment = "Concurren señales contables de alerta que requieren contraste con documentación completa."
         # Baja confianza si SOLO tenemos señales contables sin exigibilidad
         confidence = ConfidenceLevel.LOW if not balance else ConfidenceLevel.MEDIUM
 

@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import os
 from sqlalchemy.orm import Session
 
 from app.agents.agent_1_auditor.runner import run_auditor
@@ -41,6 +42,29 @@ def _format_date(date_str: Optional[str]) -> str:
         return date_str
 
 
+def _lawyer_signature_md() -> list[str]:
+    """
+    Firma del abogado (configurable por variables de entorno).
+    """
+    name = (os.getenv("LAWYER_NAME") or "").strip()
+    coleg = (os.getenv("LAWYER_COLLEGIATE_NUMBER") or "").strip()
+    bar = (os.getenv("LAWYER_BAR_ASSOCIATION") or "").strip()
+    firm = (os.getenv("LAW_FIRM") or "").strip()
+    city = (os.getenv("LAWYER_OFFICE_CITY") or "").strip()
+
+    if not name or not coleg:
+        return []
+
+    out = [f"**Abogado responsable:** {name}", f"**Nº colegiado:** {coleg}"]
+    if bar:
+        out.append(f"**Colegio:** {bar}")
+    if firm:
+        out.append(f"**Despacho:** {firm}")
+    if city:
+        out.append(f"**Sede:** {city}")
+    return out
+
+
 def _build_markdown_report(
     case_id: str,
     auditor_result,
@@ -62,10 +86,19 @@ def _build_markdown_report(
     md_lines = []
 
     # Encabezado
-    md_lines.append("# INFORME LEGAL DE ANÁLISIS")
+    md_lines.append("# INFORME LEGAL (DOCUMENTO DE TRABAJO)")
     md_lines.append("")
     md_lines.append(f"**Caso:** {case_id}")
     md_lines.append(f"**Fecha de generación:** {report_date}")
+    sig_lines = _lawyer_signature_md()
+    if sig_lines:
+        md_lines.append("")
+        md_lines.extend(sig_lines)
+    md_lines.append("")
+    md_lines.append(
+        "**Alcance:** Documento de trabajo para orientar próximos pasos, elaborado a partir de la documentación aportada. "
+        "Cuando un hecho o dato no conste, se indicará expresamente."
+    )
     md_lines.append("")
     md_lines.append("---")
     md_lines.append("")
@@ -78,7 +111,7 @@ def _build_markdown_report(
 
     # Advertencia si hubo fallback
     if auditor_fallback:
-        md_lines.append("⚠️ **ADVERTENCIA:** El análisis se realizó con contexto limitado.")
+        md_lines.append("**ADVERTENCIA:** El análisis se realizó con contexto limitado (documentación insuficiente).")
         md_lines.append("")
 
     # Sección 2: Riesgos Detectados por el Auditor
@@ -103,8 +136,8 @@ def _build_markdown_report(
         md_lines.append("No se proponen acciones específicas en este momento.")
         md_lines.append("")
 
-    # Sección 4: Análisis del Prosecutor
-    md_lines.append("## 4. ANÁLISIS DE CALIFICACIÓN CULPABLE")
+    # Sección 4: Evaluación de calificación (riesgos)
+    md_lines.append("## 4. EVALUACIÓN DE RIESGOS EN FASE DE CALIFICACIÓN")
     md_lines.append("")
     md_lines.append(f"**Nivel de riesgo global:** {prosecutor_result.overall_risk_level.upper()}")
     md_lines.append("")
@@ -113,24 +146,24 @@ def _build_markdown_report(
 
     if prosecutor_result.blocking_recommendation:
         md_lines.append(
-            "🚨 **RECOMENDACIÓN DE BLOQUEO:** Se desaconseja presentar el concurso sin medidas defensivas previas."
+            "**RECOMENDACIÓN DE CAUTELA:** Se desaconseja presentar el concurso sin medidas defensivas previas."
         )
         md_lines.append("")
 
     md_lines.append(f"**Hallazgos críticos:** {prosecutor_result.critical_findings_count}")
     md_lines.append("")
 
-    # Sección 5: Acusaciones Detalladas
-    md_lines.append("## 5. ACUSACIONES ESPECÍFICAS")
+    # Sección 5: Hallazgos estructurados (condicionales)
+    md_lines.append("## 5. HALLAZGOS Y FUNDAMENTO (POR INDICIO)")
     md_lines.append("")
     if prosecutor_result.accusations:
         for i, acc in enumerate(prosecutor_result.accusations, 1):
             md_lines.append(f"### 5.{i} {acc.title}")
             md_lines.append("")
-            md_lines.append(f"**Base legal:** {acc.legal_ground.replace('_', ' ').title()}")
+            md_lines.append(f"**Base legal (referencia):** {acc.legal_ground.replace('_', ' ').title()}")
             md_lines.append(f"**Nivel de riesgo:** {acc.risk_level.upper()}")
             md_lines.append("")
-            md_lines.append("**Descripción:**")
+            md_lines.append("**Descripción (condicional):**")
             md_lines.append(acc.description)
             md_lines.append("")
             md_lines.append("**Razonamiento:**")
@@ -139,7 +172,7 @@ def _build_markdown_report(
 
             # Fundamentos legales
             if acc.legal_articles:
-                md_lines.append("**Fundamentos legales:**")
+                md_lines.append("**Fundamentos legales (a verificar con texto literal si procede):**")
                 for article in acc.legal_articles:
                     md_lines.append(f"- {article}")
                 md_lines.append("")
@@ -171,16 +204,10 @@ def _build_markdown_report(
                         md_lines.append(f"   **Extracto:** {excerpt_short}")
                     md_lines.append("")
 
-            if acc.estimated_probability:
-                md_lines.append(
-                    f"**Probabilidad estimada:** {acc.estimated_probability * 100:.0f}%"
-                )
-                md_lines.append("")
-
             md_lines.append("---")
             md_lines.append("")
     else:
-        md_lines.append("No se detectaron acusaciones específicas.")
+        md_lines.append("No se detectaron hallazgos específicos con la documentación disponible.")
         md_lines.append("")
 
     # Sección 6: Trazabilidad y Metadatos
@@ -189,18 +216,20 @@ def _build_markdown_report(
     md_lines.append(f"- **Caso analizado:** {case_id}")
     md_lines.append(f"- **Fecha de análisis:** {report_date}")
     md_lines.append(f"- **Nivel de riesgo global:** {prosecutor_result.overall_risk_level}")
-    md_lines.append(f"- **Total de acusaciones:** {len(prosecutor_result.accusations)}")
+    md_lines.append(f"- **Total de hallazgos:** {len(prosecutor_result.accusations)}")
     md_lines.append(f"- **Hallazgos críticos:** {prosecutor_result.critical_findings_count}")
     if auditor_fallback:
-        md_lines.append("- **Modo de análisis:** Contexto limitado (fallback)")
+        md_lines.append("- **Alcance:** Documentación limitada (faltan elementos para concluir con plena seguridad)")
     else:
-        md_lines.append("- **Modo de análisis:** Análisis completo con RAG")
+        md_lines.append("- **Alcance:** Elaborado con la documentación aportada en el expediente")
     md_lines.append("")
 
     # Pie de página
     md_lines.append("---")
     md_lines.append("")
-    md_lines.append("*Este informe ha sido generado automáticamente por el sistema Agentic RAG.*")
+    md_lines.append(
+        "*Este informe es un documento de trabajo elaborado a partir de la documentación aportada y los datos disponibles en el expediente.*"
+    )
     md_lines.append(f"*Generado el {report_date}*")
     md_lines.append("")
 
@@ -394,17 +423,17 @@ def generate_case_report(case_id: str, db: Optional[Session] = None) -> Path:
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(markdown_content)
 
-        print(f"✅ Informe Markdown guardado: {md_path}")
+        print(f"Informe Markdown guardado: {md_path}")
 
         # 5. Generar PDF
         try:
-            print("📄 Generando PDF...")
+            print("Generando PDF...")
             pdf_filename = f"informe_{case_id}_{timestamp}.pdf"
             pdf_path = reports_dir / pdf_filename
             _generate_pdf_from_markdown(md_path, pdf_path)
-            print(f"✅ Informe PDF guardado: {pdf_path}")
+            print(f"Informe PDF guardado: {pdf_path}")
         except Exception as e:
-            print(f"⚠️  No se pudo generar PDF: {e}")
+            print(f"No se pudo generar PDF: {e}")
             print(f"   El informe Markdown está disponible en: {md_path}")
 
         return md_path

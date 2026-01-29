@@ -584,8 +584,11 @@ class PhoenixLegalClient:
         response.raise_for_status()
         return response.json()
 
-    def download_economic_report_pdf(self, case_id: str) -> bytes:
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/economic-report/pdf")
+    def download_economic_report_pdf(self, case_id: str, *, audience: str = "internal") -> bytes:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/economic-report/pdf",
+            params={"audience": audience},
+        )
         response.raise_for_status()
         return response.content
 
@@ -600,6 +603,68 @@ class PhoenixLegalClient:
     def generate_economic_report(self, case_id: str) -> dict[str, Any]:
         response = self.session.post(
             f"{self.base_url}/api/cases/{case_id}/economic-report/generate",
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_economic_report_status(self, case_id: str) -> dict[str, Any]:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/economic-report/status")
+        response.raise_for_status()
+        return response.json()
+
+    def get_economic_report_sections(self, case_id: str) -> dict[str, Any]:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/economic-report/sections")
+        response.raise_for_status()
+        return response.json()
+
+    def save_economic_report_addendum(
+        self,
+        case_id: str,
+        *,
+        text: str,
+        include_in_pdf: bool,
+        placement: str,
+        edited_by: str,
+    ) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/economic-report/addendum",
+            json={
+                "text": text,
+                "include_in_pdf": bool(include_in_pdf),
+                "placement": placement,
+                "edited_by": edited_by,
+            },
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def validate_economic_report_client_export(self, case_id: str) -> dict[str, Any]:
+        response = self.session.post(f"{self.base_url}/api/cases/{case_id}/economic-report/validate")
+        response.raise_for_status()
+        return response.json()
+
+    def get_economic_report_editables(self, case_id: str) -> dict[str, Any]:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/economic-report/editables")
+        response.raise_for_status()
+        return response.json()
+
+    def apply_economic_report_overrides(
+        self,
+        case_id: str,
+        *,
+        expected_version: int,
+        edited_by: str,
+        debt_overrides: list[dict],
+        timeline_overrides: list[dict],
+    ) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/economic-report/overrides",
+            json={
+                "expected_version": int(expected_version),
+                "edited_by": edited_by,
+                "debt_overrides": debt_overrides or [],
+                "timeline_overrides": timeline_overrides or [],
+            },
         )
         response.raise_for_status()
         return response.json()

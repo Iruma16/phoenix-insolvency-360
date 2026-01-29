@@ -79,11 +79,33 @@ def generate_legal_report_pdf(legal_report, case) -> bytes:
     )
     story.append(Spacer(1, 2 * cm))
 
-    # Disclaimer
+    # Firma del abogado (si está configurada en entorno)
+    try:
+        import os
+
+        lawyer = (os.getenv("LAWYER_NAME") or "").strip()
+        coleg = (os.getenv("LAWYER_COLLEGIATE_NUMBER") or "").strip()
+        if lawyer and coleg:
+            firm = (os.getenv("LAW_FIRM") or "").strip()
+            bar = (os.getenv("LAWYER_BAR_ASSOCIATION") or "").strip()
+            city = (os.getenv("LAWYER_OFFICE_CITY") or "").strip()
+            lines = [f"<b>Abogado responsable:</b> {lawyer}", f"<b>Nº colegiado:</b> {coleg}"]
+            if bar:
+                lines.append(f"<b>Colegio:</b> {bar}")
+            if firm:
+                lines.append(f"<b>Despacho:</b> {firm}")
+            if city:
+                lines.append(f"<b>Sede:</b> {city}")
+            story.append(Paragraph("<br/>".join(lines), styles["Normal"]))
+            story.append(Spacer(1, 0.6 * cm))
+    except Exception:
+        pass
+
+    # Alcance
     disclaimer = Paragraph(
-        "<b>AVISO LEGAL:</b> Este informe es un análisis técnico preliminar generado automáticamente. "
-        "NO constituye asesoramiento legal ni dictamen jurídico. Requiere revisión y validación por "
-        "profesional legal cualificado antes de tomar decisiones.",
+        "<b>ALCANCE:</b> Este informe es un documento de trabajo elaborado a partir de la documentación aportada "
+        "en el expediente y los datos disponibles a la fecha de emisión. "
+        "Cuando un dato no conste en el expediente o no pueda verificarse, se indicará expresamente.",
         ParagraphStyle("Disclaimer", parent=styles["Normal"], textColor=COLOR_DANGER, fontSize=10),
     )
     story.append(disclaimer)
