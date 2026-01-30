@@ -54,7 +54,7 @@ def test_rag_retrieves_context_only():
         document = Document(
             case_id=case_id,
             filename="test_doc.txt",
-            doc_type="contrato",
+            doc_type="OTRO",
             source="test",
             date_start=datetime(2024, 1, 1),
             date_end=datetime(2024, 12, 31),

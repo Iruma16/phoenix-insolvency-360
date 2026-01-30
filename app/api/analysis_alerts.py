@@ -39,6 +39,77 @@ router = APIRouter(
 )
 
 
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+
+def _contains_any(haystack: str, needles: list[str]) -> bool:
+    h = _norm(haystack)
+    return any(n in h for n in needles)
+
+
+def _make_alert_id(*, case_id: str, alert_type: str, fingerprint: str) -> str:
+    """
+    ID determinista.
+
+    Importante:
+    - NO usar datetime/aleatoriedad → reproducibilidad.
+    - fingerprint debe ser estable y derivado de evidencia/valores detectados.
+    """
+    raw = f"{case_id}|{alert_type}|{fingerprint}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _build_evidence_list(
+    *,
+    chunks: list[DocumentChunk],
+    db: Session,
+    limit: int = 3,
+) -> list[AlertEvidence]:
+    out: list[AlertEvidence] = []
+    for c in chunks:
+        if len(out) >= limit:
+            break
+        try:
+            out.append(_build_alert_evidence(c, db))
+        except ValueError:
+            continue
+    return out
+
+
+def _score_internal(alert: AnalysisAlert) -> int:
+    """
+    Scoring interno (0-100) para ordenar alertas.
+    NO se expone por API (el contrato AnalysisAlert es técnico y `extra=forbid`).
+    """
+    # Base por tipo técnico
+    base = {
+        AlertType.SUSPICIOUS_PATTERN: 70,
+        AlertType.TEMPORAL_INCONSISTENCY: 55,
+        AlertType.INCONSISTENT_DATA: 50,
+        AlertType.DUPLICATED_DATA: 35,
+        AlertType.MISSING_DATA: 30,
+    }.get(alert.alert_type, 40)
+
+    # Ajustes por nº evidencias y “señales fuertes” en description
+    ev = len(alert.evidence or [])
+    bonus = min(20, ev * 4)
+
+    d = (alert.description or "").lower()
+    if "tgss" in d or "providencia" in d or "apremio" in d:
+        bonus += 6
+    if "vinculad" in d or "grupo" in d:
+        bonus += 6
+    if "efectivo" in d or "cajero" in d or "reintegro" in d:
+        bonus += 6
+    if "iva" in d:
+        bonus += 4
+    if "periodo" in d and "consecutiv" in d:
+        bonus += 6
+
+    return max(0, min(100, base + bonus))
+
+
 def _build_alert_evidence(chunk: DocumentChunk, db: Session) -> AlertEvidence:
     """
     Construye AlertEvidence desde un DocumentChunk del core.
@@ -120,9 +191,8 @@ def _detect_missing_data_alerts(
                 continue
 
         if evidence_list:
-            alert_id = hashlib.sha256(
-                f"{case_id}_MISSING_DATA_pages_{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:16]
+            fp = "|".join(sorted({e.chunk_id for e in evidence_list}))
+            alert_id = _make_alert_id(case_id=case_id, alert_type=AlertType.MISSING_DATA.value, fingerprint=f"pdf_pages_missing|{fp}")
 
             alerts.append(
                 AnalysisAlert(
@@ -168,9 +238,13 @@ def _detect_duplicated_data_alerts(
                     continue
 
             if evidence_list:
-                alert_id = hashlib.sha256(
-                    f"{case_id}_DUPLICATED_DATA_{content[:50]}_{datetime.utcnow().isoformat()}".encode()
-                ).hexdigest()[:16]
+                content_fp = hashlib.sha256(content.encode()).hexdigest()[:12]
+                fp = "|".join(sorted({e.chunk_id for e in evidence_list}))
+                alert_id = _make_alert_id(
+                    case_id=case_id,
+                    alert_type=AlertType.DUPLICATED_DATA.value,
+                    fingerprint=f"chunk_literal|{content_fp}|{fp}",
+                )
 
                 alerts.append(
                     AnalysisAlert(
@@ -217,9 +291,12 @@ def _detect_inconsistent_data_alerts(
                 continue
 
         if evidence_list:
-            alert_id = hashlib.sha256(
-                f"{case_id}_INCONSISTENT_DATA_offsets_{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:16]
+            fp = "|".join(sorted({e.chunk_id for e in evidence_list}))
+            alert_id = _make_alert_id(
+                case_id=case_id,
+                alert_type=AlertType.INCONSISTENT_DATA.value,
+                fingerprint=f"invalid_offsets|{fp}",
+            )
 
             alerts.append(
                 AnalysisAlert(
@@ -251,9 +328,12 @@ def _detect_inconsistent_data_alerts(
                 continue
 
         if evidence_list:
-            alert_id = hashlib.sha256(
-                f"{case_id}_INCONSISTENT_DATA_pages_{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:16]
+            fp = "|".join(sorted({e.chunk_id for e in evidence_list}))
+            alert_id = _make_alert_id(
+                case_id=case_id,
+                alert_type=AlertType.INCONSISTENT_DATA.value,
+                fingerprint=f"invalid_pages|{fp}",
+            )
 
             alerts.append(
                 AnalysisAlert(
@@ -314,9 +394,11 @@ def _detect_suspicious_patterns(
             if not chunk:
                 continue
             evidence = _build_alert_evidence(chunk, db)
-            alert_id = hashlib.sha256(
-                f"{case_id}_SUSPICIOUS_PATTERN_sha256_{sha}_{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:16]
+            alert_id = _make_alert_id(
+                case_id=case_id,
+                alert_type=AlertType.SUSPICIOUS_PATTERN.value,
+                fingerprint=f"sha256_rare|{sha}|{evidence.chunk_id}",
+            )
             filenames = ", ".join(sorted({d.filename for d in ds})[:5])
             alerts.append(
                 AnalysisAlert(
@@ -354,9 +436,13 @@ def _detect_suspicious_patterns(
                     continue
             if not evidence_list:
                 continue
-            alert_id = hashlib.sha256(
-                f"{case_id}_SUSPICIOUS_PATTERN_crossdoc_{content[:50]}_{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:16]
+            content_fp = hashlib.sha256(content.encode()).hexdigest()[:12]
+            fp = "|".join(sorted({e.chunk_id for e in evidence_list}))
+            alert_id = _make_alert_id(
+                case_id=case_id,
+                alert_type=AlertType.SUSPICIOUS_PATTERN.value,
+                fingerprint=f"crossdoc|{content_fp}|{fp}",
+            )
             alerts.append(
                 AnalysisAlert(
                     alert_id=alert_id,
@@ -395,9 +481,12 @@ def _detect_suspicious_patterns(
                 except ValueError:
                     continue
             if evidence_list:
-                alert_id = hashlib.sha256(
-                    f"{case_id}_SUSPICIOUS_PATTERN_ocr_{datetime.utcnow().isoformat()}".encode()
-                ).hexdigest()[:16]
+                fp = "|".join(sorted({e.chunk_id for e in evidence_list}))
+                alert_id = _make_alert_id(
+                    case_id=case_id,
+                    alert_type=AlertType.SUSPICIOUS_PATTERN.value,
+                    fingerprint=f"ocr_quality|{fp}",
+                )
                 alerts.append(
                     AnalysisAlert(
                         alert_id=alert_id,
@@ -443,9 +532,12 @@ def _detect_suspicious_patterns(
             break
 
     if temporal_evidence:
-        alert_id = hashlib.sha256(
-            f"{case_id}_TEMPORAL_INCONSISTENCY_{datetime.utcnow().isoformat()}".encode()
-        ).hexdigest()[:16]
+        fp = "|".join(sorted({e.chunk_id for e in temporal_evidence}))
+        alert_id = _make_alert_id(
+            case_id=case_id,
+            alert_type=AlertType.TEMPORAL_INCONSISTENCY.value,
+            fingerprint=f"temporal|{fp}",
+        )
         alerts.append(
             AnalysisAlert(
                 alert_id=alert_id,
@@ -481,9 +573,11 @@ def _detect_suspicious_patterns(
         a, c = repeated_amounts[0]
         try:
             evidence = _build_alert_evidence(amount_chunk[a], db)
-            alert_id = hashlib.sha256(
-                f"{case_id}_SUSPICIOUS_PATTERN_amount_{a}_{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:16]
+            alert_id = _make_alert_id(
+                case_id=case_id,
+                alert_type=AlertType.SUSPICIOUS_PATTERN.value,
+                fingerprint=f"repeated_amount|{a}|{evidence.chunk_id}",
+            )
             alerts.append(
                 AnalysisAlert(
                     alert_id=alert_id,
@@ -532,9 +626,11 @@ def _detect_suspicious_patterns(
                         )
                 if chunk:
                     evidence = _build_alert_evidence(chunk, db)
-                    alert_id = hashlib.sha256(
-                        f"{case_id}_SUSPICIOUS_PATTERN_patrimonial_{datetime.utcnow().isoformat()}".encode()
-                    ).hexdigest()[:16]
+                    alert_id = _make_alert_id(
+                        case_id=case_id,
+                        alert_type=AlertType.SUSPICIOUS_PATTERN.value,
+                        fingerprint=f"patrimonial_window|{evidence.chunk_id}",
+                    )
                     alerts.append(
                         AnalysisAlert(
                             alert_id=alert_id,
@@ -564,9 +660,12 @@ def _detect_suspicious_patterns(
                 continue
 
         if evidence_list:
-            alert_id = hashlib.sha256(
-                f"{case_id}_SUSPICIOUS_PATTERN_long_{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:16]
+            fp = "|".join(sorted({e.chunk_id for e in evidence_list}))
+            alert_id = _make_alert_id(
+                case_id=case_id,
+                alert_type=AlertType.SUSPICIOUS_PATTERN.value,
+                fingerprint=f"very_long_chunks|{fp}",
+            )
 
             alerts.append(
                 AnalysisAlert(
@@ -594,9 +693,12 @@ def _detect_suspicious_patterns(
                 continue
 
         if evidence_list:
-            alert_id = hashlib.sha256(
-                f"{case_id}_SUSPICIOUS_PATTERN_short_{datetime.utcnow().isoformat()}".encode()
-            ).hexdigest()[:16]
+            fp = "|".join(sorted({e.chunk_id for e in evidence_list}))
+            alert_id = _make_alert_id(
+                case_id=case_id,
+                alert_type=AlertType.SUSPICIOUS_PATTERN.value,
+                fingerprint=f"very_short_chunks|{fp}",
+            )
 
             alerts.append(
                 AnalysisAlert(
@@ -609,6 +711,662 @@ def _detect_suspicious_patterns(
                 )
             )
 
+    return alerts
+
+
+def _detect_duplicate_documents_sha256(
+    case_id: str, chunks: list[DocumentChunk], db: Session
+) -> list[AnalysisAlert]:
+    """
+    Contabilidad / higiene documental:
+    - Duplicados exactos por SHA256 (mismo binario) con umbral >=2.
+
+    Nota: esto NO es “sospechoso”, es un problema técnico de duplicidad.
+    """
+    alerts: list[AnalysisAlert] = []
+    docs = (
+        db.query(Document)
+        .filter(Document.case_id == case_id, Document.deleted_at.is_(None))
+        .all()
+    )
+    sha_map: dict[str, list[Document]] = defaultdict(list)
+    for d in docs:
+        if d.sha256_hash:
+            sha_map[d.sha256_hash].append(d)
+
+    duplicates = [(sha, ds) for sha, ds in sha_map.items() if len(ds) >= 2]
+    for sha, ds in duplicates[:5]:
+        # Evidencia: 1-2 chunks de esos documentos
+        ev_chunks: list[DocumentChunk] = []
+        for d in ds[:2]:
+            c = (
+                db.query(DocumentChunk)
+                .filter(DocumentChunk.document_id == d.document_id)
+                .order_by(DocumentChunk.chunk_index.asc())
+                .first()
+            )
+            if c:
+                ev_chunks.append(c)
+        evidence = _build_evidence_list(chunks=ev_chunks, db=db, limit=2)
+        if not evidence:
+            continue
+        filenames = ", ".join(sorted({d.filename for d in ds})[:6])
+        alert_id = _make_alert_id(
+            case_id=case_id,
+            alert_type=AlertType.DUPLICATED_DATA.value,
+            fingerprint=f"sha256_exact|{sha}",
+        )
+        alerts.append(
+            AnalysisAlert(
+                alert_id=alert_id,
+                case_id=case_id,
+                alert_type=AlertType.DUPLICATED_DATA,
+                description=(
+                    f"Duplicado exacto (SHA256): se detectaron {len(ds)} documentos con el mismo binario. "
+                    f"Ficheros: {filenames}"
+                ),
+                evidence=evidence,
+                created_at=datetime.utcnow(),
+            )
+        )
+    return alerts
+
+
+def _detect_tgss_alerts(case_id: str, chunks: list[DocumentChunk], db: Session) -> list[AnalysisAlert]:
+    """
+    TGSS (determinista, técnico):
+    - Detecta providencia/apremio/embargo por keywords.
+    - Extrae periodos YYYY-MM y detecta consecutividad básica.
+    - Extrae importes € cuando estén presentes (aprox).
+    - Genera alerta adicional de “faltan RNT/RLC” anclada a evidencia TGSS si aplica.
+    """
+    alerts: list[AnalysisAlert] = []
+
+    # Map doc_id -> Document (para filename/doc_type)
+    docs = (
+        db.query(Document)
+        .filter(Document.case_id == case_id, Document.deleted_at.is_(None))
+        .all()
+    )
+    doc_map: dict[str, Document] = {d.document_id: d for d in docs}
+
+    tgss_needles = [
+        "tgss",
+        "tesorería general de la seguridad social",
+        "tesoreria general de la seguridad social",
+        "providencia",
+        "apremio",
+        "embargo",
+        "expediente",
+        "recargo",
+        "cuotas no ingresadas",
+    ]
+
+    tgss_chunks: list[DocumentChunk] = []
+    for c in chunks:
+        if not c.content:
+            continue
+        doc = doc_map.get(c.document_id)
+        fname = (doc.filename if doc else "") or ""
+        dtype = (getattr(doc, "doc_type", None) or "") if doc else ""
+        if dtype in ("TGSS", "PROVIDENCIA_APREMIO"):
+            tgss_chunks.append(c)
+            continue
+        if _contains_any(fname, ["tgss", "apremio", "providencia"]) or _contains_any(c.content, tgss_needles):
+            tgss_chunks.append(c)
+
+    if tgss_chunks:
+        # Periodos YYYY-MM
+        period_pat = re.compile(r"\b(20\d{2})[-/](0[1-9]|1[0-2])\b")
+        periods: set[str] = set()
+        for c in tgss_chunks:
+            for y, m in period_pat.findall(c.content or ""):
+                periods.add(f"{y}-{m}")
+        periods_sorted = sorted(periods)
+
+        # Consecutividad: medir longitud máxima de run
+        def _to_int(p: str) -> int:
+            y, m = p.split("-")
+            return int(y) * 12 + (int(m) - 1)
+
+        max_run = 0
+        run = 1
+        for i in range(1, len(periods_sorted)):
+            if _to_int(periods_sorted[i]) == _to_int(periods_sorted[i - 1]) + 1:
+                run += 1
+            else:
+                max_run = max(max_run, run)
+                run = 1
+        max_run = max(max_run, run) if periods_sorted else 0
+
+        # Importe principal (heurística: “Importe principal reclamado: X €”)
+        euro_pat = re.compile(r"(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)\s*€")
+        principal_amount = None
+        for c in tgss_chunks:
+            txt = c.content or ""
+            if "importe principal" in txt.lower():
+                m = euro_pat.search(txt)
+                if m:
+                    raw = m.group(1).replace(".", "").replace(",", ".")
+                    try:
+                        principal_amount = float(raw)
+                        break
+                    except Exception:
+                        pass
+
+        # Evidencia: chunks TGSS más “densos” (mencionan TGSS/apremio/periodo)
+        densos = []
+        for c in tgss_chunks:
+            t = (c.content or "").lower()
+            score = 0
+            score += 2 if "tgss" in t else 0
+            score += 2 if "apremio" in t or "providencia" in t else 0
+            score += 1 if "periodo" in t or "periodo reclamado" in t else 0
+            score += 1 if "€" in t else 0
+            densos.append((score, c))
+        densos.sort(key=lambda x: x[0], reverse=True)
+        ev_chunks = [c for _, c in densos[:3]]
+        evidence = _build_evidence_list(chunks=ev_chunks, db=db, limit=3)
+        if evidence:
+            parts = []
+            parts.append("TGSS: se detecta referencia a providencia/apremio/embargo en documentación.")
+            if principal_amount is not None:
+                parts.append(f"Importe principal aproximado: {principal_amount:,.2f} €".replace(",", "X").replace(".", ",").replace("X", "."))
+            if periods_sorted:
+                if max_run >= 2:
+                    parts.append(f"Periodos detectados: {periods_sorted[0]}…{periods_sorted[-1]} (máx. consecutivos: {max_run}).")
+                else:
+                    parts.append(f"Periodos detectados: {', '.join(periods_sorted[:8])}{'…' if len(periods_sorted) > 8 else ''}.")
+
+            desc = " ".join(parts)
+            fp = hashlib.sha256(("|".join(sorted({e.chunk_id for e in evidence})) + "|" + desc).encode()).hexdigest()[:16]
+            alert_id = _make_alert_id(case_id=case_id, alert_type=AlertType.SUSPICIOUS_PATTERN.value, fingerprint=f"tgss|{fp}")
+            alerts.append(
+                AnalysisAlert(
+                    alert_id=alert_id,
+                    case_id=case_id,
+                    alert_type=AlertType.SUSPICIOUS_PATTERN,
+                    description=desc,
+                    evidence=evidence,
+                    created_at=datetime.utcnow(),
+                )
+            )
+
+        # Faltantes asociados: RNT/RLC
+        # Regla técnica: si hay señal TGSS, y no hay documentos que parezcan RNT/RLC, alertar.
+        have_rnt_rlc = False
+        for d in docs:
+            fn = (d.filename or "").lower()
+            if "rnt" in fn or "rlc" in fn:
+                have_rnt_rlc = True
+                break
+        if not have_rnt_rlc:
+            # Evidencia: anclar al mismo soporte TGSS (no inventar “ausencia” sin ancla)
+            if evidence:
+                fp = "|".join(sorted({e.chunk_id for e in evidence}))
+                miss_id = _make_alert_id(
+                    case_id=case_id,
+                    alert_type=AlertType.MISSING_DATA.value,
+                    fingerprint=f"missing_rnt_rlc|{fp}",
+                )
+                alerts.append(
+                    AnalysisAlert(
+                        alert_id=miss_id,
+                        case_id=case_id,
+                        alert_type=AlertType.MISSING_DATA,
+                        description=(
+                            "Documentación faltante (asociada a TGSS): no se localizaron RNT/RLC en el expediente "
+                            "para contrastar cuotas/devengos del periodo afectado."
+                        ),
+                        evidence=evidence[:1],
+                        created_at=datetime.utcnow(),
+                    )
+                )
+
+        # Faltantes asociados: soporte de aplazamiento/fraccionamiento (si aplica)
+        have_aplazamiento = False
+        for d in docs:
+            fn = (d.filename or "").lower()
+            dtype = (getattr(d, "doc_type", None) or "")
+            if dtype == "APLAZAMIENTO_FRACCIONAMIENTO":
+                have_aplazamiento = True
+                break
+            if "aplaz" in fn or "fraccion" in fn:
+                have_aplazamiento = True
+                break
+        if not have_aplazamiento and evidence:
+            fp = "|".join(sorted({e.chunk_id for e in evidence}))
+            miss_id = _make_alert_id(
+                case_id=case_id,
+                alert_type=AlertType.MISSING_DATA.value,
+                fingerprint=f"missing_aplazamiento|{fp}",
+            )
+            alerts.append(
+                AnalysisAlert(
+                    alert_id=miss_id,
+                    case_id=case_id,
+                    alert_type=AlertType.MISSING_DATA,
+                    description=(
+                        "TGSS (soporte asociado): no se localiza documentación de aplazamiento/fraccionamiento vinculada "
+                        "al expediente (si existe, incorporarla para contextualizar el estado de la deuda)."
+                    ),
+                    evidence=evidence[:1],
+                    created_at=datetime.utcnow(),
+                )
+            )
+
+    return alerts
+
+
+def _detect_bank_alerts(case_id: str, chunks: list[DocumentChunk], db: Session) -> list[AnalysisAlert]:
+    """
+    Banco (determinista, técnico):
+    - Pagos a vinculadas (matching por nombre/CIF)
+    - Conceptos genéricos
+    - Retiradas de efectivo
+    - Fraccionamientos repetidos (heurística simple)
+    - Ventana TGSS ↔ Banco (60–180 días) como patrón adicional si aplica
+    """
+    alerts: list[AnalysisAlert] = []
+
+    docs = (
+        db.query(Document)
+        .filter(Document.case_id == case_id, Document.deleted_at.is_(None))
+        .all()
+    )
+    doc_map: dict[str, Document] = {d.document_id: d for d in docs}
+
+    bank_docs = set()
+    for d in docs:
+        if getattr(d, "doc_type", None) in ("EXTRACTO_BANCARIO", "CUENTA_BANCARIA"):
+            bank_docs.add(d.document_id)
+        if _contains_any(d.filename, ["extracto", "bancario", "iban"]):
+            bank_docs.add(d.document_id)
+
+    if not bank_docs:
+        return alerts
+
+    linked_needles = ["grupo xyz", "grupo xyz sl", "b-99112233", "b 99112233"]
+    generic_concepts = ["servicios", "varios", "consultoría", "consultoria", "préstamo socio", "prestamo socio", "gestión", "gestion", "soporte", "anticipo"]
+    cash_needles = ["reintegro", "cajero", "efectivo"]
+
+    # Intentar obtener una fecha “ancla” TGSS para correlación temporal (60–180 días)
+    tgss_anchor_date = None
+    tgss_chunks = [
+        c
+        for c in chunks
+        if c.content
+        and (
+            _contains_any(c.content, ["tesorería general de la seguridad social", "tesoreria general de la seguridad social", "tgss"])
+            or _contains_any((doc_map.get(c.document_id).filename if doc_map.get(c.document_id) else ""), ["tgss", "apremio", "providencia"])
+        )
+    ]
+    dmy_pat = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b")
+    for c in tgss_chunks[:50]:
+        for m in dmy_pat.findall(c.content or ""):
+            dd, mm, yyyy = m
+            try:
+                dt = datetime(int(yyyy), int(mm), int(dd)).date()
+            except Exception:
+                continue
+            tgss_anchor_date = dt
+            break
+        if tgss_anchor_date:
+            break
+
+    ev_candidates: list[DocumentChunk] = []
+    hits_linked = 0
+    hits_generic = 0
+    hits_cash = 0
+
+    # Recoger chunks relevantes y contar señales
+    for c in chunks:
+        if c.document_id not in bank_docs:
+            continue
+        txt = c.content or ""
+        t = txt.lower()
+        if any(n in t for n in linked_needles):
+            hits_linked += 1
+            ev_candidates.append(c)
+        if any(n in t for n in generic_concepts):
+            hits_generic += 1
+            ev_candidates.append(c)
+        if any(n in t for n in cash_needles):
+            hits_cash += 1
+            ev_candidates.append(c)
+
+    # Dedup candidates manteniendo orden
+    seen = set()
+    uniq: list[DocumentChunk] = []
+    for c in ev_candidates:
+        if c.chunk_id in seen:
+            continue
+        seen.add(c.chunk_id)
+        uniq.append(c)
+    evidence = _build_evidence_list(chunks=uniq, db=db, limit=3)
+    if not evidence:
+        return alerts
+
+    # Ventana TGSS ↔ Banco (60–180 días desde TGSS): heurística por fechas en extracto
+    # Nota: si el extractor no conserva fechas, esta parte no dispara (no inventamos).
+    iso_pat = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
+    window_hits = 0
+    if tgss_anchor_date:
+        for c in uniq[:40]:
+            txt = c.content or ""
+            for y, m, d in iso_pat.findall(txt):
+                try:
+                    dt = datetime(int(y), int(m), int(d)).date()
+                except Exception:
+                    continue
+                delta = (dt - tgss_anchor_date).days
+                if 60 <= abs(delta) <= 180:
+                    # Solo contamos si además es pago a vinculada o efectivo (para no inflar)
+                    tl = txt.lower()
+                    if any(n in tl for n in linked_needles) or any(n in tl for n in cash_needles):
+                        window_hits += 1
+                        break
+            if window_hits:
+                break
+
+    # Fraccionamientos: si hay varias menciones a la misma contraparte + importes repetidos
+    amount_pat = re.compile(r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*€")
+    amount_counts: dict[str, int] = defaultdict(int)
+    for c in uniq[:15]:
+        for m in amount_pat.findall(c.content or ""):
+            norm = m.replace(".", "").replace(",", ".")
+            amount_counts[norm] += 1
+    repeated_amounts = [(a, c) for a, c in amount_counts.items() if c >= 2]
+    repeated_amounts.sort(key=lambda x: x[1], reverse=True)
+
+    parts = []
+    parts.append("Banco: se detectan movimientos con señales técnicas a revisar.")
+    if hits_linked:
+        parts.append(f"Pagos a vinculada (matching nombre/CIF): {hits_linked} mención(es).")
+    if hits_generic:
+        parts.append(f"Conceptos genéricos (p.ej. 'servicios'): {hits_generic} mención(es).")
+    if hits_cash:
+        parts.append(f"Retiradas de efectivo/cajero: {hits_cash} mención(es).")
+    if repeated_amounts:
+        a, ccount = repeated_amounts[0]
+        parts.append(f"Importe repetido (heurística fraccionamiento): {ccount} ocurrencias (≈ {a} €).")
+    if window_hits:
+        parts.append("Correlación temporal TGSS↔Banco: se detectan movimientos en ventana 60–180 días desde una fecha TGSS localizada.")
+
+    desc = " ".join(parts)
+    fp = "|".join(sorted({e.chunk_id for e in evidence}))
+    alert_id = _make_alert_id(case_id=case_id, alert_type=AlertType.SUSPICIOUS_PATTERN.value, fingerprint=f"bank|{fp}")
+    alerts.append(
+        AnalysisAlert(
+            alert_id=alert_id,
+            case_id=case_id,
+            alert_type=AlertType.SUSPICIOUS_PATTERN,
+            description=desc,
+            evidence=evidence,
+            created_at=datetime.utcnow(),
+        )
+    )
+    return alerts
+
+
+def _detect_accounting_alerts(case_id: str, chunks: list[DocumentChunk], db: Session) -> list[AnalysisAlert]:
+    """
+    Contabilidad (determinista, técnico):
+    - Factura mal pagada (total factura != importe pagado) cuando hay soporte
+    - Descuadres/IVA soportado incoherente (heurística)
+    """
+    alerts: list[AnalysisAlert] = []
+
+    # Buscar por invoice_no y totales/pagos en chunks
+    inv_no_pat = re.compile(r"\b([A-Z]{1,3}-\d{4}-\d{2,6})\b")
+    euro_pat = re.compile(r"(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)\s*€")
+
+    inv_total: dict[str, float] = {}
+    inv_total_chunk: dict[str, DocumentChunk] = {}
+    inv_paid: dict[str, float] = {}
+    inv_paid_chunk: dict[str, DocumentChunk] = {}
+
+    # Para casi-duplicados: invoice_no -> set(document_id)
+    inv_docs: dict[str, set[str]] = defaultdict(set)
+    inv_doc_sample_chunk: dict[str, DocumentChunk] = {}
+
+    for c in chunks:
+        txt = c.content or ""
+        if len(txt) < 20:
+            continue
+        m = inv_no_pat.search(txt)
+        if not m:
+            continue
+        inv = m.group(1)
+        inv_docs[inv].add(c.document_id)
+        inv_doc_sample_chunk.setdefault(inv, c)
+        tl = txt.lower()
+        if "total" in tl and inv not in inv_total:
+            # intentar capturar “TOTAL: X €”
+            # (si hay múltiples €, tomamos el último del bloque como heurística)
+            ms = euro_pat.findall(txt)
+            if ms:
+                raw = ms[-1].replace(".", "").replace(",", ".")
+                try:
+                    inv_total[inv] = float(raw)
+                    inv_total_chunk[inv] = c
+                except Exception:
+                    pass
+        if ("importe pagado" in tl or "abonado" in tl) and inv not in inv_paid:
+            ms = euro_pat.findall(txt)
+            if ms:
+                raw = ms[0].replace(".", "").replace(",", ".")
+                try:
+                    inv_paid[inv] = float(raw)
+                    inv_paid_chunk[inv] = c
+                except Exception:
+                    pass
+
+    # Detectar discrepancias (mal pagada / pago parcial)
+    for inv, total in inv_total.items():
+        paid = inv_paid.get(inv)
+        if paid is None:
+            continue
+        if abs(total - paid) < 0.01:
+            continue
+        ev_chunks = [inv_total_chunk.get(inv), inv_paid_chunk.get(inv)]
+        ev_chunks = [c for c in ev_chunks if c is not None]
+        evidence = _build_evidence_list(chunks=ev_chunks, db=db, limit=2)
+        if not evidence:
+            continue
+        desc = (
+            f"Contabilidad: discrepancia de pago detectada para {inv}. "
+            f"TOTAL factura ≈ {total:,.2f} € vs importe pagado ≈ {paid:,.2f} €."
+        ).replace(",", "X").replace(".", ",").replace("X", ".")
+        fp = "|".join(sorted({e.chunk_id for e in evidence}))
+        alert_id = _make_alert_id(case_id=case_id, alert_type=AlertType.INCONSISTENT_DATA.value, fingerprint=f"mispaid|{inv}|{fp}")
+        alerts.append(
+            AnalysisAlert(
+                alert_id=alert_id,
+                case_id=case_id,
+                alert_type=AlertType.INCONSISTENT_DATA,
+                description=desc,
+                evidence=evidence,
+                created_at=datetime.utcnow(),
+            )
+        )
+        break  # evitar spam
+
+    # Casi-duplicados (heurística mínima): mismo número de factura en >=2 documentos distintos,
+    # excluyendo el caso factura+justificante (si el justificante también incluye el número).
+    for inv, doc_ids in inv_docs.items():
+        if len(doc_ids) < 2:
+            continue
+        # Heurística de filtro: exigir que al menos uno de los documentos parezca factura
+        # (por filename o por presencia de "Factura" / "Nº factura" en el chunk).
+        sample_chunk = inv_doc_sample_chunk.get(inv)
+        if not sample_chunk:
+            continue
+        if not _contains_any(sample_chunk.content or "", ["factura", "nº factura", "número factura", "numero factura"]):
+            continue
+        # Evitar false positive con justificante: si aparece “justificante” en chunk, saltar
+        if _contains_any(sample_chunk.content or "", ["justificante"]):
+            continue
+        evidence = _build_evidence_list(chunks=[sample_chunk], db=db, limit=1)
+        if not evidence:
+            continue
+        fp = f"{inv}|{'|'.join(sorted(doc_ids))}"
+        alert_id = _make_alert_id(case_id=case_id, alert_type=AlertType.DUPLICATED_DATA.value, fingerprint=f"invoice_no_dup|{fp}")
+        alerts.append(
+            AnalysisAlert(
+                alert_id=alert_id,
+                case_id=case_id,
+                alert_type=AlertType.DUPLICATED_DATA,
+                description=(
+                    f"Contabilidad: posible duplicidad por número de factura ({inv}) detectada en múltiples documentos "
+                    f"({len(doc_ids)} documentos)."
+                ),
+                evidence=evidence,
+                created_at=datetime.utcnow(),
+            )
+        )
+        break
+
+    # Heurística IVA soportado incoherente (CSV / texto)
+    iva_chunks = []
+    for c in chunks:
+        txt = (c.content or "").lower()
+        if "iva soportado" in txt and ("472000" in txt or "472" in txt):
+            iva_chunks.append(c)
+        # también: “472000” y “haber”/“debe” en la misma línea (según extractor)
+        if "472000" in txt and ("debe" in txt or "haber" in txt):
+            iva_chunks.append(c)
+    # Dedup
+    seen = set()
+    iva_unique = []
+    for c in iva_chunks:
+        if c.chunk_id in seen:
+            continue
+        seen.add(c.chunk_id)
+        iva_unique.append(c)
+    if iva_unique:
+        evidence = _build_evidence_list(chunks=iva_unique, db=db, limit=2)
+        if evidence:
+            fp = "|".join(sorted({e.chunk_id for e in evidence}))
+            alert_id = _make_alert_id(case_id=case_id, alert_type=AlertType.INCONSISTENT_DATA.value, fingerprint=f"iva|{fp}")
+            alerts.append(
+                AnalysisAlert(
+                    alert_id=alert_id,
+                    case_id=case_id,
+                    alert_type=AlertType.INCONSISTENT_DATA,
+                    description=(
+                        "Contabilidad: posible incoherencia en IVA soportado detectada en apuntes/tabla "
+                        "(heurística: revisar debe/haber y soporte documental)."
+                    ),
+                    evidence=evidence,
+                    created_at=datetime.utcnow(),
+                )
+            )
+
+    # Asientos sin tercero / sin CIF (heurística mínima)
+    no_third_party = []
+    for c in chunks:
+        txt = (c.content or "")
+        tl = txt.lower()
+        # CSV típico: "... ,CAJERO,,2000.00,0.00"
+        if ",," in txt and ("cajero" in tl or "tercero_cif" in tl):
+            no_third_party.append(c)
+    # Dedup + evidencia
+    seen = set()
+    uniq_ntp = []
+    for c in no_third_party:
+        if c.chunk_id in seen:
+            continue
+        seen.add(c.chunk_id)
+        uniq_ntp.append(c)
+    if uniq_ntp:
+        evidence = _build_evidence_list(chunks=uniq_ntp, db=db, limit=2)
+        if evidence:
+            fp = "|".join(sorted({e.chunk_id for e in evidence}))
+            alert_id = _make_alert_id(case_id=case_id, alert_type=AlertType.MISSING_DATA.value, fingerprint=f"missing_third_party|{fp}")
+            alerts.append(
+                AnalysisAlert(
+                    alert_id=alert_id,
+                    case_id=case_id,
+                    alert_type=AlertType.MISSING_DATA,
+                    description=(
+                        "Contabilidad: se detectan apuntes/asientos sin tercero identificable (CIF/NIF vacío o no informado). "
+                        "Puede impedir trazabilidad si no se completa el soporte."
+                    ),
+                    evidence=evidence,
+                    created_at=datetime.utcnow(),
+                )
+            )
+
+    return alerts
+
+
+def _detect_core_docs_missing_alerts(case_id: str, chunks: list[DocumentChunk], db: Session) -> list[AnalysisAlert]:
+    """
+    Documentación faltante (catálogo core) — sin acusar.
+
+    Importante:
+    - El contrato exige evidencia física.
+    - Por tanto, anclamos la alerta a un documento “relacionado” (p.ej. extracto bancario)
+      cuando el faltante es complementario (p.ej. conciliación bancaria).
+    """
+    alerts: list[AnalysisAlert] = []
+    docs = (
+        db.query(Document)
+        .filter(Document.case_id == case_id, Document.deleted_at.is_(None))
+        .all()
+    )
+    filenames = [d.filename.lower() for d in docs]
+
+    def _have_any(pats: list[str]) -> bool:
+        return any(any(p in fn for p in pats) for fn in filenames)
+
+    # Catálogo mínimo (heurístico por filename/doc_type)
+    missing: list[tuple[str, list[str], list[str]]] = []
+    # (label, required filename needles, anchor filename needles for evidence)
+    if not _have_any(["conciliacion", "conciliación"]):
+        missing.append(("conciliación bancaria", ["conciliacion", "conciliación"], ["extracto", "bancario"]))
+    if not _have_any(["balance", "sumas", "saldos"]):
+        missing.append(("balance / sumas y saldos", ["balance", "sumas", "saldos"], ["factura", "extracto", "bancario"]))
+    if not _have_any(["pyg", "p&g", "p y g", "pérdidas", "ganancias"]):
+        missing.append(("cuenta de pérdidas y ganancias (PyG)", ["pyg", "p&g", "perdidas", "ganancias"], ["balance", "sumas", "saldos"]))
+
+    if not missing:
+        return alerts
+
+    # Buscar evidencia ancla: primer chunk de un doc que encaje con anchors
+    # (si no hay evidencia, no se genera la alerta: no se inventa).
+    for label, _req, anchors in missing[:3]:
+        anchor_docs = [d for d in docs if _contains_any(d.filename, anchors)]
+        if not anchor_docs:
+            continue
+        d0 = anchor_docs[0]
+        c0 = (
+            db.query(DocumentChunk)
+            .filter(DocumentChunk.document_id == d0.document_id)
+            .order_by(DocumentChunk.chunk_index.asc())
+            .first()
+        )
+        if not c0:
+            continue
+        evidence = _build_evidence_list(chunks=[c0], db=db, limit=1)
+        if not evidence:
+            continue
+        fp = evidence[0].chunk_id
+        alert_id = _make_alert_id(case_id=case_id, alert_type=AlertType.MISSING_DATA.value, fingerprint=f"core_missing|{label}|{fp}")
+        alerts.append(
+            AnalysisAlert(
+                alert_id=alert_id,
+                case_id=case_id,
+                alert_type=AlertType.MISSING_DATA,
+                description=(
+                    f"Documentación faltante (core): no se localiza {label} en el expediente. "
+                    "Recomendación técnica: incorporar o confirmar si existe en otra carpeta/versión."
+                ),
+                evidence=evidence,
+                created_at=datetime.utcnow(),
+            )
+        )
     return alerts
 
 
@@ -671,6 +1429,19 @@ def get_analysis_alerts(
 
     # Regla 4: Patrones sospechosos
     all_alerts.extend(_detect_suspicious_patterns(case_id, chunks, db))
+
+    # =====================================================
+    # FASE 2 — Detectores por categoría (técnicos, deterministas)
+    # =====================================================
+    all_alerts.extend(_detect_duplicate_documents_sha256(case_id, chunks, db))
+    all_alerts.extend(_detect_tgss_alerts(case_id, chunks, db))
+    all_alerts.extend(_detect_bank_alerts(case_id, chunks, db))
+    all_alerts.extend(_detect_accounting_alerts(case_id, chunks, db))
+    all_alerts.extend(_detect_core_docs_missing_alerts(case_id, chunks, db))
+
+    # Orden por scoring interno (no expuesto)
+    # Si scores empatan, mantener orden determinista por alert_id.
+    all_alerts.sort(key=lambda a: (_score_internal(a), a.alert_id), reverse=True)
 
     return all_alerts
 

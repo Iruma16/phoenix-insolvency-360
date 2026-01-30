@@ -1,0 +1,27 @@
+DATASET SINTÉTICO ALERTAS — MANIFEST
+OUT_DIR: /Users/irumabragado/Documents/procesos/202512_phoenix-legal/data/synthetic/alerts_dataset
+
+ARCHIVOS (ruta relativa + sha256):
+- 01_tgss/TGSS_Providencia_Apremio_Exp123.pdf  (sha256: 9110cac9e2de039e7a180772800308a554027820dca81120dcbae6ece614d184)
+- 02_banco/Extracto_Bancario_Sep2023.pdf  (sha256: b2efa86232afe5345841fe1babe7e98d92534ff4f82df806a853c73ebd3795d2)
+- 03_contabilidad/facturas/Factura_FB-2023-1021_PROV_BETA.pdf  (sha256: 69bbbeae72a277125c218c9cc548ff2f2c2c3dbd8c859a48727f6005d3cd23d4)
+- 03_contabilidad/facturas/Factura_Mantenimiento_Sep2023_Beta.pdf  (sha256: 69bbbeae72a277125c218c9cc548ff2f2c2c3dbd8c859a48727f6005d3cd23d4)
+- 03_contabilidad/facturas/Factura_FA-2023-077_PROV_ALPHA.pdf  (sha256: fbb41a55d2d244186d0f5962451a0d720c5ca7610c4634b436a63775dbd7d7fa)
+- 03_contabilidad/Justificante_Pago_FA-2023-077.pdf  (sha256: 729919f8bbda4bc6c83e67a59e751d35f670be124cd6e64c2d40fdeae5028683)
+- 04_operaciones_vinculadas/Contrato_Servicios_GrupoXYZ_2023-08-25.docx  (sha256: 75226c514f88407e5d8d86735f22fa9a7f6a91210ab9aaa40ca3d84f351422ec)
+- 05_emails/Email_Admin_Asesoria_2023-09-22.eml  (sha256: 834c21c58dbef5640982105ba113ddaf10762dec4f4aa3c91c997d39ec281d44)
+- 06_nominas_seguros_sociales/Nominas_Sep2023_Resumen.pdf  (sha256: e01b2e841d4b4171c6f58851313f745005718255daaddb7a1c7297b7d9ff936b)
+- 06_nominas_seguros_sociales/FALTA_RNT_RLC_2023-01_a_2023-08.txt  (sha256: 78507a4ad2d60e36f6a8a018ca9651596cae63e74a7bacc0a0d126636105c9e0)
+- 03_contabilidad/Libro_Mayor_2023_Q3.csv  (sha256: f1a4ca16174e73ca53a8791c9fb818e53807e2bce80fcb2b42296ce3661d89ac)
+
+DUPLICADOS (mismo sha256):
+- 69bbbeae72a2…
+  - 03_contabilidad/facturas/Factura_FB-2023-1021_PROV_BETA.pdf
+  - 03_contabilidad/facturas/Factura_Mantenimiento_Sep2023_Beta.pdf
+
+CHECKS (Definition of Ready):
+- PDF TGSS: 2 página(s).
+- PDF BANCO: 2 página(s).
+- EML: OK (tamaño 506 bytes).
+- CSV: OK (tamaño 503 bytes).
+- DOCX: OK (tamaño 36897 bytes).

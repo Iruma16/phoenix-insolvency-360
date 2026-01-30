@@ -8,6 +8,7 @@ Si un documento NO cumple mínimos → NO se guarda en BD, NO entra en chunking.
 
 from __future__ import annotations
 
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -31,7 +32,9 @@ from app.services.document_pre_ingestion_validation import (
 from app.services.ingesta import ParsingResult, ingerir_archivo
 
 # Formatos soportados
-SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".docx", ".doc", ".csv", ".xls", ".xlsx"}
+SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".docx", ".csv", ".xls", ".xlsx"}
+if os.getenv("PHOENIX_ENABLE_DOC_LEGACY", "").strip() == "1":
+    SUPPORTED_EXTENSIONS.add(".doc")
 
 # Mapeo de extensiones a formato interno
 EXTENSION_TO_FORMAT = {
@@ -47,104 +50,16 @@ EXTENSION_TO_FORMAT = {
 
 def _get_default_doc_type(filename: str) -> str:
     """
-    Intenta inferir el tipo de documento desde el nombre del archivo.
-    Usa reglas heurísticas (palabras clave, patrones, etc.).
-    Retorna 'contrato' como default si no se puede inferir.
-
-    NOTA: Esta función es mejorable en el futuro con:
-    - Un clasificador ML ligero (ej: scikit-learn)
-    - Reglas más sofisticadas
-    - Análisis del contenido del documento
-
-    Ejemplos que funcionan bien:
-    - "contrato_servicio.pdf" → "contrato"
-    - "balance_final_v3_ok.docx" → "balance"
-    - "email_re_abogado_urgente.pdf" → "email_direccion"
+    Backward-compatible wrapper: inferencia determinista doc_type (abogado-friendly)
+    a partir del filename (sin texto).
     """
-    import re
+    try:
+        from app.core.doc_types import infer_doc_type
 
-    filename_lower = filename.lower()
-
-    # Remover extensiones y números de versión comunes para mejor matching
-    # Ej: "balance_final_v3_ok.docx" → "balance_final_ok"
-    cleaned = re.sub(r"_v\d+|_\d+$|\.(pdf|docx?|txt|xlsx?|csv)$", "", filename_lower)
-
-    # PATRONES MÁS ESPECÍFICOS PRIMERO (mayor prioridad)
-
-    # Extractos bancarios (muy específico)
-    if any(
-        pattern in cleaned
-        for pattern in ["extracto", "extract", "movimiento", "movimiento bancario"]
-    ):
-        return "extracto_bancario"
-
-    # Email (buscar "re:", "fw:", "email", "correo", etc.)
-    if any(pattern in cleaned for pattern in ["re:", "fw:", "email", "correo", "mail", "e-mail"]):
-        # Intentar inferir tipo de email por contexto
-        if any(word in cleaned for word in ["banco", "bank", "bancario"]):
-            return "email_banco"
-        elif any(word in cleaned for word in ["abogado", "legal", "juridico"]):
-            return "email_direccion"  # o podrías tener "email_legal" en el futuro
-        else:
-            return "email_direccion"
-
-    # Balances (balance, balanza, estado financiero)
-    if any(
-        pattern in cleaned
-        for pattern in ["balance", "balanza", "estado financiero", "estado_financiero"]
-    ):
-        return "balance"
-
-    # PYG (cuenta de pérdidas y ganancias)
-    if any(pattern in cleaned for pattern in ["pyg", "perdidas", "ganancias", "cuenta resultado"]):
-        return "pyg"
-
-    # Mayor contable
-    if any(pattern in cleaned for pattern in ["mayor", "libro mayor"]):
-        return "mayor"
-
-    # Sumas y saldos
-    if any(pattern in cleaned for pattern in ["sumas", "saldos", "sumas_saldos"]):
-        return "sumas_saldos"
-
-    # Facturas (mapeadas a contrato ya que factura no está en el constraint)
-    # NOTA: Las facturas se consideran contratos/comprobantes de operaciones
-    if any(pattern in cleaned for pattern in ["factura", "invoice", "fact", "facturacion"]):
-        return "contrato"  # Mapeado a 'contrato' que es un valor válido en el CHECK constraint
-
-    # Actas
-    if any(pattern in cleaned for pattern in ["acta", "minute", "reunion", "junta"]):
-        return "acta"
-
-    # Acuerdos societarios
-    if any(pattern in cleaned for pattern in ["acuerdo", "acuerdo societario", "resolucion"]):
-        return "acuerdo_societario"
-
-    # Poderes
-    if any(pattern in cleaned for pattern in ["poder", "apoderamiento", "proxy"]):
-        return "poder"
-
-    # Contratos (más genérico, menor prioridad)
-    if any(pattern in cleaned for pattern in ["contrato", "contract", "convenio", "acuerdo"]):
-        return "contrato"
-
-    # Nóminas
-    if any(pattern in cleaned for pattern in ["nomina", "nomina", "nómina", "payroll"]):
-        return "nomina"
-
-    # Ventas de activos
-    if any(pattern in cleaned for pattern in ["venta", "venta activo", "asset sale"]):
-        return "venta_activo"
-
-    # Préstamos
-    if any(
-        pattern in cleaned
-        for pattern in ["prestamo", "prestamo", "préstamo", "loan", "credito", "crédito"]
-    ):
-        return "prestamo"
-
-    # Default: contrato (más común en contextos legales)
-    return "contrato"
+        inferred = infer_doc_type(filename=filename, raw_text_preview=None)
+        return inferred.doc_type
+    except Exception:
+        return "OTRO"
 
 
 def _save_file_to_storage(
@@ -254,10 +169,19 @@ def ingest_file_from_path(
         inferred_type = _get_default_doc_type(filename)
         doc_type = inferred_type
         print(f"ℹ️  [INGESTA] Tipo inferido: {doc_type}")
-        if inferred_type == "contrato":
-            warnings.append(
-                f"Tipo de documento inferido como 'contrato' (default) para: {filename}"
-            )
+    else:
+        # Si llega un doc_type legacy o fuera de catálogo, degradar a inferencia (no inventar)
+        try:
+            from app.core.doc_types import DOC_TYPES_SET, infer_doc_type
+
+            if doc_type not in DOC_TYPES_SET:
+                inferred_type = infer_doc_type(filename=filename, raw_text_preview=None).doc_type
+                warnings.append(
+                    f"doc_type '{doc_type}' no válido en catálogo v2; usando inferencia por filename: {inferred_type}"
+                )
+                doc_type = inferred_type
+        except Exception:
+            doc_type = "OTRO"
 
     # Warnings específicos por formato
     if extension == ".doc":
@@ -432,6 +356,26 @@ def ingest_file_from_path(
     file_size_bytes = get_file_size(Path(storage_path))
     mime_type = get_mime_type(filename)
 
+    # Refinar doc_type con texto (si existe) antes de persistir
+    doc_type_confidence = None
+    doc_type_source = None
+    try:
+        from app.core.doc_types import DOC_TYPES_SET, infer_doc_type
+
+        inferred_final = infer_doc_type(
+            filename=filename,
+            title=None,
+            source=source or "folder_ingestion",
+            raw_text_preview=text,
+        )
+        if inferred_final.doc_type in DOC_TYPES_SET:
+            doc_type = inferred_final.doc_type
+            doc_type_confidence = inferred_final.confidence
+            doc_type_source = "inferred"
+    except Exception:
+        # Mantener doc_type actual (por filename o input) y no bloquear la ingesta
+        pass
+
     document = Document(
         case_id=case_id,
         filename=filename,
@@ -439,6 +383,8 @@ def ingest_file_from_path(
         file_size_bytes=file_size_bytes,
         mime_type=mime_type,
         doc_type=doc_type,
+        doc_type_confidence=doc_type_confidence,
+        doc_type_source=doc_type_source,
         source=source or "folder_ingestion",
         date_start=date_start,
         date_end=date_end,

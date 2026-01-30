@@ -332,6 +332,500 @@ class PhoenixLegalClient:
         response.raise_for_status()
         return response.json()
 
+    def search_documents(
+        self,
+        case_id: str,
+        *,
+        q: Optional[str] = None,
+        category: Optional[str] = None,
+        doc_types: Optional[list[str]] = None,
+        include_chunk_id: bool = False,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        """
+        Buscador documental abogado-friendly (MVP).
+
+        Endpoint:
+        GET /api/cases/{case_id}/documents/search
+        """
+        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_chunk_id": bool(include_chunk_id)}
+        if q:
+            params["q"] = q
+        if category:
+            params["category"] = category
+        if doc_types:
+            # FastAPI acepta arrays como múltiples query params: doc_types=a&doc_types=b
+            params["doc_types"] = doc_types
+
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/documents/search", params=params)
+        response.raise_for_status()
+        return response.json()
+
+    # =========================================
+    # CUADRO DE SITUACIÓN (SQL)
+    # =========================================
+
+    def list_situation_invoices(
+        self,
+        case_id: str,
+        *,
+        include_history: bool = False,
+        supplier: Optional[str] = None,
+        status: Optional[str] = None,
+        invoice_number: Optional[str] = None,
+        due_from: Optional[str] = None,
+        due_to: Optional[str] = None,
+        min_amount: Optional[float] = None,
+        max_amount: Optional[float] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        if supplier:
+            params["supplier"] = supplier
+        if status:
+            params["status"] = status
+        if invoice_number:
+            params["invoice_number"] = invoice_number
+        if due_from:
+            params["due_from"] = due_from
+        if due_to:
+            params["due_to"] = due_to
+        if min_amount is not None:
+            params["min_amount"] = float(min_amount)
+        if max_amount is not None:
+            params["max_amount"] = float(max_amount)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/invoices",
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_situation_invoice(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/invoices", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_situation_invoice(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/invoices/update", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def download_situation_invoices_excel(self, case_id: str) -> bytes:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/invoices/export.xlsx")
+        response.raise_for_status()
+        return response.content
+
+    def list_situation_credits(
+        self,
+        case_id: str,
+        *,
+        include_history: bool = False,
+        creditor: Optional[str] = None,
+        secured: Optional[bool] = None,
+        min_amount: Optional[float] = None,
+        max_amount: Optional[float] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        if creditor:
+            params["creditor"] = creditor
+        if secured is not None:
+            params["secured"] = bool(secured)
+        if min_amount is not None:
+            params["min_amount"] = float(min_amount)
+        if max_amount is not None:
+            params["max_amount"] = float(max_amount)
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/credits", params=params)
+        response.raise_for_status()
+        return response.json()
+
+    def create_situation_credit(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/credits", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_situation_credit(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/credits/update", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def download_situation_credits_excel(self, case_id: str) -> bytes:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/credits/export.xlsx")
+        response.raise_for_status()
+        return response.content
+
+    def list_situation_assets(
+        self,
+        case_id: str,
+        *,
+        include_history: bool = False,
+        asset_type: Optional[str] = None,
+        description: Optional[str] = None,
+        min_val_ac: Optional[float] = None,
+        max_val_ac: Optional[float] = None,
+        min_val_ext: Optional[float] = None,
+        max_val_ext: Optional[float] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        if asset_type:
+            params["asset_type"] = asset_type
+        if description:
+            params["description"] = description
+        if min_val_ac is not None:
+            params["min_val_ac"] = float(min_val_ac)
+        if max_val_ac is not None:
+            params["max_val_ac"] = float(max_val_ac)
+        if min_val_ext is not None:
+            params["min_val_ext"] = float(min_val_ext)
+        if max_val_ext is not None:
+            params["max_val_ext"] = float(max_val_ext)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/assets",
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_situation_asset(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/assets", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_situation_asset(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/assets/update", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def download_situation_assets_excel(self, case_id: str) -> bytes:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/assets/export.xlsx")
+        response.raise_for_status()
+        return response.content
+
+    def list_situation_public_debts(
+        self,
+        case_id: str,
+        *,
+        include_history: bool = False,
+        authority: Optional[str] = None,
+        deferred: Optional[bool] = None,
+        min_amount: Optional[float] = None,
+        max_amount: Optional[float] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        if authority:
+            params["authority"] = authority
+        if deferred is not None:
+            params["deferred"] = bool(deferred)
+        if min_amount is not None:
+            params["min_amount"] = float(min_amount)
+        if max_amount is not None:
+            params["max_amount"] = float(max_amount)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/public-debts", params=params
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_situation_public_debt(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/public-debts", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_situation_public_debt(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/public-debts/update", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def download_situation_public_debts_excel(self, case_id: str) -> bytes:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/public-debts/export.xlsx"
+        )
+        response.raise_for_status()
+        return response.content
+
+    def list_situation_court_records(
+        self,
+        case_id: str,
+        *,
+        include_history: bool = False,
+        action_type: Optional[str] = None,
+        procedure_number: Optional[str] = None,
+        status: Optional[str] = None,
+        min_amount: Optional[float] = None,
+        max_amount: Optional[float] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        if action_type:
+            params["action_type"] = action_type
+        if procedure_number:
+            params["procedure_number"] = procedure_number
+        if status:
+            params["status"] = status
+        if min_amount is not None:
+            params["min_amount"] = float(min_amount)
+        if max_amount is not None:
+            params["max_amount"] = float(max_amount)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/court-records", params=params
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def create_situation_court_record(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/court-records", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_situation_court_record(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/court-records/update", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def download_situation_court_records_excel(self, case_id: str) -> bytes:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/court-records/export.xlsx"
+        )
+        response.raise_for_status()
+        return response.content
+
+    def download_situation_export_excel(self, case_id: str) -> bytes:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/export.xlsx")
+        response.raise_for_status()
+        return response.content
+
+    # =========================================
+    # CUADRO DE SITUACIÓN — Evidencia / Auditoría
+    # =========================================
+
+    def list_situation_record_evidence(self, case_id: str, *, entity: str, record_id: str) -> dict[str, Any]:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/{entity}/{record_id}/evidence"
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def add_situation_record_evidence(
+        self, case_id: str, *, entity: str, record_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/situation/{entity}/{record_id}/evidence",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_situation_audit(self, case_id: str, *, entity: str, logical_id: str) -> dict[str, Any]:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/{entity}/{logical_id}/audit"
+        )
+        response.raise_for_status()
+        return response.json()
+
+    # =========================================
+    # SUBMISSIONS (CAPA 5)
+    # =========================================
+
+    def create_submission(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(f"{self.base_url}/api/cases/{case_id}/submissions", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def list_submissions(self, case_id: str, *, page: int = 1, page_size: int = 20) -> dict[str, Any]:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/submissions",
+            params={"page": page, "page_size": page_size},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def resolve_submission_template(
+        self, case_id: str, submission_id: str, *, template_code: str
+    ) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/resolve",
+            json={"template_code": template_code},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def validate_submission_template(
+        self, case_id: str, submission_id: str, *, template_code: str
+    ) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/validate",
+            json={"template_code": template_code},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def snapshot_submission(self, case_id: str, submission_id: str, *, template_code: str) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/snapshot",
+            json={"template_code": template_code},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def generate_submission_output(
+        self, case_id: str, submission_id: str, *, template_code: str
+    ) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/generate",
+            json={"template_code": template_code},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_generated_submission_docs(self, case_id: str, submission_id: str) -> list[dict[str, Any]]:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/generated"
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_submission_status(
+        self,
+        case_id: str,
+        submission_id: str,
+        *,
+        status: str,
+        actor: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        response = self.session.patch(
+            f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/status",
+            json={"status": status, "actor": actor, "reason": reason},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def download_generated_submission_doc(
+        self, case_id: str, submission_id: str, generated_id: str
+    ) -> bytes:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/generated/{generated_id}/download"
+        )
+        response.raise_for_status()
+        return response.content
+
+    # =========================================
+    # TEMPLATES (campos manuales)
+    # =========================================
+
+    def get_template_fields(self, case_id: str, template_code: str) -> dict[str, Any]:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/templates/{template_code}/fields")
+        response.raise_for_status()
+        return response.json()
+
+    def upsert_template_values(self, case_id: str, template_code: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.put(
+            f"{self.base_url}/api/cases/{case_id}/templates/{template_code}/values", json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_form_field_values(
+        self,
+        case_id: str,
+        *,
+        q: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if q:
+            params["q"] = q
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/templates/form-field-values", params=params
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def list_template_fields_catalog(
+        self,
+        case_id: str,
+        *,
+        q: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+        active_only: bool = True,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size, "active_only": bool(active_only)}
+        if q:
+            params["q"] = q
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/templates/fields", params=params)
+        response.raise_for_status()
+        return response.json()
+
+    # =========================================
+    # CUADRO DE SITUACIÓN — Link targets (enlazar evidencia)
+    # =========================================
+
+    def list_situation_link_targets(
+        self,
+        case_id: str,
+        *,
+        record_type: str,
+        q: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"record_type": record_type, "page": page, "page_size": page_size}
+        if q:
+            params["q"] = q
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/link-targets", params=params)
+        response.raise_for_status()
+        return response.json()
+
+    def get_situation_kpis(self, case_id: str) -> dict[str, Any]:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/kpis")
+        response.raise_for_status()
+        return response.json()
+
+    # =========================================
+    # EVIDENCE (CAPA 3)
+    # =========================================
+
+    def create_case_evidence(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(f"{self.base_url}/api/cases/{case_id}/evidence", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def list_case_evidence(self, case_id: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/evidence", params=params or {})
+        response.raise_for_status()
+        return response.json()
+
     def exclude_document(
         self, case_id: str, document_id: str, *, reason: str, excluded_by: str
     ) -> dict[str, Any]:
@@ -402,6 +896,38 @@ class PhoenixLegalClient:
         GET /api/cases/{case_id}/analysis/alerts
         """
         return self.get_analysis_alerts(case_id)
+
+    # =========================================
+    # ALERTAS — Voz (persistida, botón Reanalizar)
+    # =========================================
+
+    def get_alerts_voice_status(self, case_id: str) -> dict[str, Any]:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/alerts-voice/status")
+        response.raise_for_status()
+        return response.json()
+
+    def generate_alerts_voice(self, case_id: str) -> dict[str, Any]:
+        response = self.session.post(f"{self.base_url}/api/cases/{case_id}/alerts-voice/generate")
+        response.raise_for_status()
+        return response.json()
+
+    def get_alerts_voice(self, case_id: str) -> dict[str, Any]:
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/alerts-voice")
+        response.raise_for_status()
+        return response.json()
+
+    def update_alerts_voice_card(
+        self,
+        case_id: str,
+        card_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = self.session.patch(
+            f"{self.base_url}/api/cases/{case_id}/alerts-voice/{card_id}",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
 
     def get_financial_analysis(self, case_id: str) -> FinancialAnalysisResult:
         """

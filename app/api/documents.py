@@ -39,6 +39,17 @@ from app.models.document_summary import (
     DocumentStatus,
     DocumentSummary,
 )
+from app.models.document_search import DocumentSearchResponse
+from pydantic import BaseModel, Field
+
+
+class DocumentListResponse(BaseModel):
+    items: list[DocumentSummary] = Field(default_factory=list)
+    page: int = Field(1, ge=1)
+    page_size: int = Field(20, ge=1, le=200)
+    total: int = Field(0, ge=0)
+
+    model_config = {"extra": "forbid"}
 from app.models.duplicate_action import (
     DuplicateActionRequest,
     DuplicateDecisionResponse,
@@ -56,6 +67,7 @@ from app.services.duplicate_cascade import (
 from app.services.duplicate_validation import validate_batch_action, validate_duplicate_decision
 from app.services.ingesta import ParsingResult, ingerir_archivo
 from app.services.ingestion_failfast import ValidationMode
+from app.services.document_search_service import DocumentSearchParams, search_documents
 
 router = APIRouter(
     prefix="/cases/{case_id}/documents",
@@ -88,6 +100,10 @@ def _normalize_root_filename(filename: str) -> str:
     base2 = base2.strip()
 
     return f"{base2}{ext}" if base2 else filename
+
+
+def _is_doc_legacy_allowed() -> bool:
+    return os.getenv("PHOENIX_ENABLE_DOC_LEGACY", "").strip() == "1"
 
 
 # =========================================================
@@ -455,6 +471,17 @@ async def ingest_documents(
             # Leer contenido del archivo
             content = await file.read()
 
+            # Política .doc legacy: rechazo controlado (fail hard)
+            if (file.filename or "").lower().endswith(".doc") and not _is_doc_legacy_allowed():
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail=(
+                        "Formato .doc (Word legacy) no soportado por defecto. "
+                        "Convierte a .docx o PDF. "
+                        "Si necesitas soporte best-effort, exporta PHOENIX_ENABLE_DOC_LEGACY=1."
+                    ),
+                )
+
             if not content:
                 # Archivo vacío → registrar como FAILED
                 logger.warning(f"Archivo vacío recibido: {file.filename}")
@@ -533,6 +560,22 @@ async def ingest_documents(
                 validation_mode=ValidationMode.PERMISSIVE,  # No abortar por un doc inválido
             )
 
+            # Clasificación determinista (abogado-friendly)
+            try:
+                from app.core.doc_types import infer_doc_type
+
+                inferred = infer_doc_type(
+                    filename=storage_metadata["original_filename"],
+                    title=None,
+                    source="upload",
+                    raw_text_preview=parsing_result.texto if parsing_result else None,
+                )
+                inferred_doc_type = inferred.doc_type
+                inferred_confidence = inferred.confidence
+            except Exception:
+                inferred_doc_type = "OTRO"
+                inferred_confidence = 0.0
+
             # Si la validación rechazó el documento (PERMISSIVE mode)
             if parsing_result is None:
                 logger.warning(f"Documento rechazado por validación: {file.filename}")
@@ -543,7 +586,9 @@ async def ingest_documents(
                     case_id=case_id,
                     filename=storage_metadata["original_filename"],
                     file_format=file.content_type or "unknown",
-                    doc_type="contrato",  # Tipo genérico: balance, pyg, mayor, sumas_saldos, extracto_bancario, acta, acuerdo_societario, poder, email_direccion, email_banco, email_asesoria, contrato, venta_activo, prestamo, nomina
+                    doc_type=inferred_doc_type,
+                    doc_type_confidence=inferred_confidence,
+                    doc_type_source="inferred",
                     source="upload",
                     date_start=datetime.utcnow(),
                     date_end=datetime.utcnow(),
@@ -706,7 +751,7 @@ async def ingest_documents(
                                     db,
                                     case_id,
                                     doc_embedding.get("vector", []),  # Extraer vector del dict
-                                    new_doc_type="contrato",  # TODO: obtener de clasificador
+                                    new_doc_type=inferred_doc_type,
                                     threshold=0.92,
                                     max_candidates=50,
                                 )
@@ -743,7 +788,9 @@ async def ingest_documents(
                 case_id=case_id,
                 filename=storage_metadata["original_filename"],
                 file_format=file.content_type or "unknown",
-                doc_type="contrato",  # Tipo genérico: balance, pyg, mayor, sumas_saldos, extracto_bancario, acta, acuerdo_societario, poder, email_direccion, email_banco, email_asesoria, contrato, venta_activo, prestamo, nomina
+                doc_type=inferred_doc_type,
+                doc_type_confidence=inferred_confidence,
+                doc_type_source="inferred",
                 source="upload",
                 date_start=datetime.utcnow(),
                 date_end=datetime.utcnow(),
@@ -831,12 +878,29 @@ async def ingest_documents(
 
             # Registrar documento con error (con integridad legal si storage_metadata existe)
             if "storage_metadata" in locals() and storage_metadata:
+                try:
+                    from app.core.doc_types import infer_doc_type
+
+                    inferred_err = infer_doc_type(
+                        filename=storage_metadata["original_filename"],
+                        title=None,
+                        source="upload",
+                        raw_text_preview=None,
+                    )
+                    err_doc_type = inferred_err.doc_type
+                    err_confidence = inferred_err.confidence
+                except Exception:
+                    err_doc_type = "OTRO"
+                    err_confidence = 0.0
+
                 doc = Document(
                     document_id=document_id,
                     case_id=case_id,
                     filename=storage_metadata["original_filename"],
                     file_format=file.content_type or "unknown",
-                    doc_type="contrato",  # Tipo genérico: balance, pyg, mayor, sumas_saldos, extracto_bancario, acta, acuerdo_societario, poder, email_direccion, email_banco, email_asesoria, contrato, venta_activo, prestamo, nomina
+                    doc_type=err_doc_type,
+                    doc_type_confidence=err_confidence,
+                    doc_type_source="inferred",
                     source="upload",
                     date_start=datetime.utcnow(),
                     date_end=datetime.utcnow(),
@@ -866,11 +930,28 @@ async def ingest_documents(
                 )
             else:
                 # Fallback si no se pudo calcular storage_metadata
+                try:
+                    from app.core.doc_types import infer_doc_type
+
+                    inferred_err = infer_doc_type(
+                        filename=file.filename,
+                        title=None,
+                        source="upload",
+                        raw_text_preview=None,
+                    )
+                    err_doc_type = inferred_err.doc_type
+                    err_confidence = inferred_err.confidence
+                except Exception:
+                    err_doc_type = "OTRO"
+                    err_confidence = 0.0
+
                 doc = Document(
                     case_id=case_id,
                     filename=file.filename,
                     file_format=file.content_type or "unknown",
-                    doc_type="contrato",  # Tipo genérico: balance, pyg, mayor, sumas_saldos, extracto_bancario, acta, acuerdo_societario, poder, email_direccion, email_banco, email_asesoria, contrato, venta_activo, prestamo, nomina
+                    doc_type=err_doc_type,
+                    doc_type_confidence=err_confidence,
+                    doc_type_source="inferred",
                     source="upload",
                     date_start=datetime.utcnow(),
                     date_end=datetime.utcnow(),
@@ -910,12 +991,29 @@ async def ingest_documents(
 
             # Registrar documento con error (con integridad legal si storage_metadata existe)
             if "storage_metadata" in locals() and storage_metadata:
+                try:
+                    from app.core.doc_types import infer_doc_type
+
+                    inferred_err = infer_doc_type(
+                        filename=storage_metadata["original_filename"],
+                        title=None,
+                        source="upload",
+                        raw_text_preview=None,
+                    )
+                    err_doc_type = inferred_err.doc_type
+                    err_confidence = inferred_err.confidence
+                except Exception:
+                    err_doc_type = "OTRO"
+                    err_confidence = 0.0
+
                 doc = Document(
                     document_id=document_id,
                     case_id=case_id,
                     filename=storage_metadata["original_filename"],
                     file_format=file.content_type or "unknown",
-                    doc_type="contrato",  # Tipo genérico: balance, pyg, mayor, sumas_saldos, extracto_bancario, acta, acuerdo_societario, poder, email_direccion, email_banco, email_asesoria, contrato, venta_activo, prestamo, nomina
+                    doc_type=err_doc_type,
+                    doc_type_confidence=err_confidence,
+                    doc_type_source="inferred",
                     source="upload",
                     date_start=datetime.utcnow(),
                     date_end=datetime.utcnow(),
@@ -945,11 +1043,28 @@ async def ingest_documents(
                 )
             else:
                 # Fallback si no se pudo calcular storage_metadata
+                try:
+                    from app.core.doc_types import infer_doc_type
+
+                    inferred_err = infer_doc_type(
+                        filename=file.filename,
+                        title=None,
+                        source="upload",
+                        raw_text_preview=None,
+                    )
+                    err_doc_type = inferred_err.doc_type
+                    err_confidence = inferred_err.confidence
+                except Exception:
+                    err_doc_type = "OTRO"
+                    err_confidence = 0.0
+
                 doc = Document(
                     case_id=case_id,
                     filename=file.filename,
                     file_format=file.content_type or "unknown",
-                    doc_type="contrato",  # Tipo genérico: balance, pyg, mayor, sumas_saldos, extracto_bancario, acta, acuerdo_societario, poder, email_direccion, email_banco, email_asesoria, contrato, venta_activo, prestamo, nomina
+                    doc_type=err_doc_type,
+                    doc_type_confidence=err_confidence,
+                    doc_type_source="inferred",
                     source="upload",
                     date_start=datetime.utcnow(),
                     date_end=datetime.utcnow(),
@@ -1048,6 +1163,8 @@ def list_documents(
         )
 
     # Obtener documentos del caso
+    # HARD LIMIT por compatibilidad (endpoint legacy sin paginación).
+    # Para paginar, usar GET /cases/{case_id}/documents/paged
     documents = (
         db.query(Document)
         .filter(
@@ -1055,11 +1172,90 @@ def list_documents(
             Document.deleted_at.is_(None),  # Soft-delete: no listar excluidos
         )
         .order_by(Document.created_at.desc())
+        .limit(200)
         .all()
     )
 
     # Construir summaries
     return [_build_document_summary(doc, db) for doc in documents]
+
+
+@router.get(
+    "/paged",
+    response_model=DocumentListResponse,
+    response_model_exclude_none=True,
+    summary="Listar documentos paginado (recomendado)",
+    description="Lista documentos con paginación (evita .all() masivo).",
+)
+def list_documents_paged(
+    case_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> DocumentListResponse:
+    case = db.query(Case).filter(Case.case_id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado")
+
+    q = db.query(Document).filter(Document.case_id == case_id, Document.deleted_at.is_(None))
+    total = int(q.count())
+    rows = (
+        q.order_by(Document.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    items = [_build_document_summary(doc, db) for doc in rows]
+    return DocumentListResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get(
+    "/search",
+    response_model=DocumentSearchResponse,
+    response_model_exclude_none=True,
+    summary="Buscar documentos (MVP abogado-friendly)",
+    description=(
+        "Busca documentos por texto libre y filtros abogado-friendly. "
+        "Devuelve resultados con snippet y página (si hay chunks)."
+    ),
+)
+def search_documents_endpoint(
+    case_id: str,
+    q: str = Query("", description="Texto libre (filename/raw_text/chunks)", max_length=200),
+    category: str = Query(
+        "",
+        description="Categoría abogado-friendly (JUZGADO, FACTURAS, BANCOS, AEAT, TGSS, CONTABILIDAD, ACTIVOS, CONCURSAL, OTROS)",
+        max_length=40,
+    ),
+    doc_types: list[str] = Query(
+        default=[],
+        description="Filtro por doc_type (si se pasa, prevalece sobre category)",
+        max_length=64,
+    ),
+    include_chunk_id: bool = Query(
+        False,
+        description="Si true, devuelve chunk_id cuando el snippet proviene de chunk (opt-in por compatibilidad).",
+    ),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> DocumentSearchResponse:
+    # Verificar que el caso existe
+    case = db.query(Case).filter(Case.case_id == case_id).first()
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
+        )
+
+    params = DocumentSearchParams(
+        q=q or None,
+        category=category or None,
+        doc_types=doc_types or None,
+        page=page,
+        page_size=page_size,
+        include_chunk_id=bool(include_chunk_id),
+    )
+    return search_documents(db=db, case_id=case_id, params=params)
 
 
 @router.get(

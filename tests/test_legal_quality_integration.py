@@ -255,7 +255,7 @@ def test_legal_quality_messages():
         doc = Document(
             case_id=case_id,
             filename=test_file.name,
-            doc_type="contrato",  # Documento crítico
+            doc_type="CONTRATO_FINANCIACION",  # Documento crítico
             source="test",
             date_start=datetime(2024, 1, 1),
             date_end=datetime(2024, 12, 31),

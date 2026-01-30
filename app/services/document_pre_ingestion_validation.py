@@ -19,6 +19,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+import os
 import chardet
 import PyPDF2
 
@@ -71,6 +72,7 @@ class PreIngestionRejectCode(str, Enum):
     # Formato
     FORMAT_UNSUPPORTED = "FORMAT_UNSUPPORTED"
     FORMAT_CORRUPTED = "FORMAT_CORRUPTED"
+    DOC_LEGACY_UNSUPPORTED = "DOC_LEGACY_UNSUPPORTED"
 
     # Encriptación/Protección
     ENCRYPTION_DETECTED = "ENCRYPTION_DETECTED"
@@ -134,6 +136,15 @@ def check_format_supported(file_path: Path) -> tuple[bool, Optional[PreIngestion
             False,
             PreIngestionRejectCode.FORMAT_UNSUPPORTED,
             f"Formato {extension} no está en la whitelist de formatos soportados: {SUPPORTED_FORMATS}",
+        )
+
+    # Política .doc legacy: rechazo controlado por defecto (permite override por env var).
+    if extension == ".doc" and os.getenv("PHOENIX_ENABLE_DOC_LEGACY", "").strip() != "1":
+        return (
+            False,
+            PreIngestionRejectCode.DOC_LEGACY_UNSUPPORTED,
+            "Formato .doc (Word legacy) no soportado por defecto. Convierte a .docx o PDF. "
+            "Si necesitas soporte best-effort, exporta PHOENIX_ENABLE_DOC_LEGACY=1.",
         )
 
     return True, None, "Formato soportado"

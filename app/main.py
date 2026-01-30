@@ -29,6 +29,12 @@ from app.api.legal_report import (
 from app.api.manifest import router as manifest_router
 from app.api.pdf_report import router as pdf_report_router
 from app.api.reports import router as reports_router
+from app.api.situation import router as situation_router
+from app.api.submissions import router as submissions_router
+from app.api.templates import router as templates_router
+from app.api.case_evidence import router as case_evidence_router
+from app.api.alerts_voice import router as alerts_voice_router
+from app.api.alerts import router_alerts as alerts_router, router_cases as case_alerts_router
 from app.api.timeline import router as timeline_router  # ✅ NUEVO: Timeline paginado
 
 # ✅ RE-HABILITADO (imports corregidos)
@@ -86,6 +92,13 @@ app.include_router(trace_router, prefix="/api")
 app.include_router(manifest_router, prefix="/api")
 app.include_router(pdf_report_router, prefix="/api")
 app.include_router(economic_report_router, prefix="/api")
+app.include_router(situation_router, prefix="/api")
+app.include_router(submissions_router, prefix="/api")
+app.include_router(templates_router, prefix="/api")
+app.include_router(case_evidence_router, prefix="/api")
+app.include_router(alerts_voice_router, prefix="/api")
+app.include_router(case_alerts_router, prefix="/api")
+app.include_router(alerts_router, prefix="/api")
 
 # Routers v2
 app.include_router(v2_auditor_router)

@@ -68,7 +68,7 @@ def test_rag_embeddings():
         document = Document(
             case_id=case_id,
             filename="test_rag_doc.txt",
-            doc_type="contrato",
+            doc_type="OTRO",
             source="test",
             date_start=datetime(2024, 1, 1),
             date_end=datetime(2024, 12, 31),

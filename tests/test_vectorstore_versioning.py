@@ -331,7 +331,7 @@ def test_full_pipeline_with_real_document(db_session, test_case_id, cleanup_test
         db=db_session,
         file_path=test_file,
         case_id=test_case_id,
-        doc_type="contrato",
+        doc_type="OTRO",
         source="test",
     )
 
@@ -406,7 +406,7 @@ def test_validation_detects_corrupted_data(db_session, test_case_id, cleanup_tes
         db=db_session,
         file_path=test_file,
         case_id=test_case_id,
-        doc_type="contrato",
+        doc_type="OTRO",
     )
 
     # 2. Generar chunks

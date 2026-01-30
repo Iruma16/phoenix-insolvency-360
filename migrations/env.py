@@ -1,13 +1,16 @@
 """
 Alembic migration environment.
 
-Este archivo configura Alembic para detectar automáticamente
-cambios en los modelos SQLAlchemy y generar migraciones.
+Objetivos:
+- Configurar Alembic para autogenerate.
+- Blindar el caso "BD creada por Base.metadata.create_all()" (SQLite/local) sin
+  tabla `alembic_version`: permitir `alembic upgrade head` sin pasos manuales
+  (p.ej. `alembic stamp ...`) cuando el esquema ya existe.
 """
 from logging.config import fileConfig
+from typing import Optional
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, inspect, pool, text
 
 from alembic import context
 
@@ -36,6 +39,56 @@ target_metadata = Base.metadata
 
 # Override sqlalchemy.url from settings
 config.set_main_option("sqlalchemy.url", settings.database_url)
+
+
+def _detect_best_stamp_revision(tables: set[str]) -> Optional[str]:
+    """
+    Heurística segura para "bootstrap" cuando existen tablas pero no hay
+    `alembic_version` (caso típico: DB creada con create_all).
+    """
+    # CAPA 4 ya existe → al menos hasta case_record_audit
+    if "case_record_audit" in tables:
+        return "20260130_1700_case_record_audit"
+    # CAPA 3/5 existe → al menos hasta case_central
+    if "case_record_evidence" in tables or "templates" in tables or "case_submissions" in tables:
+        return "20260130_1500_case_central"
+    # Cuadro de situación existe → al menos hasta situation
+    if "situation_invoices" in tables:
+        return "20260130_1230_situation"
+    return None
+
+
+def _bootstrap_alembic_version_if_needed(connection) -> None:
+    """
+    Si la BD ya tiene tablas pero no tiene `alembic_version`, creamos la tabla
+    y la "stampeamos" a una revisión base razonable para permitir upgrade head.
+    """
+    # En PostgreSQL (prod), no queremos "adivinar" estado: debe existir historial Alembic.
+    if settings.uses_postgres:
+        return
+
+    tables = set(inspect(connection).get_table_names())
+    if "alembic_version" in tables:
+        return
+
+    stamp_rev = _detect_best_stamp_revision(tables)
+    if not stamp_rev:
+        return
+
+    # Importante: NO intentamos inferir migraciones parciales a nivel columna.
+    # Este bootstrap solo pretende resolver el caso estructural create_all vs Alembic.
+    with connection.begin():
+        connection.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS alembic_version ("
+                "version_num VARCHAR(32) NOT NULL, "
+                "PRIMARY KEY (version_num)"
+                ")"
+            )
+        )
+        # Garantizar valor único (PK) en caso de ejecuciones repetidas.
+        connection.execute(text("DELETE FROM alembic_version"))
+        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES (:v)"), {"v": stamp_rev})
 
 
 def run_migrations_offline() -> None:
@@ -79,6 +132,10 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # Blindaje: si la BD fue creada con create_all y no tiene alembic_version,
+        # la bootstrapeamos para permitir `alembic upgrade head` sin pasos manuales.
+        _bootstrap_alembic_version_if_needed(connection)
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

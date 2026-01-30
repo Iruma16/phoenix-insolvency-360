@@ -20,19 +20,19 @@ def test_doc_type_inference():
 
     test_cases = [
         # (filename, expected_type, description)
-        ("balance_final_v3_ok.docx", "balance", "Balance con versión y sufijo"),
-        ("email_re_abogado_urgente.pdf", "email_direccion", "Email con re: y contexto"),
-        ("contrato_servicio_2024.pdf", "contrato", "Contrato simple"),
-        ("extracto_bancario_enero.xlsx", "extracto_bancario", "Extracto bancario"),
-        ("factura_12345.pdf", "factura", "Factura"),
-        ("acta_junta_extraordinaria.docx", "acta", "Acta"),
-        ("pyg_2023_final.xlsx", "pyg", "Pérdidas y ganancias"),
-        ("mayor_contable_2024.xlsx", "mayor", "Mayor contable"),
-        ("email_fw_banco_importante.pdf", "email_banco", "Email forward de banco"),
-        ("nomina_enero_2024.pdf", "nomina", "Nómina"),
-        ("venta_activo_inmueble.pdf", "venta_activo", "Venta de activo"),
-        ("prestamo_bancario_2023.pdf", "prestamo", "Préstamo"),
-        ("documento_desconocido.pdf", "contrato", "Default a contrato"),
+        ("balance_final_v3_ok.docx", "BALANCE", "Balance con versión y sufijo"),
+        ("email_re_abogado_urgente.pdf", "CORREO", "Email con re: y contexto"),
+        ("contrato_servicio_2024.pdf", "OTRO", "Contrato genérico (no financiación)"),
+        ("extracto_bancario_enero.xlsx", "EXTRACTO_BANCARIO", "Extracto bancario"),
+        ("factura_12345.pdf", "FACTURA", "Factura"),
+        ("acta_junta_extraordinaria.docx", "OTRO", "Acta (sin tipo específico en catálogo MVP)"),
+        ("pyg_2023_final.xlsx", "PYG", "Pérdidas y ganancias"),
+        ("mayor_contable_2024.xlsx", "MAYOR_CONTABLE", "Mayor contable"),
+        ("email_fw_banco_importante.pdf", "CORREO", "Email forward de banco"),
+        ("nomina_enero_2024.pdf", "NOMINAS_SEGUROS_SOCIALES", "Nómina"),
+        ("venta_activo_inmueble.pdf", "INMUEBLE", "Venta de activo inmueble (mapeo por keyword)"),
+        ("prestamo_bancario_2023.pdf", "CONTRATO_FINANCIACION", "Préstamo"),
+        ("documento_desconocido.pdf", "OTRO", "Sin señales suficientes → OTRO"),
     ]
 
     passed = 0

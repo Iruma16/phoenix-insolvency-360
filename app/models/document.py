@@ -13,6 +13,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -36,25 +37,39 @@ case = relationship(Case, backref="documents")
 # =========================================================
 
 DOCUMENT_TYPES = {
-    # Financiero / contable
-    "balance",
-    "pyg",
-    "mayor",
-    "sumas_saldos",
-    "extracto_bancario",
-    # Societario
-    "acta",
-    "acuerdo_societario",
-    "poder",
-    # Dirección / gestión
-    "email_direccion",
-    "email_banco",
-    "email_asesoria",
-    # Operaciones
-    "contrato",
-    "venta_activo",
-    "prestamo",
-    "nomina",
+    # Núcleo legal / concursal
+    "ESCRITURA_CONSTITUCION",
+    "PODERES_REPRESENTACION",
+    "CONTRATO_ARRENDAMIENTO",
+    "CONTRATO_FINANCIACION",
+    "GARANTIAS",
+    "COMUNICACION_ACREEDOR",
+    "RECLAMACION_JUDICIAL",
+    "RESOLUCION_JUDICIAL",
+    "EMBARGO",
+    "CONCURSAL",
+    # Deuda pública
+    "AEAT",
+    "TGSS",
+    "MODELOS_TRIBUTARIOS",
+    "APLAZAMIENTO_FRACCIONAMIENTO",
+    "PROVIDENCIA_APREMIO",
+    # Económico-financiero
+    "FACTURA",
+    "EXTRACTO_BANCARIO",
+    "CUENTA_BANCARIA",
+    "BALANCE",
+    "PYG",
+    "MAYOR_CONTABLE",
+    "NOMINAS_SEGUROS_SOCIALES",
+    # Activos / patrimonio
+    "INMUEBLE",
+    "VEHICULO",
+    "MAQUINARIA_EQUIPO",
+    "TASACION",
+    # Otros
+    "CORREO",
+    "OTRO",
 }
 
 
@@ -263,6 +278,20 @@ class Document(Base):
         index=True,
     )
 
+    # Score de confianza de clasificación (0.0 - 1.0). NULL si no aplica (datos legacy).
+    doc_type_confidence: Mapped[Optional[float]] = mapped_column(
+        Float,
+        nullable=True,
+        comment="Confianza de clasificación doc_type (0-1). NULL si no aplica.",
+    )
+
+    # Origen del doc_type: inferred | mapped | manual (reserva para futuras ediciones por abogado)
+    doc_type_source: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Origen doc_type: inferred|mapped|manual",
+    )
+
     source: Mapped[Optional[str]] = mapped_column(
         String(64),
         nullable=True,
@@ -366,10 +395,34 @@ class Document(Base):
         ),
         CheckConstraint(
             "doc_type IN ("
-            "'balance','pyg','mayor','sumas_saldos','extracto_bancario',"
-            "'acta','acuerdo_societario','poder',"
-            "'email_direccion','email_banco','email_asesoria',"
-            "'contrato','venta_activo','prestamo','nomina'"
+            "'ESCRITURA_CONSTITUCION',"
+            "'PODERES_REPRESENTACION',"
+            "'CONTRATO_ARRENDAMIENTO',"
+            "'CONTRATO_FINANCIACION',"
+            "'GARANTIAS',"
+            "'COMUNICACION_ACREEDOR',"
+            "'RECLAMACION_JUDICIAL',"
+            "'RESOLUCION_JUDICIAL',"
+            "'EMBARGO',"
+            "'CONCURSAL',"
+            "'AEAT',"
+            "'TGSS',"
+            "'MODELOS_TRIBUTARIOS',"
+            "'APLAZAMIENTO_FRACCIONAMIENTO',"
+            "'PROVIDENCIA_APREMIO',"
+            "'FACTURA',"
+            "'EXTRACTO_BANCARIO',"
+            "'CUENTA_BANCARIA',"
+            "'BALANCE',"
+            "'PYG',"
+            "'MAYOR_CONTABLE',"
+            "'NOMINAS_SEGUROS_SOCIALES',"
+            "'INMUEBLE',"
+            "'VEHICULO',"
+            "'MAQUINARIA_EQUIPO',"
+            "'TASACION',"
+            "'CORREO',"
+            "'OTRO'"
             ")",
             name="ck_documents_doc_type",
         ),

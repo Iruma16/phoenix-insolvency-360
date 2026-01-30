@@ -79,6 +79,10 @@ def execute_llm(
     max_retries: int = 2,
     timeout_seconds: int = 15,
     max_tokens: int = 500,
+    # Opcional: post-procesado de seguridad legal (por defecto ON).
+    # Algunas tareas (p.ej. JSON estricto) necesitan desactivar disclaimer/política para no romper formato.
+    postprocess_add_disclaimer: bool = True,
+    postprocess_apply_language_policy: bool = True,
 ) -> LLMExecutionResult:
     """
     Ejecuta un LLM con gestión completa de errores.
@@ -140,6 +144,8 @@ def execute_llm(
         max_retries=max_retries,
         timeout_seconds=timeout_seconds,
         max_tokens=max_tokens,
+        postprocess_add_disclaimer=postprocess_add_disclaimer,
+        postprocess_apply_language_policy=postprocess_apply_language_policy,
         is_fallback=False,
     )
 
@@ -163,6 +169,8 @@ def execute_llm(
         max_retries=max_retries,
         timeout_seconds=timeout_seconds,
         max_tokens=max_tokens,
+        postprocess_add_disclaimer=postprocess_add_disclaimer,
+        postprocess_apply_language_policy=postprocess_apply_language_policy,
         is_fallback=True,
     )
 
@@ -203,6 +211,8 @@ def _try_execute_with_model(
     max_retries: int,
     timeout_seconds: int,
     max_tokens: int,
+    postprocess_add_disclaimer: bool,
+    postprocess_apply_language_policy: bool,
     is_fallback: bool,
 ) -> LLMExecutionResult:
     """
@@ -231,7 +241,9 @@ def _try_execute_with_model(
 
             # Post-procesar output para seguridad legal
             output_safe = process_llm_output_safe(
-                output, add_disclaimer=True, apply_language_policy=True
+                output,
+                add_disclaimer=bool(postprocess_add_disclaimer),
+                apply_language_policy=bool(postprocess_apply_language_policy),
             )
 
             # Éxito!

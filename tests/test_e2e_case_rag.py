@@ -101,7 +101,7 @@ def test_case_rag_end_to_end(test_document):
             db=db,
             file_path=test_document,
             case_id=TEST_CASE_ID,
-            doc_type="contrato",
+            doc_type="CONTRATO_FINANCIACION",
             source="e2e_test",
         )
         db.commit()

@@ -1,8 +1,14 @@
-import importlib
-import pkgutil
+from __future__ import annotations
 
-import app.models  # noqa: F401
-from app.core.database import Base, get_engine
+import re
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import inspect
+
+from app.core.config import settings
+from app.core.database import get_engine
 
 # =========================================================
 # INIT DB
@@ -11,36 +17,76 @@ from app.core.database import Base, get_engine
 
 def main():
     """
-    Inicializa la base de datos:
-    - Crea todas las tablas definidas en los modelos
-    - Muestra las tablas registradas en SQLAlchemy
+    Inicializa la base de datos (ROBUSTO):
+    - Alembic es la única fuente de verdad del esquema.
+    - Evita colisiones típicas de `Base.metadata.create_all()` vs `alembic upgrade`.
+    - En BDs existentes creadas "a mano" (create_all), intenta bootstrap:
+      si Alembic falla por "table already exists", hace `stamp` a la revisión
+      adecuada y reintenta el upgrade.
     """
 
     engine = get_engine()
 
-    # IMPORTANTE:
-    # `Base.metadata` solo contiene tablas de modelos ORM que hayan sido importados.
-    # `app.models.__init__` es intencionalmente ligero, por lo que aquí importamos
-    # dinámicamente todos los submódulos para registrar tablas antes del create_all.
-    for m in pkgutil.iter_modules(app.models.__path__, app.models.__name__ + "."):
-        # En algunos entornos pueden existir ficheros accidentales tipo "foo 2.py"
-        # (no válidos como identificador Python) que duplican modelos/tablas.
-        # Los ignoramos para evitar colisiones del tipo "Table X is already defined".
-        last_segment = m.name.split(".")[-1]
-        if not last_segment.isidentifier():
-            continue
-        importlib.import_module(m.name)
+    repo_root = Path(__file__).resolve().parents[2]
+    alembic_ini = repo_root / "alembic.ini"
+    if not alembic_ini.exists():
+        raise RuntimeError(f"No se encuentra alembic.ini en {alembic_ini}")
 
-    # Crear todas las tablas
-    Base.metadata.create_all(bind=engine)
+    cfg = Config(str(alembic_ini))
+    # Redundante con migrations/env.py, pero deja claro el origen.
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
 
-    # Listar tablas creadas / registradas
-    tables = sorted(Base.metadata.tables.keys())
+    # Mapeo mínimo: tabla ya existe => revisión mínima que la define.
+    table_to_revision = {
+        # CAPA 3/5 (case_central_db_layers)
+        "case_record_evidence": "20260130_1500_case_central",
+        "templates": "20260130_1500_case_central",
+        "case_submissions": "20260130_1500_case_central",
+        # CAPA 4 (auditoría canónica)
+        "case_record_audit": "20260130_1700_case_record_audit",
+        # Cuadro de situación
+        "situation_invoices": "20260130_1230_situation",
+        "situation_evidence": "20260130_1230_situation",
+        "situation_audit_log": "20260130_1230_situation",
+    }
 
-    print("✅ Tablas creadas / registradas en SQLAlchemy:")
-    for table in tables:
-        print(f"   - {table}")
+    def _detect_best_stamp_revision() -> str | None:
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+        if "case_record_audit" in tables:
+            return "20260130_1700_case_record_audit"
+        if "case_record_evidence" in tables:
+            return "20260130_1500_case_central"
+        if "situation_invoices" in tables:
+            return "20260130_1230_situation"
+        return None
 
+    def _upgrade_head_with_bootstrap() -> None:
+        try:
+            command.upgrade(cfg, "head")
+            return
+        except Exception as e:
+            msg = str(e)
+            # Caso típico SQLite/create_all: "table X already exists"
+            m = re.search(r"table\s+([a-zA-Z0-9_]+)\s+already exists", msg)
+            if m:
+                table = m.group(1)
+                stamp_rev = table_to_revision.get(table) or _detect_best_stamp_revision()
+                if stamp_rev:
+                    command.stamp(cfg, stamp_rev)
+                    command.upgrade(cfg, "head")
+                    return
+            # Si no podemos bootstrappear con seguridad, propagamos.
+            raise
+
+    _upgrade_head_with_bootstrap()
+
+    # Mostrar tablas reales en DB (no metadata).
+    with engine.connect() as conn:
+        tables = sorted(inspect(conn).get_table_names())
+    print("✅ DB lista (Alembic=fuente de verdad). Tablas detectadas:")
+    for t in tables:
+        print(f"   - {t}")
     print(f"\n📊 Total tablas: {len(tables)}")
 
 

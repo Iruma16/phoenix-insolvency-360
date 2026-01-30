@@ -22,6 +22,19 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Este proyecto tuvo periodos donde algunas tablas se crearon por `create_all`
+    # sin registrar correctamente `alembic_version`. Para evitar fallos en entornos
+    # donde `timeline_events` ya existe, hacemos el upgrade idempotente.
+    bind = op.get_bind()
+    existing = bind.execute(
+        sa.text(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='timeline_events' LIMIT 1"
+        )
+    ).fetchone()
+    if existing:
+        # Tabla ya existe: no recrear (evita 'table already exists').
+        return
+
     # Crear tabla timeline_events
     op.create_table(
         'timeline_events',

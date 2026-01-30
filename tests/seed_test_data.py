@@ -58,7 +58,7 @@ def main():
     document = Document(
         case_id=case.case_id,
         filename="doc1.txt",
-        doc_type="contrato",
+        doc_type="OTRO",
         source="seed",
         date_start=datetime(2023, 1, 1),
         date_end=datetime(2023, 12, 31),

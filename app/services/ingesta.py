@@ -769,6 +769,13 @@ def ingerir_archivo(
 
     name = filename.lower()
 
+    # Política .doc legacy: rechazo controlado por defecto
+    if name.endswith(".doc") and os.getenv("PHOENIX_ENABLE_DOC_LEGACY", "").strip() != "1":
+        raise ValueError(
+            "Formato .doc (Word legacy) no soportado por defecto. Convierte a .docx o PDF "
+            "o habilita PHOENIX_ENABLE_DOC_LEGACY=1 (best effort)."
+        )
+
     if name.endswith(".pdf"):
         print("📥 [INGESTA] Tipo detectado: PDF")
         return leer_pdf(file_stream)

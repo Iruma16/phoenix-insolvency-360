@@ -27,6 +27,7 @@ python-dotenv==1.0.0
 pydantic-settings==2.9.1
 pydantic[email]==2.12.5  # Compatible con LangChain (>=2.7.4)
 requests==2.31.0
+httpx==0.27.2  # Necesario para TestClient (Starlette/FastAPI) en Py3.9
 
 # Seguridad y Autenticación
 passlib[bcrypt]==1.7.4
@@ -44,6 +45,7 @@ pdfplumber==0.11.0
 python-docx==1.1.0
 extract-msg==0.48.5  # Parser de archivos .msg (Outlook)
 openpyxl==3.1.2  # Ya usado en excel_parser, asegurar versión
+chardet==5.2.0  # Detección de encoding (validación pre-ingesta)
 
 # OCR (FASE 2A)
 pytesseract==0.3.10  # Wrapper de Tesseract OCR
@@ -76,3 +78,5 @@ structlog==24.1.0
 # UI (opcional para demo)
 streamlit==1.50.0
 
+# Compatibilidad Python 3.9 + Pydantic v2 (soporta `X | None`)
+eval-type-backport==0.3.1

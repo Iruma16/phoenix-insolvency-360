@@ -57,13 +57,23 @@ LEGAL_QUALITY_SCORE_WARNING_THRESHOLD = settings.legal_quality_score_warning_thr
 
 # Documentos críticos desde perspectiva legal (requieren embeddings)
 CRITICAL_DOCUMENT_TYPES = {
-    "contrato",
-    "acta",
-    "acuerdo_societario",
-    "poder",
-    "balance",
-    "pyg",
-    "extracto_bancario",
+    # Legal / concursal
+    "CONCURSAL",
+    "RECLAMACION_JUDICIAL",
+    "RESOLUCION_JUDICIAL",
+    "EMBARGO",
+    "GARANTIAS",
+    "CONTRATO_FINANCIACION",
+    "CONTRATO_ARRENDAMIENTO",
+    "PODERES_REPRESENTACION",
+    # Deuda pública
+    "AEAT",
+    "TGSS",
+    # Económico-financiero
+    "BALANCE",
+    "PYG",
+    "MAYOR_CONTABLE",
+    "EXTRACTO_BANCARIO",
 }
 
 # =========================================================

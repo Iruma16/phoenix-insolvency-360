@@ -124,7 +124,7 @@ def test_end_to_end_flow(test_document_path):
             db=db,
             file_path=test_document_path,
             case_id=TEST_CASE_ID,
-            doc_type="contrato",
+            doc_type="CONTRATO_FINANCIACION",
             source="e2e_test",
         )
 
@@ -134,7 +134,9 @@ def test_end_to_end_flow(test_document_path):
         # VALIDACION 1: Documento creado
         assert document is not None, "El documento debe haberse creado"
         assert document.case_id == TEST_CASE_ID, "El case_id debe coincidir"
-        assert document.doc_type == "contrato", "El doc_type debe ser 'contrato'"
+        assert (
+            document.doc_type == "CONTRATO_FINANCIACION"
+        ), "El doc_type debe ser 'CONTRATO_FINANCIACION'"
 
         print(f"  ✅ Documento creado: ID={document.document_id}")
 

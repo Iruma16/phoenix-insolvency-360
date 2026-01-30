@@ -990,6 +990,10 @@ Checklist de “qué comprobar” cuando algo falla:
 - **DB (por defecto SQLite)**:
   - `DATABASE_URL` por defecto: `sqlite:///./runtime/db/phoenix_legal.db` (ver `.env.example` y `app/core/config.py`).
   - Creación de tablas: `make init-db` (ejecuta `python -m app.core.init_db`).
+  - **Compatibilidad create_all vs Alembic**: si la BD ya tiene tablas pero no tiene `alembic_version`
+    (caso típico de SQLite local creado por utilidades/tests), `migrations/env.py` hace un *bootstrap*
+    automático (stampea a una revisión base segura) para que `alembic upgrade head` no falle con
+    “table already exists” sin pasos manuales.
 - **FS de casos**:
   - Raíz: `clients_data/` (configurable con `DATA_DIR`).
   - En ingesta se crean subcarpetas bajo `clients_data/cases/<case_id>/...` (documentos y derivados).
@@ -1055,6 +1059,83 @@ Checklist de “qué comprobar” cuando algo falla:
 
 - **Salida y persistencia**:
   - `clients_data/` y `runtime/` son runtime locales; la demo asume filesystem accesible.
+
+## 12. CAPA 5 — Submissions (acto) y política de snapshot (reproducibilidad)
+
+### Qué es un submission
+Un **submission** representa un **acto** (p.ej. presentación en juzgado) que puede generar **múltiples outputs**
+(DOCX/PDF/XLSX) a partir de plantillas.
+
+### Snapshot policy (qué se congela)
+Para blindar reproducibilidad, cada “congelación” crea un `snapshot_id` y persiste `case_submission_items` con:
+
+- **Campos resueltos** de la plantilla (entity=`template_resolve`, record_type=`form_field`).
+- **Form field values** relevantes para la plantilla (entity=`form_field_value`, record_type=`form_field`).
+- **CAPA 2 vigente** (Cuadro de situación): facturas, créditos, bienes, deuda pública, juzgado.
+- **Evidence IDs**: para cada registro CAPA 2 se almacena `evidence_ids` con los `evidence_id` de `case_record_evidence`
+  que soportan ese `record_type+record_id`. Para form_field_values se incluye `evidence_id` si existe.
+
+Invariantes:
+- Mismo estado de BD ⇒ mismo `record_hash` por item (`stable_json_hash(snapshot_json)`).
+- Un output generado (`case_generated_documents`) referencia `snapshot_id`, permitiendo reconstrucción del estado usado.
+
+### Auditoría (case_record_audit)
+Acciones auditadas (append-only) sobre el submission:
+- `SUBMISSION_CREATE`
+- `SUBMISSION_STATUS_CHANGE`
+- `SNAPSHOT_CREATE`
+- `OUTPUT_GENERATE`
+
+## 13. CAPA 5 — Plantillas + mapping (puente BD→formularios)
+
+### Conceptos
+- **`TemplateField`**: define el catálogo de campos por plantilla (`field_key`, `data_type`, `required`, `validation_json`).
+- **`FieldMapping`**: define de dónde sale cada campo:
+  - `source_kind`: `MANUAL | AGGREGATION | CONSTANT | SQL_QUERY`
+  - `source_spec_json`: contrato según `source_kind`
+  - `fallback`: `MANUAL_REQUIRED | NO_CONSTA | EMPTY`
+- **`FormFieldValue`**: valor manual por caso+plantilla+campo (incluye `evidence_id` opcional + `justification`).
+
+### Contrato de `FieldMapping.source_spec_json`
+- **MANUAL**: `{"kind":"manual"}`
+- **AGGREGATION**: `{"kind":"case_name" | "sum_passive" | "sum_assets_best_valuation" | "count_creditors_distinct"}`
+- **CONSTANT**: `{"value": ...}`
+- **SQL_QUERY** (seguro, sin SQL libre):  
+  - `{"entity":"invoice|loan|asset|public_debt|court_claim", "aggregation":"list|sum|first_non_null", ...}`
+  - `aggregation=list`: requiere `fields:[...]` y `limit` (opcional)
+  - `aggregation=sum`: requiere `column`
+  - `aggregation=first_non_null`: requiere `column` y opcional `limit`
+
+### Fallback duro: NO CONSTA en campos críticos
+Si un `TemplateField.validation_json` contiene `{"critical": true, "no_consta": {...}}` y el valor final es “NO CONSTA”:
+- Se exige `justification` con longitud mínima (`justification_min`, por defecto 20).
+- Si `evidence_required=true`, además se exige `evidence_id` en `FormFieldValue`.
+
+### Plantillas disponibles (seed)
+- `JUZ_SOL_CONCURSO_VOLUNTARIO_PJ` (Solicitud concurso PJ)
+- `MEMORIA_ECONOMICA_JURIDICA` (esqueleto)
+- `INFORME_ADMIN_CONCURSAL` (esqueleto)
+
+## 14. CAPA 6 — Performance y operativa
+
+### 14.1 Índices (DB)
+Se añadieron índices compuestos orientados a consultas reales:
+- **CAPA 2**: `case_id + is_current + campo_filtro` en `situation_*` (acreedor/NIF, fechas, importes, status, refs).
+- **Documents**: `case_id + deleted_at + created_at`, `case_id + doc_type`, `case_id + file_format`, `case_id + uploaded_at`.
+- **Evidence**: `case_id + record_type + record_id` en `case_record_evidence` (lookup para snapshots/enlaces).
+
+Migración: `migrations/versions/20260130_2130_perf_indexes_capa2_documents_evidence.py`.
+
+### 14.2 Paginación obligatoria (listados grandes)
+- `GET /api/cases/{case_id}/documents/paged` es el listado recomendado (paginado, `page_size <= 200`).
+- El endpoint legacy `GET /api/cases/{case_id}/documents` se mantiene por compatibilidad pero aplica **HARD LIMIT 200**.
+
+### 14.3 Política `.doc` (Word legacy)
+Decisión: **rechazo controlado por defecto**.
+- Por defecto, `.doc` se rechaza con 415: “convierte a .docx o PDF”.
+- Override opcional: `PHOENIX_ENABLE_DOC_LEGACY=1` habilita best-effort (sin garantías).
+
+
 
 ### Siguiente paso en un entorno productivo (no curso)
 
