@@ -1,6 +1,7 @@
 """
 Generación de respuestas con LLM a partir de contexto recuperado.
 """
+import os
 
 from openai import OpenAI
 
@@ -24,7 +25,32 @@ def build_llm_answer(
     Returns:
         Respuesta generada por el LLM
     """
-    openai_client = OpenAI()
+    # region agent log (debug-mode)
+    def _dbg_log_llm(hypothesis_id: str, message: str, data: dict) -> None:
+        try:
+            _path = "/Users/irumabragado/Documents/procesos/202512_phoenix-legal/.cursor/debug.log"
+            payload = {
+                "sessionId": "debug-session",
+                "runId": "rag-env-debug-v1",
+                "hypothesisId": hypothesis_id,
+                "location": "app/agents/base/response_builder.py:build_llm_answer",
+                "message": message,
+                "data": data,
+                "timestamp": int(__import__("time").time() * 1000),
+            }
+            with open(_path, "a", encoding="utf-8") as f:
+                f.write(__import__("json").dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    # endregion agent log (debug-mode)
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        _dbg_log_llm("H1", "llm_missing_openai_env", {"has_key": False})
+        raise RuntimeError("LLM_DISABLED: OPENAI_API_KEY no configurada")
+
+    openai_client = OpenAI(api_key=api_key)
 
     # REGLA 5: Prompt ENDURECIDO - Prohibición explícita de relleno
     system_prompt = (
@@ -53,14 +79,18 @@ def build_llm_answer(
         f"- NO completes, NO inferas, NO razones más allá del texto proporcionado."
     )
 
-    completion = openai_client.chat.completions.create(
-        model=RAG_LLM_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=RAG_TEMPERATURE,
-    )
+    try:
+        completion = openai_client.chat.completions.create(
+            model=RAG_LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=RAG_TEMPERATURE,
+        )
+    except Exception as e:
+        _dbg_log_llm("H2", "llm_provider_error", {"error_type": type(e).__name__})
+        raise RuntimeError(f"LLM_ERROR: {type(e).__name__}") from e
 
     answer = completion.choices[0].message.content.strip()
     return answer

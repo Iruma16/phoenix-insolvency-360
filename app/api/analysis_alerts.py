@@ -1082,7 +1082,8 @@ def _detect_bank_alerts(case_id: str, chunks: list[DocumentChunk], db: Session) 
     parts = []
     parts.append("Banco: se detectan movimientos con señales técnicas a revisar.")
     if hits_linked:
-        parts.append(f"Pagos a vinculada (matching nombre/CIF): {hits_linked} mención(es).")
+        # Usar 'vinculadas' explícito para facilitar correlación/UX en capa despacho.
+        parts.append(f"Pagos a vinculadas (matching nombre/CIF): {hits_linked} mención(es).")
     if hits_generic:
         parts.append(f"Conceptos genéricos (p.ej. 'servicios'): {hits_generic} mención(es).")
     if hits_cash:

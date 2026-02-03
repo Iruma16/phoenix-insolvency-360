@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+make run-apimake run-apimm#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Dataset sintético de alertas (FASE 0) — Phoenix Legal

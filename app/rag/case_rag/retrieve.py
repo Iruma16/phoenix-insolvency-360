@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal, Optional
@@ -44,6 +45,26 @@ from app.services.vectorstore_versioning import (
     get_active_version,
 )
 
+# region agent log (debug-mode)
+def _dbg_log_retrieve(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    try:
+        _path = "/Users/irumabragado/Documents/procesos/202512_phoenix-legal/.cursor/debug.log"
+        payload = {
+            "sessionId": "debug-session",
+            "runId": "rag-env-debug-v1",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(__import__("time").time() * 1000),
+        }
+        with open(_path, "a", encoding="utf-8") as f:
+            f.write(__import__("json").dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+# endregion agent log (debug-mode)
+
 # =========================================================
 # ESTADOS INTERNOS RAG
 # =========================================================
@@ -53,6 +74,10 @@ RAGStatus = Literal[
     "CASE_NOT_FOUND",
     "NO_CHUNKS",
     "NO_EMBEDDINGS",
+    "RAG_NOT_READY",
+    "RAG_CONFIG_MISSING",
+    # Back-compat (legacy)
+    "LLM_UNAVAILABLE",
     "NO_RELEVANT_CONTEXT",
     "PARTIAL_CONTEXT",
 ]
@@ -88,6 +113,17 @@ def rag_answer_internal(
     date_to: Optional[date] = None,
 ) -> RAGInternalResult:
     warnings: list[str] = []
+    _dbg_log_retrieve(
+        "H2",
+        "app/rag/case_rag/retrieve.py:rag_answer_internal",
+        "entry",
+        {
+            "case_id": str(case_id),
+            "question_len": len(question or ""),
+            "top_k": int(top_k),
+            "env_openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
+        },
+    )
 
     # --------------------------------------------------
     # 0️⃣ EVALUAR CALIDAD DOCUMENTAL Y RIESGO LEGAL
@@ -215,6 +251,12 @@ def rag_answer_internal(
     # --------------------------------------------------
     # CAMBIO: Ahora verificamos que existe una versión ACTIVE válida
     active_version = get_active_version(case_id)
+    _dbg_log_retrieve(
+        "H3",
+        "app/rag/case_rag/retrieve.py:rag_answer_internal",
+        "active_version",
+        {"case_id": str(case_id), "active_version_present": bool(active_version)},
+    )
 
     if not active_version:
         # No existe versión activa
@@ -276,34 +318,93 @@ def rag_answer_internal(
                     hallucination_risk=False,
                 )
     except Exception as e:
+        msg = str(e)
+        # Caso típico: no existe ACTIVE => el RAG no está "listo", no es falta de documentos
+        if "No existe versión ACTIVE" in msg or "No existe vectorstore ACTIVE" in msg:
+            return RAGInternalResult(
+                status="RAG_NOT_READY",
+                context_text="",
+                sources=[],
+                confidence="baja",
+                warnings=warnings
+                + [
+                    "RAG no disponible: no existe versión ACTIVE del vectorstore para este caso.",
+                    "Acción: ejecutar ingesta/embeddings del caso o activar una versión READY.",
+                ],
+                hallucination_risk=True,
+            )
         return RAGInternalResult(
             status="NO_EMBEDDINGS",
             context_text="",
             sources=[],
             confidence="baja",
             warnings=warnings + [f"Error accediendo al vectorstore: {e}"],
-            hallucination_risk=False,
+            hallucination_risk=True,
         )
 
     # --------------------------------------------------
     # 4️⃣ Búsqueda semántica
     # --------------------------------------------------
     # Generar embedding de la pregunta usando el mismo modelo que los embeddings almacenados
-    openai_client = OpenAI()
-    question_embedding = (
-        openai_client.embeddings.create(
-            model=EMBEDDING_MODEL,
-            input=[question],
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        _dbg_log_retrieve(
+            "H1",
+            "app/rag/case_rag/retrieve.py:rag_answer_internal",
+            "missing_openai_env",
+            {"case_id": str(case_id)},
         )
-        .data[0]
-        .embedding
-    )
+        return RAGInternalResult(
+            status="RAG_CONFIG_MISSING",
+            context_text="",
+            sources=[],
+            confidence="baja",
+            warnings=warnings
+            + [
+                "LLM/RAG no disponible: falta configurar OPENAI_API_KEY (entorno no configurado).",
+                "Acción: configurar OPENAI_API_KEY en el proceso que ejecuta la app (Streamlit/FastAPI/Docker).",
+            ],
+            hallucination_risk=True,
+        )
 
-    results = collection.query(
-        query_embeddings=[question_embedding],
-        n_results=top_k,
-        include=["metadatas", "documents", "distances"],  # ✅ Incluir distancias
-    )
+    try:
+        openai_client = OpenAI(api_key=api_key)
+        question_embedding = (
+            openai_client.embeddings.create(
+                model=EMBEDDING_MODEL,
+                input=[question],
+            )
+            .data[0]
+            .embedding
+        )
+    except Exception as e:
+        return RAGInternalResult(
+            status="LLM_UNAVAILABLE",
+            context_text="",
+            sources=[],
+            confidence="baja",
+            warnings=warnings
+            + [
+                f"RAG no disponible: error generando embedding de consulta ({type(e).__name__}).",
+            ],
+            hallucination_risk=True,
+        )
+
+    try:
+        results = collection.query(
+            query_embeddings=[question_embedding],
+            n_results=top_k,
+            include=["metadatas", "documents", "distances"],  # ✅ Incluir distancias
+        )
+    except Exception as e:
+        return RAGInternalResult(
+            status="NO_EMBEDDINGS",
+            context_text="",
+            sources=[],
+            confidence="baja",
+            warnings=warnings + [f"RAG no disponible: error consultando vectorstore ({type(e).__name__})."],
+            hallucination_risk=True,
+        )
 
     docs_found = results.get("documents", [[]])[0]
     metas = results.get("metadatas", [[]])[0]
@@ -390,6 +491,19 @@ def rag_answer_internal(
     hallucination_risk = best_distance > quality_adjusted_hallucination_threshold
     is_weak_response = best_distance > RAG_WEAK_RESPONSE_MAX_DISTANCE
 
+    _dbg_log_retrieve(
+        "H4",
+        "app/rag/case_rag/retrieve.py:rag_answer_internal",
+        "retrieval_distances",
+        {
+            "case_id": str(case_id),
+            "valid_pairs": len(valid_pairs),
+            "best_distance": float(best_distance) if best_distance != float("inf") else None,
+            "hallucination_risk": bool(hallucination_risk),
+            "is_weak_response": bool(is_weak_response),
+        },
+    )
+
     # ✅ Baja calidad documental aumenta riesgo de alucinación
     if quality_score < LEGAL_QUALITY_SCORE_WARNING_THRESHOLD:
         # Si calidad es baja, marcar como riesgo de alucinación incluso con mejor similitud
@@ -466,6 +580,24 @@ def rag_answer_internal(
 
         context_blocks.append(f"[Documento {document_id} | Chunk {chunk_index}]\n{text}")
         sources.append(source)
+
+    # Debug: señales de keyword en el contexto (sin loguear texto)
+    try:
+        ctx = ("\n\n".join(context_blocks) or "").lower()
+        _dbg_log_retrieve(
+            "H5",
+            "app/rag/case_rag/retrieve.py:rag_answer_internal",
+            "context_signals",
+            {
+                "case_id": str(case_id),
+                "context_len": len(ctx),
+                "ctx_has_domicilio": "domicilio" in ctx,
+                "ctx_has_apoder": ("apoder" in ctx) or ("poder" in ctx),
+                "ctx_has_insolv": "insolv" in ctx,
+            },
+        )
+    except Exception:
+        pass
 
     context = "\n\n".join(context_blocks)
 

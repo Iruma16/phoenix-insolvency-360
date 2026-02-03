@@ -40,9 +40,19 @@ class Alert(Base):
     # Relevancia humana: ALTA/MEDIA/BAJA
     relevance: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
 
+    # Score interno (0-100). No es protagonista en UI, pero se exporta/ordena si hace falta.
+    score: Mapped[Optional[int]] = mapped_column(nullable=True, index=True)
+
     title_human: Mapped[str] = mapped_column(Text, nullable=False)
     summary_human: Mapped[str] = mapped_column(Text, nullable=False)
     disclaimer_detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # Checklist + acciones sugeridas (contrato despacho)
+    # Estructura (lista de objetos):
+    # - to_clarify: [{item_text, why_needed, blocking_level}]
+    # - recommended_actions: [{action_text, priority, why}]
+    to_clarify: Mapped[Optional[list[dict]]] = mapped_column(JSON, nullable=True)
+    recommended_actions: Mapped[Optional[list[dict]]] = mapped_column(JSON, nullable=True)
 
     # Fingerprint estable del "hecho" (para merge/regeneración)
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -60,6 +70,10 @@ class Alert(Base):
 
     rules_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     voice_prompt_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    generator_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    dataset_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    generated_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True

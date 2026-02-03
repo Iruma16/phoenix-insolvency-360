@@ -1,7 +1,7 @@
 """create alerts tables
 
 Revision ID: 20260130_2355
-Revises: 20260130_2240_case_submission_templates_bridge
+Revises: 20260130_2240_submission_templates
 Create Date: 2026-01-30 23:55:00
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260130_2355"
-down_revision = "20260130_2240_case_submission_templates_bridge"
+down_revision = "20260130_2240_submission_templates"
 branch_labels = None
 depends_on = None
 

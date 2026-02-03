@@ -167,6 +167,47 @@ def _ensure_max_3_paragraphs(text: str) -> str:
     return "\n\n".join([*head, tail])
 
 
+def _ensure_max_length(text: str, *, max_chars: int = 900) -> str:
+    """
+    Limita longitud del cuerpo para mantener lectura rápida en UI.
+
+    Regla:
+    - Mantener la estructura de párrafos (máx 3) ya normalizada.
+    - Preservar el último párrafo (incluye 'yo revisaría…') en la medida de lo posible.
+    """
+    t = (text or "").strip()
+    if len(t) <= max_chars:
+        return t
+
+    parts = [p.strip() for p in t.split("\n\n") if p.strip()]
+    if not parts:
+        return _shorten(t, max_chars)
+
+    last = parts[-1]
+    head = parts[:-1]
+
+    # Reservar espacio para el cierre (último párrafo) si cabe.
+    reserved = min(len(last) + 2, max_chars)
+    remaining = max_chars - reserved
+
+    if remaining <= 0:
+        # Caso extremo: recortar solo el último, pero conservar “yo revisaría” si está.
+        if "yo revisaría" in last.lower():
+            prefix = "Para tenerlo bien atado, yo revisaría: "
+            return _shorten(prefix + _shorten(last, max(0, max_chars - len(prefix))), max_chars)
+        return _shorten(last, max_chars)
+
+    # Recortar head para que quepa + mantener last completo.
+    if head:
+        head_join = "\n\n".join(head)
+        head_trim = _shorten(head_join, remaining)
+        out = (head_trim + "\n\n" + last).strip()
+        return out if len(out) <= max_chars else _shorten(out, max_chars)
+
+    # Sin head, solo recortar last
+    return _shorten(last, max_chars)
+
+
 def _render_doc_hint(ev: EvidenceRef) -> str:
     fn = (ev.filename or "").strip() or "un documento"
     if ev.page_start is not None:
@@ -226,9 +267,20 @@ def generate_voice(
     summary = _build_summary(payload, tone=tone, to_clarify=to_clarify)
 
     # Guardarraíles
-    title = sanitize_language(title, strict=strict_language)
-    summary = sanitize_language(summary, strict=strict_language)
+    # Hardening: si el input técnico trae fórmulas tipo "se detecta" (o si el template las arrastra),
+    # no queremos tumbar la generación de alertas. En modo estricto, hacemos una reescritura mínima
+    # (no creativa) y revalidamos.
+    try:
+        title = sanitize_language(title, strict=strict_language)
+        summary = sanitize_language(summary, strict=strict_language)
+    except ValueError:
+        title = sanitize_language(title, strict=False)
+        summary = sanitize_language(summary, strict=False)
+        # Revalidar con strict para evitar colar términos prohibidos duros.
+        title = sanitize_language(title, strict=True)
+        summary = sanitize_language(summary, strict=True)
     summary = _ensure_max_3_paragraphs(summary)
+    summary = _ensure_max_length(summary, max_chars=900)
 
     # Disclaimer para “detalle”
     disclaimer = (

@@ -49,3 +49,5 @@ class AlertEvidence(Base):
 
     snippet: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
+    # Señal humana (1 frase) que explica “qué soporta” este snippet (sin conclusiones).
+    signal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

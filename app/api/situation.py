@@ -416,6 +416,37 @@ class SituationListResponse(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class SituationSearchItem(BaseModel):
+    """
+    Resultado normalizado del buscador global del Cuadro de situación.
+    """
+
+    entity: str  # INVOICE|CREDIT|PUBLIC_DEBT|COURT
+    record_id: str
+    logical_id: str
+    label: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    evidence_ref: str = ""
+
+    model_config = {"extra": "forbid"}
+
+
+class SituationSearchGroup(BaseModel):
+    items: list[SituationSearchItem] = Field(default_factory=list)
+    total: int = 0
+
+    model_config = {"extra": "forbid"}
+
+
+class SituationSearchResponse(BaseModel):
+    q: str
+    page: int = 1
+    page_size: int = 20
+    groups: dict[str, SituationSearchGroup] = Field(default_factory=dict)
+
+    model_config = {"extra": "forbid"}
+
+
 class SituationEvidenceItem(BaseModel):
     evidence_id: str
     record_id: str
@@ -1402,6 +1433,254 @@ def _build_evidence_ref_map(
         if ref not in out[rec_id]:
             out[rec_id].append(ref)
     return {k: "; ".join(v[:10]) for k, v in out.items()}
+
+
+@router.get(
+    "/search",
+    response_model=SituationSearchResponse,
+    summary="Buscador global (Cuadro de situación): facturas/créditos/deuda pública/juzgado",
+)
+def search_situation(
+    case_id: str,
+    *,
+    q: str = Query("", description="Texto libre (proveedor, nº factura, acreedor, procedimiento…)", max_length=200),
+    record_types: list[str] = Query(
+        default=[],
+        description="Filtro opcional: invoice|credit|public_debt|court (si vacío, busca en todos)",
+        max_length=30,
+    ),
+    include_history: bool = Query(False, description="Si true, incluye versiones no vigentes"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> SituationSearchResponse:
+    _require_case(db, case_id)
+    qn = (q or "").strip()
+    if not qn:
+        return SituationSearchResponse(q="", page=page, page_size=page_size, groups={})
+
+    allowed = {"invoice", "credit", "public_debt", "court"}
+    wanted = [x.strip().lower() for x in (record_types or []) if x and x.strip()]
+    for w in wanted:
+        if w not in allowed:
+            raise HTTPException(status_code=422, detail=f"record_types inválido: {w}")
+    if not wanted:
+        wanted = sorted(allowed)
+
+    q_like = f"%{qn}%"
+
+    groups: dict[str, SituationSearchGroup] = {}
+
+    # INVOICE
+    if "invoice" in wanted:
+        base = db.query(SituationInvoice).filter(SituationInvoice.case_id == case_id)
+        if not include_history:
+            base = base.filter(SituationInvoice.is_current.is_(True))
+        base = base.filter(
+            or_(
+                SituationInvoice.supplier.ilike(q_like),
+                SituationInvoice.invoice_number.ilike(q_like),
+                SituationInvoice.contract_ref.ilike(q_like),
+                SituationInvoice.supplier_tax_id.ilike(q_like),
+                SituationInvoice.status.ilike(q_like),
+                SituationInvoice.notes.ilike(q_like),
+            )
+        )
+        total = int(base.count())
+        rows = (
+            base.order_by(SituationInvoice.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        ev_ref = _build_evidence_ref_map(db, case_id=case_id, entity="INVOICE", record_ids=[r.record_id for r in rows])
+        items = []
+        for r in rows:
+            inv_no = r.invoice_number or "sin nº"
+            label = f"{r.supplier} | {inv_no} | {r.amount_total:.2f} {r.currency} | {r.status or '—'}"
+            items.append(
+                SituationSearchItem(
+                    entity="INVOICE",
+                    record_id=r.record_id,
+                    logical_id=r.logical_id,
+                    label=label[:500],
+                    evidence_ref=ev_ref.get(r.record_id, ""),
+                    data={
+                        "supplier": r.supplier,
+                        "invoice_number": r.invoice_number,
+                        "issue_date": r.issue_date,
+                        "due_date": r.due_date,
+                        "paid_date": r.paid_date,
+                        "amount_total": r.amount_total,
+                        "currency": r.currency,
+                        "status": r.status,
+                    },
+                )
+            )
+        groups["invoice"] = SituationSearchGroup(items=items, total=total)
+
+    # CREDIT
+    if "credit" in wanted:
+        base = db.query(SituationCredit).filter(SituationCredit.case_id == case_id)
+        if not include_history:
+            base = base.filter(SituationCredit.is_current.is_(True))
+        base = base.filter(
+            or_(
+                SituationCredit.creditor.ilike(q_like),
+                SituationCredit.contract_ref.ilike(q_like),
+                SituationCredit.creditor_tax_id.ilike(q_like),
+                SituationCredit.procedure_ref.ilike(q_like),
+                SituationCredit.notes.ilike(q_like),
+            )
+        )
+        total = int(base.count())
+        rows = (
+            base.order_by(SituationCredit.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        ev_ref = _build_evidence_ref_map(db, case_id=case_id, entity="CREDIT", record_ids=[r.record_id for r in rows])
+        items = []
+        for r in rows:
+            cref = r.contract_ref or "s/ref"
+            label = f"{r.creditor} | {cref} | {r.amount_total:.2f} {r.currency}"
+            items.append(
+                SituationSearchItem(
+                    entity="CREDIT",
+                    record_id=r.record_id,
+                    logical_id=r.logical_id,
+                    label=label[:500],
+                    evidence_ref=ev_ref.get(r.record_id, ""),
+                    data={
+                        "creditor": r.creditor,
+                        "contract_ref": r.contract_ref,
+                        "amount_total": r.amount_total,
+                        "currency": r.currency,
+                        "maturity_date": r.maturity_date,
+                        "default_date": r.default_date,
+                        "secured": bool(r.secured),
+                    },
+                )
+            )
+        groups["credit"] = SituationSearchGroup(items=items, total=total)
+
+    # PUBLIC_DEBT
+    if "public_debt" in wanted:
+        base = db.query(SituationPublicDebt).filter(SituationPublicDebt.case_id == case_id)
+        if not include_history:
+            base = base.filter(SituationPublicDebt.is_current.is_(True))
+        base = base.filter(
+            or_(
+                SituationPublicDebt.authority.ilike(q_like),
+                SituationPublicDebt.concept.ilike(q_like),
+                SituationPublicDebt.concept_code.ilike(q_like),
+                SituationPublicDebt.taxpayer_name.ilike(q_like),
+                SituationPublicDebt.taxpayer_tax_id.ilike(q_like),
+                SituationPublicDebt.period_key.ilike(q_like),
+                SituationPublicDebt.period_start.ilike(q_like),
+                SituationPublicDebt.period_end.ilike(q_like),
+                SituationPublicDebt.expediente_aplazamiento.ilike(q_like),
+                SituationPublicDebt.debt_status.ilike(q_like),
+                SituationPublicDebt.enforcement_stage.ilike(q_like),
+                SituationPublicDebt.notes.ilike(q_like),
+            )
+        )
+        total = int(base.count())
+        rows = (
+            base.order_by(SituationPublicDebt.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        ev_ref = _build_evidence_ref_map(db, case_id=case_id, entity="PUBLIC_DEBT", record_ids=[r.record_id for r in rows])
+        items = []
+        for r in rows:
+            label = f"{r.authority} | {r.concept or 's/concepto'} | {r.amount_total:.2f} {r.currency} | {r.debt_status or r.enforcement_stage or '—'}"
+            items.append(
+                SituationSearchItem(
+                    entity="PUBLIC_DEBT",
+                    record_id=r.record_id,
+                    logical_id=r.logical_id,
+                    label=label[:500],
+                    evidence_ref=ev_ref.get(r.record_id, ""),
+                    data={
+                        "authority": r.authority,
+                        "concept": r.concept,
+                        "concept_code": r.concept_code,
+                        "taxpayer_name": r.taxpayer_name,
+                        "taxpayer_tax_id": r.taxpayer_tax_id,
+                        "period_key": r.period_key,
+                        "period_start": r.period_start,
+                        "period_end": r.period_end,
+                        "expediente_aplazamiento": r.expediente_aplazamiento,
+                        "amount_total": r.amount_total,
+                        "currency": r.currency,
+                        "debt_status": r.debt_status,
+                        "enforcement_stage": r.enforcement_stage,
+                        # Back-compat para UI vieja (cols: reference/status)
+                        "reference": r.expediente_aplazamiento,
+                        "status": r.debt_status,
+                    },
+                )
+            )
+        groups["public_debt"] = SituationSearchGroup(items=items, total=total)
+
+    # COURT
+    if "court" in wanted:
+        base = db.query(SituationCourtRecord).filter(SituationCourtRecord.case_id == case_id)
+        if not include_history:
+            base = base.filter(SituationCourtRecord.is_current.is_(True))
+        base = base.filter(
+            or_(
+                SituationCourtRecord.court.ilike(q_like),
+                SituationCourtRecord.procedure_number.ilike(q_like),
+                SituationCourtRecord.autos_ref.ilike(q_like),
+                SituationCourtRecord.claimant.ilike(q_like),
+                SituationCourtRecord.party_counterparty_name.ilike(q_like),
+                SituationCourtRecord.party_counterparty_tax_id.ilike(q_like),
+                SituationCourtRecord.status.ilike(q_like),
+                SituationCourtRecord.stage.ilike(q_like),
+                SituationCourtRecord.notes.ilike(q_like),
+            )
+        )
+        total = int(base.count())
+        rows = (
+            base.order_by(SituationCourtRecord.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        ev_ref = _build_evidence_ref_map(db, case_id=case_id, entity="COURT", record_ids=[r.record_id for r in rows])
+        items = []
+        for r in rows:
+            proc = r.procedure_number or "s/ref"
+            court = r.court or "Juzgado"
+            amt = f"{float(r.amount_claimed or 0.0):.2f} {r.currency or 'EUR'}" if r.amount_claimed else "s/imp"
+            label = f"{court} | {proc} | {amt} | {r.stage or r.status or '—'}"
+            items.append(
+                SituationSearchItem(
+                    entity="COURT",
+                    record_id=r.record_id,
+                    logical_id=r.logical_id,
+                    label=label[:500],
+                    evidence_ref=ev_ref.get(r.record_id, ""),
+                    data={
+                        "court": r.court,
+                        "procedure_number": r.procedure_number,
+                        "autos_ref": r.autos_ref,
+                        "claimant": r.claimant,
+                        "party_counterparty_name": r.party_counterparty_name,
+                        "amount_claimed": r.amount_claimed,
+                        "currency": r.currency,
+                        "status": r.status,
+                        "stage": r.stage,
+                    },
+                )
+            )
+        groups["court"] = SituationSearchGroup(items=items, total=total)
+
+    return SituationSearchResponse(q=qn, page=page, page_size=page_size, groups=groups)
 
 
 @router.get("/export.xlsx", summary="Exportar Cuadro de situación (Excel, 5 pestañas)")

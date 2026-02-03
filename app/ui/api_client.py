@@ -10,6 +10,8 @@ Incluye:
 - Timeouts explícitos
 """
 from typing import Any, Optional
+import json
+import time
 
 import requests
 from pydantic import ValidationError
@@ -66,6 +68,78 @@ class PhoenixLegalClient:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         # NO forzar Content-Type globalmente - requests lo establece automáticamente según el tipo de petición
+        # #region agent log
+        # NDJSON runtime logs for UI->API debugging (temporary)
+        # #endregion
+        self._dbg_run_id = f"ui-debug-{int(time.time())}"
+
+        # Hook global: loggea TODAS las requests (incluye otras pestañas).
+        _orig_request = self.session.request
+
+        def _wrapped_request(method: str, url: str, **kwargs):  # type: ignore[no-untyped-def]
+            try:
+                # Evitar volcar payloads grandes o binarios (uploads)
+                safe_keys = {"params", "timeout", "headers", "json"}
+                safe_kwargs = {k: v for k, v in kwargs.items() if k in safe_keys}
+                if "files" in kwargs:
+                    safe_kwargs["files"] = "omitted"
+                if "data" in kwargs:
+                    safe_kwargs["data"] = "omitted"
+                self._dbg(
+                    "api_client.py:Session.request",
+                    "REQUEST",
+                    {"method": method, "url": url, "kwargs": safe_kwargs},
+                )
+            except Exception:
+                pass
+
+            try:
+                resp = _orig_request(method, url, **kwargs)
+            except Exception as e:
+                try:
+                    self._dbg(
+                        "api_client.py:Session.request",
+                        "EXCEPTION",
+                        {"method": method, "url": url, "error_type": type(e).__name__, "error": str(e)[:400]},
+                    )
+                except Exception:
+                    pass
+                raise
+
+            try:
+                body_head = ""
+                ct = (resp.headers.get("content-type") or "").lower()
+                if "application/json" in ct or "text/" in ct:
+                    body_head = (resp.text or "")[:400]
+                self._dbg(
+                    "api_client.py:Session.request",
+                    "RESPONSE",
+                    {"status_code": resp.status_code, "url": url, "content_type": ct, "body_head": body_head},
+                )
+            except Exception:
+                pass
+            return resp
+
+        self.session.request = _wrapped_request  # type: ignore[assignment]
+
+    def _dbg(self, location: str, message: str, data: dict[str, Any]) -> None:
+        try:
+            payload = {
+                "sessionId": "debug-session",
+                "runId": self._dbg_run_id,
+                "location": location,
+                "message": message,
+                "data": data,
+                "timestamp": int(time.time() * 1000),
+            }
+            with open(
+                "/Users/irumabragado/Documents/procesos/202512_phoenix-legal/.cursor/debug.log",
+                "a",
+                encoding="utf-8",
+            ) as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            return
 
     # =========================================
     # HEALTH CHECK
@@ -400,6 +474,28 @@ class PhoenixLegalClient:
             f"{self.base_url}/api/cases/{case_id}/situation/invoices",
             params=params,
         )
+        response.raise_for_status()
+        return response.json()
+
+    def search_situation(
+        self,
+        case_id: str,
+        *,
+        q: str,
+        record_types: Optional[list[str]] = None,
+        include_history: bool = False,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "q": q,
+            "include_history": bool(include_history),
+            "page": int(page),
+            "page_size": int(page_size),
+        }
+        if record_types:
+            params["record_types"] = record_types
+        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/search", params=params)
         response.raise_for_status()
         return response.json()
 
@@ -788,6 +884,56 @@ class PhoenixLegalClient:
         return response.json()
 
     # =========================================
+    # COURT PACK — Snapshot DB→FS para Juzgado
+    # =========================================
+
+    def snapshot_court_case_profile(self, case_id: str) -> dict[str, Any]:
+        response = self.session.post(f"{self.base_url}/api/cases/{case_id}/court-pack/case-profile/snapshot")
+        response.raise_for_status()
+        return response.json()
+
+    def court_pack_file_url(self, case_id: str, rel_path: str) -> str:
+        # Caller can embed this in an iframe/object.
+        from urllib.parse import quote
+
+        return f"{self.base_url}/api/cases/{case_id}/court-pack/files?rel_path={quote(rel_path)}"
+
+    # =========================================
+    # RAG (case-only)
+    # =========================================
+
+    def rag_ask(self, case_id: str, question: str, *, top_k: int = 10) -> dict[str, Any]:
+        payload = {"case_id": case_id, "question": question, "top_k": int(top_k)}
+        response = self.session.post(f"{self.base_url}/rag/ask", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        # region agent log (debug-mode)
+        try:
+            _path = "/Users/irumabragado/Documents/procesos/202512_phoenix-legal/.cursor/debug.log"
+            payload_log = {
+                "sessionId": "debug-session",
+                "runId": "ui-debug-1770041702",
+                "hypothesisId": "H_UI_RAG",
+                "location": "app/ui/api_client.py:rag_ask",
+                "message": "rag_response_summary",
+                "data": {
+                    "case_id": str(case_id),
+                    "top_k": int(top_k),
+                    "response_type": str(data.get("response_type") or ""),
+                    "confidence": str(data.get("confidence") or ""),
+                    "num_sources": len(data.get("sources") or []),
+                    "answer_len": len(str(data.get("answer") or "")),
+                },
+                "timestamp": int(__import__("time").time() * 1000),
+            }
+            with open(_path, "a", encoding="utf-8") as f:
+                f.write(__import__("json").dumps(payload_log, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # endregion agent log (debug-mode)
+        return data
+
+    # =========================================
     # CUADRO DE SITUACIÓN — Link targets (enlazar evidencia)
     # =========================================
 
@@ -925,6 +1071,146 @@ class PhoenixLegalClient:
         response = self.session.patch(
             f"{self.base_url}/api/cases/{case_id}/alerts-voice/{card_id}",
             json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    # =========================================
+    # ALERTAS — Despacho (persistidas en BD) — FASE 4/5
+    # =========================================
+
+    def list_case_alerts_desk(self, case_id: str) -> list[dict[str, Any]]:
+        """
+        Lista alertas de despacho persistidas para un caso.
+
+        Endpoint:
+            GET /api/cases/{case_id}/alerts
+        """
+        url = f"{self.base_url}/api/cases/{case_id}/alerts"
+        self._dbg("api_client.py:list_case_alerts_desk", "REQUEST", {"method": "GET", "url": url, "case_id": case_id})
+        response = self.session.get(url)
+        self._dbg(
+            "api_client.py:list_case_alerts_desk",
+            "RESPONSE",
+            {"status_code": response.status_code, "body_head": (response.text or "")[:300]},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def generate_case_alerts_desk(self, case_id: str) -> dict[str, Any]:
+        """
+        Genera/regenera alertas de despacho persistidas para un caso.
+
+        Endpoint:
+            POST /api/cases/{case_id}/alerts/generate
+        """
+        url = f"{self.base_url}/api/cases/{case_id}/alerts/generate"
+        self._dbg(
+            "api_client.py:generate_case_alerts_desk",
+            "REQUEST",
+            {"method": "POST", "url": url, "case_id": case_id},
+        )
+        response = self.session.post(url)
+        self._dbg(
+            "api_client.py:generate_case_alerts_desk",
+            "RESPONSE",
+            {"status_code": response.status_code, "body_head": (response.text or "")[:300]},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_alert_detail_desk(self, alert_id: str) -> dict[str, Any]:
+        """
+        Obtiene detalle completo de una alerta de despacho persistida.
+
+        Endpoint:
+            GET /api/alerts/{alert_id}
+        """
+        url = f"{self.base_url}/api/alerts/{alert_id}"
+        self._dbg("api_client.py:get_alert_detail_desk", "REQUEST", {"method": "GET", "url": url, "alert_id": alert_id})
+        response = self.session.get(url)
+        self._dbg(
+            "api_client.py:get_alert_detail_desk",
+            "RESPONSE",
+            {"status_code": response.status_code, "body_head": (response.text or "")[:300]},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_alert_desk(self, alert_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """
+        Actualiza estado editorial de una alerta de despacho.
+
+        Endpoint:
+            PATCH /api/alerts/{alert_id}
+        """
+        url = f"{self.base_url}/api/alerts/{alert_id}"
+        self._dbg(
+            "api_client.py:update_alert_desk",
+            "REQUEST",
+            {"method": "PATCH", "url": url, "alert_id": alert_id, "payload": payload},
+        )
+        response = self.session.patch(url, json=payload)
+        self._dbg(
+            "api_client.py:update_alert_desk",
+            "RESPONSE",
+            {"status_code": response.status_code, "body_head": (response.text or "")[:300]},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_document_integrity(self, case_id: str, document_id: str) -> dict[str, Any]:
+        """
+        Devuelve metadatos de integridad (incluye storage_path) para permitir
+        abrir el archivo desde UI local (best-effort).
+
+        Endpoint:
+            GET /api/cases/{case_id}/documents/{document_id}/integrity
+        """
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/documents/{document_id}/integrity"
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def download_document_url(
+        self,
+        case_id: str,
+        document_id: str,
+        *,
+        disposition: str = "attachment",
+    ) -> str:
+        """
+        URL de descarga del documento original (custodia).
+        """
+        disp = (disposition or "attachment").strip().lower()
+        if disp not in ("attachment", "inline"):
+            disp = "attachment"
+        return f"{self.base_url}/api/cases/{case_id}/documents/{document_id}/download?disposition={disp}"
+
+    def download_document_original_bytes(self, case_id: str, document_id: str) -> bytes:
+        """
+        Descarga el documento original (bytes) desde la API.
+        """
+        url = self.download_document_url(case_id, document_id, disposition="attachment")
+        response = self.session.get(url)
+        response.raise_for_status()
+        return response.content
+
+    def export_alerts_desk_validated(self, case_id: str) -> dict[str, Any]:
+        """
+        Exporta a informe (solo alertas validadas) y devuelve URL de descarga.
+
+        Endpoint:
+            GET /api/cases/{case_id}/alerts/export
+        """
+        url = f"{self.base_url}/api/cases/{case_id}/alerts/export"
+        self._dbg("api_client.py:export_alerts_desk_validated", "REQUEST", {"method": "GET", "url": url, "case_id": case_id})
+        response = self.session.get(url)
+        self._dbg(
+            "api_client.py:export_alerts_desk_validated",
+            "RESPONSE",
+            {"status_code": response.status_code, "body_head": (response.text or "")[:300]},
         )
         response.raise_for_status()
         return response.json()
@@ -1166,6 +1452,14 @@ class PhoenixLegalClient:
 
     def validate_economic_report_client_export(self, case_id: str) -> dict[str, Any]:
         response = self.session.post(f"{self.base_url}/api/cases/{case_id}/economic-report/validate")
+        response.raise_for_status()
+        return response.json()
+
+    def save_economic_report_signature(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/economic-report/signature",
+            json=payload,
+        )
         response.raise_for_status()
         return response.json()
 

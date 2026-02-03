@@ -5,7 +5,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from app.core.config import settings
 from app.core.database import get_engine
@@ -33,8 +33,8 @@ def main():
         raise RuntimeError(f"No se encuentra alembic.ini en {alembic_ini}")
 
     cfg = Config(str(alembic_ini))
-    # Redundante con migrations/env.py, pero deja claro el origen.
-    cfg.set_main_option("sqlalchemy.url", settings.database_url)
+    # CRÍTICO: usar el mismo URL que el engine ya normalizó (evita dos ficheros sqlite distintos).
+    cfg.set_main_option("sqlalchemy.url", str(engine.url))
 
     # Mapeo mínimo: tabla ya existe => revisión mínima que la define.
     table_to_revision = {
@@ -80,6 +80,30 @@ def main():
             raise
 
     _upgrade_head_with_bootstrap()
+
+    # Fallback hardening (SQLite dev):
+    # If for any reason Alembic didn't create new tables (common with relative sqlite paths / CWD issues),
+    # ensure alerts tables exist so the UI doesn't 500.
+    if not settings.uses_postgres:
+        with engine.connect() as conn:
+            tables = set(inspect(conn).get_table_names())
+        if "alerts" not in tables or "alert_evidences" not in tables:
+            # Create from current ORM definitions (includes latest columns).
+            from app.core.database import Base
+            # Import referenced tables to satisfy ForeignKey resolution in create_all().
+            from app.models.case import Case  # noqa: F401
+            from app.models.document import Document  # noqa: F401
+            from app.models.alert import Alert  # noqa: F401
+            from app.models.alert_evidence import AlertEvidence  # noqa: F401
+
+            Base.metadata.create_all(engine, tables=[Alert.__table__, AlertEvidence.__table__])  # type: ignore[attr-defined]
+
+            # Stamp to head so we don't keep retrying upgrades in dev.
+            try:
+                command.stamp(cfg, "head")
+            except Exception:
+                # Best-effort; keep going.
+                pass
 
     # Mostrar tablas reales en DB (no metadata).
     with engine.connect() as conn:

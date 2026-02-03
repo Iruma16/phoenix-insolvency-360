@@ -19,14 +19,17 @@ import os
 import re
 import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.exceptions import DocumentValidationError
 from app.core.logger import logger
+from app.core.config import settings
 from app.core.variables import EMBEDDING_MODEL
 from app.models.case import Case
 from app.models.document import (
@@ -424,6 +427,7 @@ def _build_document_summary(document: Document, db: Session) -> DocumentSummary:
 )
 async def ingest_documents(
     case_id: str,
+    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     force_upload: bool = Query(
         False,
@@ -462,6 +466,7 @@ async def ingest_documents(
         )
 
     results: list[DocumentSummary] = []
+    case_mutated = False
 
     for file in files:
         temp_file_path = None
@@ -620,6 +625,7 @@ async def ingest_documents(
                     duplicate_action=None,
                 )
                 db.add(doc)
+                case_mutated = True
                 db.commit()
                 db.refresh(doc)
 
@@ -836,6 +842,7 @@ async def ingest_documents(
                 duplicate_action=duplicate_action,
             )
             db.add(doc)
+            case_mutated = True
             db.flush()  # Asegura que document_id exists antes de chunking
             db.refresh(doc)
 
@@ -980,6 +987,7 @@ async def ingest_documents(
                     duplicate_action=None,
                 )
             db.add(doc)
+            case_mutated = True
             db.commit()
             db.refresh(doc)
 
@@ -1121,6 +1129,18 @@ async def ingest_documents(
         )
     except Exception:
         pass
+
+    # Auto-generar alertas despacho tras ingesta (en background para no bloquear uploads)
+    if case_mutated:
+        try:
+            from app.services.alerts_generator import generate_persisted_alerts_for_case_in_new_session
+
+            background_tasks.add_task(
+                generate_persisted_alerts_for_case_in_new_session, case_id=case_id
+            )
+        except Exception:
+            # No romper la ingesta si falla el hook
+            pass
 
     return results
 
@@ -1589,6 +1609,68 @@ async def simulate_batch_action(
         - safe_to_proceed: bool (false si hay warnings críticos)
         - impact_summary: Resumen humano del impacto
     """
+
+
+@router.get(
+    "/{document_id}/download",
+    summary="Descargar documento original (custodia)",
+    description=(
+        "Devuelve el binario original del documento en custodia. "
+        "Este endpoint permite a la UI abrir el documento con trazabilidad (document_id → binario)."
+    ),
+)
+def download_document_original(
+    case_id: str,
+    document_id: str,
+    disposition: str = Query(
+        "attachment",
+        description="attachment (descarga) o inline (vista en navegador).",
+        max_length=20,
+    ),
+    db: Session = Depends(get_db),
+):
+    # Verificar caso + documento
+    case = db.query(Case).filter(Case.case_id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado")
+
+    document = (
+        db.query(Document)
+        .filter(Document.document_id == document_id, Document.case_id == case_id)
+        .first()
+    )
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Documento '{document_id}' no encontrado en el caso '{case_id}'",
+        )
+
+    if not document.storage_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento sin storage_path")
+
+    p = Path(str(document.storage_path)).resolve()
+    if not p.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archivo no encontrado en disco")
+
+    # Seguridad: el documento debe vivir dentro del storage oficial del caso (default client_id)
+    # Estructura: DATA/<client_id>/cases/<case_id>/documents/original/<document_id>.<ext>
+    case_root = (settings.data_dir / "default" / "cases" / case_id / "documents" / "original").resolve()
+    try:
+        if not p.is_relative_to(case_root):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado")
+    except AttributeError:
+        # Python <3.9 fallback
+        if str(case_root) not in str(p):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado")
+
+    disp = (disposition or "attachment").strip().lower()
+    if disp not in ("attachment", "inline"):
+        raise HTTPException(status_code=422, detail="disposition inválido (attachment|inline)")
+
+    media_type = document.mime_type or None
+    filename = document.filename or p.name
+    headers = {"Content-Disposition": f'{disp}; filename="{filename}"'}
+    return FileResponse(path=str(p), media_type=media_type, headers=headers, filename=filename)
     # Buscar pares
     pairs = (
         db.query(DuplicatePair)

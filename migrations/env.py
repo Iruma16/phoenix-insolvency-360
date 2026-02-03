@@ -37,8 +37,16 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
-# Override sqlalchemy.url from settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Override sqlalchemy.url from settings, but ensure SQLite path is resolved consistently.
+# IMPORTANT: When DATABASE_URL is sqlite:///./..., the relative path depends on current working directory.
+# This can cause Alembic to migrate a different .db than the API is using.
+try:
+    from app.core.database import get_engine
+
+    config.set_main_option("sqlalchemy.url", str(get_engine().url))
+except Exception:
+    # Fallback: keep settings.database_url (best effort, e.g. offline mode)
+    config.set_main_option("sqlalchemy.url", settings.database_url)
 
 
 def _detect_best_stamp_revision(tables: set[str]) -> Optional[str]:

@@ -4,6 +4,11 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+# DB bootstrap (SQLite dev): ensure Alembic schema exists (prevents 500 "no such table")
+from app.core.config import settings
+from app.core.init_db import main as init_db_main
+from app.core.logger import logger
+
 # 👉 IMPORT DEL AGENTE 1 (AUDITOR)
 from app.agents.agent_1_auditor.runner import run_auditor
 
@@ -33,6 +38,7 @@ from app.api.situation import router as situation_router
 from app.api.submissions import router as submissions_router
 from app.api.templates import router as templates_router
 from app.api.case_evidence import router as case_evidence_router
+from app.api.court_pack import router as court_pack_router
 from app.api.alerts_voice import router as alerts_voice_router
 from app.api.alerts import router_alerts as alerts_router, router_cases as case_alerts_router
 from app.api.timeline import router as timeline_router  # ✅ NUEVO: Timeline paginado
@@ -49,6 +55,26 @@ from app.rag.case_rag.rag import router as rag_router
 # =========================================================
 
 app = FastAPI(title="Phoenix Insolvency")
+
+
+@app.on_event("startup")
+def _startup_auto_migrate_sqlite() -> None:
+    """
+    Blindaje dev: en SQLite local, asegurar que la BD tiene el esquema Alembic (tablas como `alerts`).
+    En PostgreSQL (prod), no auto-migramos aquí.
+    """
+    if settings.uses_postgres:
+        return
+    try:
+        init_db_main()
+    except Exception as e:
+        logger.error(
+            "DB init/migration failed on startup",
+            action="startup_db_init_failed",
+            error=e,
+        )
+        # Fail fast: mejor que servir 500s en runtime
+        raise
 
 
 # Endpoint raíz
@@ -96,6 +122,7 @@ app.include_router(situation_router, prefix="/api")
 app.include_router(submissions_router, prefix="/api")
 app.include_router(templates_router, prefix="/api")
 app.include_router(case_evidence_router, prefix="/api")
+app.include_router(court_pack_router, prefix="/api")
 app.include_router(alerts_voice_router, prefix="/api")
 app.include_router(case_alerts_router, prefix="/api")
 app.include_router(alerts_router, prefix="/api")

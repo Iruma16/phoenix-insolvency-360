@@ -31,7 +31,7 @@ from app.core.config import settings
 from app.core.auth import User, get_current_user
 from app.core.database import get_db
 from app.models.case import Case
-from app.models.economic_report import EconomicReportBundle
+from app.models.economic_report import EconomicReportBundle, LawyerSignature
 from app.reports.pdf.economic_pdf import generate_economic_report_pdf
 from app.legal.checker.narrative_checker import check_narrative
 from app.legal.checker.export_checker import check_export
@@ -91,6 +91,18 @@ class ClientReportState(BaseModel):
     debt_overrides: list[dict] = Field(default_factory=list)
     timeline_overrides: list[dict] = Field(default_factory=list)
     history: list[ClientHistoryEvent] = Field(default_factory=list)
+    # Firma del abogado para export cliente (override sobre settings)
+    lawyer_signature: Optional[dict] = None
+
+
+class SaveSignatureRequest(BaseModel):
+    lawyer_name: str = Field(..., min_length=2, max_length=200)
+    collegiate_number: str = Field(..., min_length=1, max_length=80)
+    bar_association: Optional[str] = Field(None, max_length=200)
+    law_firm: str = Field(..., min_length=2, max_length=200)
+    office_city: Optional[str] = Field(None, max_length=120)
+    signature_date: str = Field(..., min_length=8, max_length=32)  # YYYY-MM-DD
+    edited_by: str = Field("abogado", max_length=120)
 
 
 class SaveAddendumRequest(BaseModel):
@@ -488,6 +500,7 @@ def get_economic_report_status(
         "overrides_version": state.overrides_version,
         "history": [h.model_dump() for h in state.history[-30:]],
         "client_pdf_ready": _client_validated_pdf_path(case_id).exists() and mode == "PUBLICABLE",
+        "lawyer_signature": state.lawyer_signature,
     }
 
 
@@ -822,6 +835,41 @@ def save_economic_report_addendum(
 
 
 @router.post(
+    "/economic-report/signature",
+    summary="Guardar firma del abogado (obligatoria para export cliente)",
+)
+def save_economic_report_signature(
+    case_id: str,
+    payload: SaveSignatureRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    _ = request
+    _ = db
+    _ = current_user
+
+    state = _load_client_state(case_id)
+    sig = LawyerSignature(
+        lawyer_name=payload.lawyer_name.strip(),
+        collegiate_number=payload.collegiate_number.strip(),
+        bar_association=(payload.bar_association.strip() if payload.bar_association else None),
+        law_firm=payload.law_firm.strip(),
+        office_city=(payload.office_city.strip() if payload.office_city else None),
+        signature_date=payload.signature_date.strip(),
+    )
+    state.lawyer_signature = sig.model_dump()
+    _mark_client_dirty(
+        state,
+        actor=payload.edited_by or str(getattr(current_user, "email", None) or "abogado"),
+        action="signature_save",
+        detail="Firma guardada (borrador marcado como pendiente de validación).",
+    )
+    _save_client_state(case_id, state)
+    return {"status": "ok", "mode": _compute_client_mode(state), "lawyer_signature": state.lawyer_signature}
+
+
+@router.post(
     "/economic-report/validate",
     summary="Validar exportación a cliente (checker) y preparar PDF validado",
 )
@@ -856,6 +904,12 @@ def validate_economic_report_client_export(
     _sanitize_bundle_for_client(bundle)
 
     state = _load_client_state(case_id)
+    # Aplicar firma del abogado desde estado (si existe) para permitir validar/exportar sin depender de settings.
+    try:
+        if getattr(state, "lawyer_signature", None):
+            bundle.lawyer_signature = LawyerSignature.model_validate(state.lawyer_signature)
+    except Exception:
+        pass
     _apply_structured_overrides(bundle, state)
 
     # Nota: el checker no conoce “adenda” como campo; para validación la colocamos en narrative_md

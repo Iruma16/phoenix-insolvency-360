@@ -11,6 +11,7 @@ ResponseType = Literal[
     "RESPUESTA_CON_EVIDENCIA",
     "EVIDENCIA_INSUFICIENTE",
     "INFORMACION_PARCIAL_NO_CONCLUYENTE",
+    "SISTEMA_NO_DISPONIBLE",
 ]
 
 
@@ -33,6 +34,38 @@ def get_insufficient_evidence_message(motivo: str) -> str:
         f"- Aportar documentación adicional relevante para la consulta.\n"
         f"- Reformular la pregunta con mayor especificidad.\n"
         f"- Consultar manualmente los documentos si existe sospecha de que la información está presente."
+    )
+
+
+def get_no_relevant_context_message() -> str:
+    """
+    Mensaje estándar cuando el retrieval NO trae contexto relevante suficiente (evidencia REAL insuficiente).
+
+    Trigger típico: NO_RELEVANT_CONTEXT (o equivalentes funcionales).
+    """
+    return (
+        "No se ha localizado evidencia suficiente en la documentación aportada para responder a esta consulta de forma fundamentada.\n"
+        "Motivo: no se han recuperado fragmentos relevantes suficientes para sustentar una respuesta.\n"
+        "Se recomienda:\n"
+        "- Aportar documentación adicional directamente relacionada con la consulta (si existe).\n"
+        "- Precisar fechas, importes, partes intervinientes o el documento concreto que se pretende localizar.\n"
+        "- Verificar manualmente los documentos si se sospecha que la información está presente."
+    )
+
+
+def get_technical_unavailable_message(motivo: str) -> str:
+    """
+    Mensaje estándar cuando la limitación es TÉCNICA (RAG/LLM no disponible).
+    No culpa a la documentación del usuario.
+    """
+    return (
+        "No es posible generar una respuesta asistida en este momento por una limitación técnica del sistema.\n\n"
+        f"Motivo técnico: {motivo}\n\n"
+        "Acciones recomendadas (técnicas):\n"
+        "- Verificar que OPENAI_API_KEY está configurada en el entorno donde se ejecuta la aplicación.\n"
+        "- Verificar que existe una versión ACTIVE/READY del vectorstore para este caso.\n"
+        "- Reejecutar ingesta + generación de embeddings si el vectorstore está vacío.\n"
+        "- Revisar logs del backend para ver el error real (no es un problema de documentación aportada)."
     )
 
 

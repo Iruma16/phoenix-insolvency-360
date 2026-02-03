@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "version": "v1_20200521_pj",
+    "template_pdf": "20200521 Procedimientos concursales - Formulario para la solicitud de concurso voluntario pers. jur..pdf",
+    "note": "Mapa efectivo (mínimo) para rellenar el PDF oficial PJ 20200521. Si algún campo no coincide visualmente, ajustar pdf_field (Text*/Button*)."
+  },
+  "sections": [
+    {
+      "section_id": "A_DEUDOR",
+      "title": "A) Datos del deudor",
+      "fields": [
+        {"field_id": "debtor.name", "label": "Denominación social", "type": "text", "pdf_field": "Text2", "default": ""},
+        {"field_id": "debtor.tax_id", "label": "CIF", "type": "text", "pdf_field": "Text3", "default": ""},
+        {"field_id": "debtor.register_data", "label": "Datos registrales", "type": "text", "pdf_field": "Text4", "default": ""},
+        {"field_id": "debtor.object_activity", "label": "Objeto / actividad principal", "type": "text", "pdf_field": "Text6", "default": ""},
+        {"field_id": "debtor.address", "label": "Domicilio social", "type": "text", "pdf_field": "Text8", "default": ""},
+        {"field_id": "debtor.main_interests_center", "label": "Centro de intereses principales (si difiere)", "type": "text", "pdf_field": "Text9", "default": ""}
+      ]
+    },
+    {
+      "section_id": "C_INSOLVENCIA",
+      "title": "C) Insolvencia (resumen)",
+      "fields": [
+        {"field_id": "insolvency.facts", "label": "Hechos que derivan la insolvencia", "type": "text", "pdf_field": "Text10", "default": ""},
+        {"field_id": "workers.count", "label": "Nº trabajadores", "type": "text", "pdf_field": "Text11", "default": ""},
+        {"field_id": "totals.asset_value", "label": "Valoración activo (EUR)", "type": "text", "pdf_field": "Text12", "default": ""},
+        {"field_id": "totals.cash", "label": "Tesorería (EUR)", "type": "text", "pdf_field": "Text13", "default": ""},
+        {"field_id": "totals.passive_amount", "label": "Cuantía pasivo (EUR)", "type": "text", "pdf_field": "Text14", "default": ""},
+        {"field_id": "totals.creditors_count", "label": "Nº acreedores", "type": "text", "pdf_field": "Text15", "default": ""}
+      ]
+    },
+    {
+      "section_id": "G_OBSERVACIONES",
+      "title": "G) Observaciones",
+      "fields": [
+        {"field_id": "observations", "label": "Observaciones", "type": "text", "pdf_field": "Text25", "default": ""}
+      ]
+    },
+    {
+      "section_id": "F_DOCS",
+      "title": "F) Documentación que acompaña",
+      "fields": [
+        {"field_id": "doc1_poder_especial", "label": "Poder especial", "type": "checkbox", "pdf_field": "Button8", "checkbox": true, "default": false},
+        {"field_id": "doc2_memoria_economica_y_juridica", "label": "Memoria económica y jurídica", "type": "checkbox", "pdf_field": "Button9", "checkbox": true, "default": false},
+        {"field_id": "doc3_inventario_bienes_y_derechos", "label": "Inventario bienes y derechos", "type": "checkbox", "pdf_field": "Button10", "checkbox": true, "default": false},
+        {"field_id": "doc4_relacion_de_acreedores", "label": "Relación de acreedores", "type": "checkbox", "pdf_field": "Button11", "checkbox": true, "default": false},
+        {"field_id": "doc5_plantilla_de_trabajadores", "label": "Plantilla de trabajadores", "type": "checkbox", "pdf_field": "Button12", "checkbox": true, "default": false},
+        {"field_id": "doc61_cuentas_anuales_individuales", "label": "Cuentas anuales individuales", "type": "checkbox", "pdf_field": "Button13", "checkbox": true, "default": false},
+        {"field_id": "doc62_cuentas_anuales_consolidadas", "label": "Cuentas anuales consolidadas", "type": "checkbox", "pdf_field": "Button14", "checkbox": true, "default": false},
+        {"field_id": "doc7_estados_financieros", "label": "Estados financieros", "type": "checkbox", "pdf_field": "Button15", "checkbox": true, "default": false},
+        {"field_id": "doc8_balance_de_situacion", "label": "Balance de situación", "type": "checkbox", "pdf_field": "Button16", "checkbox": true, "default": false},
+        {"field_id": "doc9_memoria_cambios_significativos", "label": "Memoria de cambios significativos", "type": "checkbox", "pdf_field": "Button17", "checkbox": true, "default": false},
+        {"field_id": "doc10_memoria_operaciones_extraordinarias", "label": "Memoria de operaciones extraordinarias", "type": "checkbox", "pdf_field": "Button18", "checkbox": true, "default": false},
+        {"field_id": "doc11_propuesta_anticipada_de_convenio", "label": "Propuesta anticipada de convenio", "type": "checkbox", "pdf_field": "Button19", "checkbox": true, "default": false},
+        {"field_id": "doc12_adhesiones", "label": "Adhesiones", "type": "checkbox", "pdf_field": "Button20", "checkbox": true, "default": false},
+        {"field_id": "doc13_plan_de_liquidacion", "label": "Plan de liquidación", "type": "checkbox", "pdf_field": "Button21", "checkbox": true, "default": false}
+      ]
+    }
+  ]
+}
+

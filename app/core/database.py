@@ -42,6 +42,22 @@ def get_engine():
     if _engine is None:
         database_url = settings.database_url
 
+        # Normalizar SQLite relativo a la raíz del repo (evita que uvicorn --reload use CWD distinto
+        # y acabe creando/abriendo OTRO fichero .db sin migraciones → "no such table: alerts").
+        if not settings.uses_postgres and database_url.startswith("sqlite:///"):
+            sqlite_path = database_url[len("sqlite:///") :]
+            if sqlite_path and sqlite_path != ":memory:" and not sqlite_path.startswith("file:"):
+                p = Path(sqlite_path).expanduser()
+                if not p.is_absolute():
+                    repo_root = Path(__file__).resolve().parents[2]
+                    p = (repo_root / p).resolve()
+                    database_url = f"sqlite:///{p}"
+            logger.info(
+                "Resolved SQLite database URL",
+                action="db_sqlite_url_resolved",
+                sqlite_url=database_url,
+            )
+
         logger.info(
             "Initializing database engine",
             action="db_init",

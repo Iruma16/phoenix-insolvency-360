@@ -88,6 +88,50 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
     """
     tpl = db.query(Template).filter(Template.code == TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ).first()
     if tpl:
+        # Migración suave para instalaciones existentes:
+        # En versiones previas, debtor.tax_id y debtor.address se marcaban como MANUAL.
+        # Ahora intentamos resolverlos desde BD (situation_*), manteniendo MANUAL como fallback.
+        try:
+            existing = {
+                m.field_key: m
+                for m in db.query(FieldMapping).filter(FieldMapping.template_id == tpl.template_id).all()
+            }
+            desired: dict[str, tuple[str, dict, str]] = {
+                "debtor.tax_id": (
+                    MappingSourceKind.AGGREGATION.value,
+                    {"kind": "debtor_tax_id_best_effort"},
+                    MappingFallback.MANUAL_REQUIRED.value,
+                ),
+                "debtor.address": (
+                    MappingSourceKind.AGGREGATION.value,
+                    {"kind": "debtor_address_best_effort"},
+                    MappingFallback.MANUAL_REQUIRED.value,
+                ),
+            }
+            changed = False
+            for field_key, (sk, spec, fb) in desired.items():
+                cur = existing.get(field_key)
+                if cur:
+                    if cur.source_kind != sk or (cur.source_spec_json or {}).get("kind") != spec.get("kind") or cur.fallback != fb:
+                        cur.source_kind = sk
+                        cur.source_spec_json = spec
+                        cur.fallback = fb
+                        changed = True
+                else:
+                    db.add(
+                        FieldMapping(
+                            template_id=tpl.template_id,
+                            field_key=field_key,
+                            source_kind=sk,
+                            source_spec_json=spec,
+                            fallback=fb,
+                        )
+                    )
+                    changed = True
+            if changed:
+                db.commit()
+        except Exception:
+            db.rollback()
         return tpl
 
     tpl = Template(
@@ -173,8 +217,13 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
         ),
         # tesorería no existe estructurada en MVP
         ("totals.cash", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
-        # resto manual
-        ("debtor.tax_id", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
+        # Deudor: intentar desde BD (best-effort) y dejar manual como fallback
+        (
+            "debtor.tax_id",
+            MappingSourceKind.AGGREGATION.value,
+            {"kind": "debtor_tax_id_best_effort"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
         (
             "debtor.register_data",
             MappingSourceKind.MANUAL.value,
@@ -187,7 +236,12 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
             {"kind": "manual"},
             MappingFallback.EMPTY.value,
         ),
-        ("debtor.address", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
+        (
+            "debtor.address",
+            MappingSourceKind.AGGREGATION.value,
+            {"kind": "debtor_address_best_effort"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
         ("insolvency.kind", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
         ("insolvency.facts", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
         (
@@ -386,6 +440,77 @@ def _agg_case_name(db: Session, case_id: str) -> Optional[str]:
     return _get_case(db, case_id).name
 
 
+def _first_non_empty(values: list[object]) -> Optional[str]:
+    for v in values:
+        if v is None:
+            continue
+        s = str(v).strip()
+        if not s or s.lower() == "none":
+            continue
+        return s
+    return None
+
+
+def _agg_debtor_tax_id_best_effort(db: Session, case_id: str) -> Optional[str]:
+    """
+    CIF/NIF del deudor desde BD (best-effort).
+    Regla:
+    - Preferir deuda pública (taxpayer_tax_id)
+    - Fallback a facturas (buyer_tax_id)
+    """
+    try:
+        rows = (
+            db.query(SituationPublicDebt.taxpayer_tax_id)
+            .filter(SituationPublicDebt.case_id == case_id, SituationPublicDebt.is_current.is_(True))
+            .order_by(SituationPublicDebt.created_at.desc())
+            .limit(200)
+            .all()
+        )
+        got = _first_non_empty([x[0] for x in rows if x])
+        if got:
+            return got
+    except Exception:
+        pass
+
+    try:
+        rows = (
+            db.query(SituationInvoice.buyer_tax_id)
+            .filter(SituationInvoice.case_id == case_id, SituationInvoice.is_current.is_(True))
+            .order_by(SituationInvoice.created_at.desc())
+            .limit(200)
+            .all()
+        )
+        got = _first_non_empty([x[0] for x in rows if x])
+        if got:
+            return got
+    except Exception:
+        pass
+
+    return None
+
+
+def _agg_debtor_address_best_effort(db: Session, case_id: str) -> Optional[str]:
+    """
+    Domicilio del deudor desde BD (best-effort).
+    Regla:
+    - Facturas (buyer_address)
+    """
+    try:
+        rows = (
+            db.query(SituationInvoice.buyer_address)
+            .filter(SituationInvoice.case_id == case_id, SituationInvoice.is_current.is_(True))
+            .order_by(SituationInvoice.created_at.desc())
+            .limit(200)
+            .all()
+        )
+        got = _first_non_empty([x[0] for x in rows if x])
+        if got:
+            return got
+    except Exception:
+        pass
+    return None
+
+
 def _sum_passive(db: Session, case_id: str) -> float:
     inv = (
         db.query(SituationInvoice.amount_total)
@@ -471,6 +596,19 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
     warnings: list[str] = []
 
     for f in fields:
+        # Regla de oro: si el abogado ya guardó un valor manual para este field_key,
+        # debe prevalecer SIEMPRE sobre cualquier auto-resolución (BD/aggregations/SQL).
+        try:
+            mv = _manual_value(db, case_id, tpl.template_id, f.field_key)
+            if isinstance(mv, dict):
+                inner = mv.get("value", mv.get("text", mv.get("number")))
+                if inner is not None:
+                    if not (isinstance(inner, str) and not inner.strip()):
+                        resolved[f.field_key] = mv
+                        continue
+        except Exception:
+            pass
+
         mapping = mappings.get(f.field_key)
         if not mapping:
             # Sin mapping => regla explícita: manual por defecto.
@@ -501,6 +639,10 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
             try:
                 if kind == "case_name":
                     resolved[f.field_key] = _agg_case_name(db, case_id)
+                elif kind == "debtor_tax_id_best_effort":
+                    resolved[f.field_key] = _agg_debtor_tax_id_best_effort(db, case_id)
+                elif kind == "debtor_address_best_effort":
+                    resolved[f.field_key] = _agg_debtor_address_best_effort(db, case_id)
                 elif kind == "sum_passive":
                     resolved[f.field_key] = _sum_passive(db, case_id)
                 elif kind == "sum_assets_best_valuation":
