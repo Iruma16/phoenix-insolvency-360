@@ -24,7 +24,7 @@ Phoenix Legal es un proyecto de curso para **análisis preliminar** de documenta
 python3 -m venv .venv
 source .venv/bin/activate
 make install-dev
-cp .env.example .env
+cp env.example .env
 ```
 
 ## Ejecutar
@@ -82,6 +82,9 @@ make check
 
 - `clients_data/legal/`: corpus legal versionado.
 - `clients_data/cases/` y vectorstores: datos locales (no se versionan).
+- `clients_data/data/`: datasets locales (NO se versionan). Para generar el dataset sintético de alertas:
+  - `python scripts/datos_sinteticos_alertas.py`
+  - `python scripts/ingest_alerts_dataset.py --base-url http://localhost:8000`
 - `data/sample/`: archivos pequeños para demo (`make demo-data` prepara una copia en `data/demo_ready/`).
 
 ## Troubleshooting (rápido)

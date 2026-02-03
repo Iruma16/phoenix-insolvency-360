@@ -1,6 +1,6 @@
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -68,7 +68,13 @@ def test_situation_search_returns_invoice_group(client_with_db):
         json={
             "created_by": "abogado",
             "reason": "Alta inicial con evidencia suficiente",
-            "evidence": [{"document_id": "doc_search", "page": 1, "note": "Consta en documento aportado (factura)."}],
+            "evidence": [
+                {
+                    "document_id": "doc_search",
+                    "page": 1,
+                    "note": "Consta en documento aportado (factura).",
+                }
+            ],
             "supplier": "AQUALIA SA",
             "invoice_number": "AQ-2026-001",
             "issue_date": "2026-01-10",
@@ -95,4 +101,3 @@ def test_situation_search_returns_invoice_group(client_with_db):
     assert first["entity"] == "INVOICE"
     assert first["data"]["supplier"] == "AQUALIA SA"
     assert first["data"]["invoice_number"] == "AQ-2026-001"
-

@@ -42,4 +42,3 @@ class DocumentSearchResponse(BaseModel):
     total: int = Field(0, ge=0)
 
     model_config = {"extra": "forbid"}
-

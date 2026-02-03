@@ -15,7 +15,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import chromadb
 from openai import OpenAI
 
 from app.core.variables import (
@@ -56,6 +55,10 @@ def _get_openai_client() -> OpenAI:
 def _get_legal_collection(vectorstore_path: Path, collection_name: str = "chunks"):
     """Obtiene o crea una colección de ChromaDB para contenido legal."""
     vectorstore_path.mkdir(parents=True, exist_ok=True)
+
+    # Import lazy para evitar side-effects en import-time.
+    import chromadb  # type: ignore
+
     client = chromadb.PersistentClient(path=str(vectorstore_path))
     collection = client.get_or_create_collection(
         name=collection_name,

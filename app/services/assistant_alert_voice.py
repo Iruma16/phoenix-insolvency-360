@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable, Optional
+from typing import Optional
 
 
 class AlertDomain(str, Enum):
@@ -354,10 +354,7 @@ def _build_summary(payload: VoiceInput, *, tone: dict[str, str], to_clarify: lis
     facts = "; ".join([_shorten(f, 160) for f in (payload.findings or []) if f.strip()])
     facts = facts or "aparece un punto que conviene revisar con más detalle."
 
-    p1 = (
-        f"Revisando la documentación, en {doc_hint} {facts} "
-        f"{tone['body_hint']}"
-    )
+    p1 = f"Revisando la documentación, en {doc_hint} {facts} " f"{tone['body_hint']}"
 
     # Matiz prudente (obligatorio)
     matiz = "Esto no es concluyente por sí solo, pero es de esos puntos que suele pedir una explicación bien documentada."
@@ -370,7 +367,9 @@ def _build_summary(payload: VoiceInput, *, tone: dict[str, str], to_clarify: lis
     if payload.domain == AlertDomain.TGSS:
         attention = "Lo que llama la atención es el encaje por fechas/periodos y la falta de soporte asociado si no está en el expediente."
     elif payload.domain == AlertDomain.BANCO:
-        attention = "Por conceptos y repetición, sería bueno aclarar el soporte de estos movimientos."
+        attention = (
+            "Por conceptos y repetición, sería bueno aclarar el soporte de estos movimientos."
+        )
     elif payload.domain == AlertDomain.CONTABILIDAD:
         attention = "Parece más un tema de gestión/registro, pero conviene cuadrarlo para que no contamine el análisis."
     elif payload.domain == AlertDomain.VINCULADAS:
@@ -493,4 +492,3 @@ def demo_payloads_from_dataset() -> list[VoiceInput]:
             relevance=Relevance.MEDIA,
         ),
     ]
-

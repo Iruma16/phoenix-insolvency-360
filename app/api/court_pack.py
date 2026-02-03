@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,7 +18,6 @@ from app.services.submission_engine import (
     ensure_template_solicitud_concurso_pj,
     resolve_template_fields,
 )
-
 
 router = APIRouter(prefix="/cases/{case_id}/court-pack", tags=["court-pack"])
 
@@ -44,7 +42,9 @@ class CaseProfileSnapshotResponse(BaseModel):
 
 
 @router.post("/case-profile/snapshot", response_model=CaseProfileSnapshotResponse)
-def snapshot_case_profile(case_id: str, db: Session = Depends(get_db)) -> CaseProfileSnapshotResponse:
+def snapshot_case_profile(
+    case_id: str, db: Session = Depends(get_db)
+) -> CaseProfileSnapshotResponse:
     """
     Genera un snapshot determinista desde BD para rellenar la solicitud:
     - Fuente: submission_engine.resolve_template_fields sobre TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ
@@ -55,7 +55,9 @@ def snapshot_case_profile(case_id: str, db: Session = Depends(get_db)) -> CasePr
     # Ensure template catalog exists
     _ = ensure_template_solicitud_concurso_pj(db)
 
-    rr = resolve_template_fields(db, case_id=case_id, template_code=TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ)
+    rr = resolve_template_fields(
+        db, case_id=case_id, template_code=TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ
+    )
 
     case_root = settings.data_dir / "cases" / case_id
     paths = court_pack_service.ensure_court_pack_dirs(case_root)
@@ -85,7 +87,9 @@ def snapshot_case_profile(case_id: str, db: Session = Depends(get_db)) -> CasePr
 @router.get("/files")
 def get_court_pack_file(
     case_id: str,
-    rel_path: str = Query(..., description="Ruta relativa dentro de court_pack/, p.ej. attachments/<id>__file.pdf"),
+    rel_path: str = Query(
+        ..., description="Ruta relativa dentro de court_pack/, p.ej. attachments/<id>__file.pdf"
+    ),
 ) -> FileResponse:
     """
     Servir ficheros del court_pack por HTTP (para previsualización en UI).
@@ -126,4 +130,3 @@ def get_court_pack_file(
     # Inline so iframe/object can render it
     headers = {"Content-Disposition": f'inline; filename="{target.name}"'}
     return FileResponse(path=str(target), media_type=media_type, headers=headers)
-

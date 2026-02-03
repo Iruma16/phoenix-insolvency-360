@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -104,7 +104,10 @@ def export_validated_alerts_to_markdown(*, case_id: str, db: Session) -> AlertsE
 
     # Reordenar por relevancia (ALTA->MEDIA->BAJA) dentro de cada dominio
     for d in by_domain:
-        by_domain[d].sort(key=lambda a: (_relevance_rank(a.relevance), a.updated_at or a.created_at), reverse=False)
+        by_domain[d].sort(
+            key=lambda a: (_relevance_rank(a.relevance), a.updated_at or a.created_at),
+            reverse=False,
+        )
 
     evidence_registry: list[dict[str, Any]] = []
     seen_ev: set[str] = set()
@@ -140,7 +143,7 @@ def export_validated_alerts_to_markdown(*, case_id: str, db: Session) -> AlertsE
 
     # Construir markdown
     lines: list[str] = []
-    lines.append(f"# Informe de alertas validadas (despacho)\n")
+    lines.append("# Informe de alertas validadas (despacho)\n")
     lines.append(f"- **case_id**: `{case_id}`")
     lines.append(f"- **generado_at**: `{now}`")
     lines.append(f"- **incluidas**: {len(rows)} alerta(s) (status revisada/para_informe)\n")
@@ -151,7 +154,9 @@ def export_validated_alerts_to_markdown(*, case_id: str, db: Session) -> AlertsE
         lines.append(f"## {domain}\n")
 
         for a in alerts:
-            changed = " (cambió desde la última revisión)" if bool(a.changed_since_last_review) else ""
+            changed = (
+                " (cambió desde la última revisión)" if bool(a.changed_since_last_review) else ""
+            )
             lines.append(f"### {a.title_human} — {a.relevance} — {a.status}{changed}\n")
             if a.summary_human:
                 lines.append(_md_escape(a.summary_human) + "\n")
@@ -178,7 +183,9 @@ def export_validated_alerts_to_markdown(*, case_id: str, db: Session) -> AlertsE
                             if (ev.page_end is None or ev.page_end == ev.page_start)
                             else f"pág. {ev.page_start}-{ev.page_end}"
                         )
-                    loc = " · ".join([p for p in [pages, (f"chunk {ev.chunk_id}" if ev.chunk_id else "")] if p])
+                    loc = " · ".join(
+                        [p for p in [pages, (f"chunk {ev.chunk_id}" if ev.chunk_id else "")] if p]
+                    )
                     loc = f" ({loc})" if loc else ""
                     lines.append(f"- **{ev.filename}**{loc}")
                     if (ev.snippet or "").strip():
@@ -259,4 +266,3 @@ def export_validated_alerts_to_markdown(*, case_id: str, db: Session) -> AlertsE
         markdown_filename=filename,
         evidence_registry=evidence_registry,
     )
-

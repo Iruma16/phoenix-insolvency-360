@@ -89,4 +89,3 @@ def test_regenerate_preserves_status_and_note_and_sets_changed_flag(db_session, 
     assert row2.lawyer_note == "nota"
     # Señala cambio
     assert bool(row2.changed_since_last_review) is True
-

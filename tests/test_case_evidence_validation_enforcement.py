@@ -1,6 +1,6 @@
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -150,4 +150,3 @@ def test_rejects_record_id_not_in_case(client_with_db):
         },
     )
     assert r.status_code == 422, r.text
-

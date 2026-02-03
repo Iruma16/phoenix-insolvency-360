@@ -420,7 +420,12 @@ def get_settings() -> Settings:
     global _settings
 
     if _settings is None:
-        _settings = Settings()
+        try:
+            _settings = Settings()
+        except (PermissionError, OSError):
+            # Entornos restringidos (sandbox/CI hardened): si `.env` existe pero no es legible,
+            # no debe tumbar el import del sistema. En ese caso seguimos con defaults + env vars.
+            _settings = Settings(_env_file=None)
         # Asegurar compatibilidad con librerías que leen OPENAI_API_KEY de env (OpenAI SDK).
         if _settings.openai_api_key and not os.getenv("OPENAI_API_KEY"):
             os.environ["OPENAI_API_KEY"] = _settings.openai_api_key

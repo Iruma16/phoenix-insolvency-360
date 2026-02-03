@@ -30,7 +30,6 @@ from app.models.case import Case
 from app.services.alerts_exporter import export_validated_alerts_to_markdown
 from app.services.alerts_generator import generate_persisted_alerts_for_case
 
-
 router_cases = APIRouter(prefix="/cases/{case_id}/alerts", tags=["alerts"])
 router_alerts = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -114,11 +113,14 @@ class UpdateAlertRequest(BaseModel):
 
     model_config = {"extra": "forbid"}
 
+
 @router_cases.get("", response_model=list[AlertOut])
 def list_case_alerts(case_id: str, db: Session = Depends(get_db)) -> list[AlertOut]:
     case = db.query(Case).filter(Case.case_id == case_id).first()
     if not case:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
+        )
 
     try:
         rows = (
@@ -158,7 +160,9 @@ def list_case_alerts(case_id: str, db: Session = Depends(get_db)) -> list[AlertO
                 voice_prompt_version=r.voice_prompt_version,
                 generator_version=r.generator_version,
                 dataset_version=r.dataset_version,
-                generated_at=(r.generated_at.isoformat() if getattr(r, "generated_at", None) else None),
+                generated_at=(
+                    r.generated_at.isoformat() if getattr(r, "generated_at", None) else None
+                ),
                 generated_by=r.generated_by,
                 created_at=r.created_at.isoformat(),
                 updated_at=r.updated_at.isoformat(),
@@ -171,7 +175,9 @@ def list_case_alerts(case_id: str, db: Session = Depends(get_db)) -> list[AlertO
 def generate_case_alerts(case_id: str, db: Session = Depends(get_db)) -> GenerateAlertsResponse:
     case = db.query(Case).filter(Case.case_id == case_id).first()
     if not case:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
+        )
     try:
         generated = generate_persisted_alerts_for_case(case_id=case_id, db=db)
         db.commit()
@@ -200,7 +206,9 @@ def export_case_alerts(case_id: str, db: Session = Depends(get_db)) -> ExportAle
     """
     case = db.query(Case).filter(Case.case_id == case_id).first()
     if not case:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
+        )
 
     res = export_validated_alerts_to_markdown(case_id=case_id, db=db)
 
@@ -292,4 +300,3 @@ def update_alert(alert_id: str, payload: UpdateAlertRequest, db: Session = Depen
 
     db.commit()
     return {"status": "ok", "alert_id": alert_id}
-

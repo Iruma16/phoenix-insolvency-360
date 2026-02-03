@@ -25,6 +25,7 @@ def build_llm_answer(
     Returns:
         Respuesta generada por el LLM
     """
+
     # region agent log (debug-mode)
     def _dbg_log_llm(hypothesis_id: str, message: str, data: dict) -> None:
         try:

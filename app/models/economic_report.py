@@ -57,7 +57,9 @@ class EvidenceRef(BaseModel):
 class RoadmapItem(BaseModel):
     phase: str
     step: str
-    actor: Literal["cliente", "abogado", "administracion_concursal", "no_determinable"] = "no_determinable"
+    actor: Literal[
+        "cliente", "abogado", "administracion_concursal", "no_determinable"
+    ] = "no_determinable"
     priority: Literal["INMEDIATA", "ALTA", "MEDIA", "BAJA"] = "MEDIA"
     status: Literal["pendiente", "en_curso", "completado", "no_determinable"] = "pendiente"
     rationale: str
@@ -320,4 +322,3 @@ class EconomicReportBundle(BaseModel):
 
     class Config:
         extra = "forbid"
-

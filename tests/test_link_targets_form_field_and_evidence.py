@@ -1,6 +1,6 @@
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -9,8 +9,8 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models.case import Case
-from app.models.document import Document
 from app.models.case_central import Template, TemplateField
+from app.models.document import Document
 
 
 @pytest.fixture
@@ -112,4 +112,3 @@ def test_case_evidence_accepts_form_field_record_type(client_with_db):
     out = r.json()
     assert out["record_type"] == "form_field"
     assert out["record_id"] == "fld_ff1"
-

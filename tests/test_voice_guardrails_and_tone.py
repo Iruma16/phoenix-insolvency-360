@@ -48,4 +48,3 @@ def test_generate_voice_has_required_tone_and_no_robot_terms(relevance, must_con
 
     # Longitud máxima (ver helper _ensure_max_length)
     assert len(out.summary_human) <= 900
-

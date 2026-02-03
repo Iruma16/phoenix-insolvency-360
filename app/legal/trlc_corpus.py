@@ -21,7 +21,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-
 _ARTICLE_RE = re.compile(r"^Artículo\s+(?P<num>\d+)\.\s*(?P<title>.*)\s*$", re.IGNORECASE)
 
 
@@ -110,7 +109,9 @@ def get_trlc_article(article_number: int, *, max_chars: int = 1200) -> Optional[
     # Construir texto literal del bloque (limpiar líneas vacías múltiples)
     block_lines = [ln.rstrip() for ln in lines[start:end]]
     # recortar encabezados de navegación si por alguna razón entran (defensivo)
-    block_lines = [ln for ln in block_lines if ln.strip() != "" or (block_lines and ln.strip() == "")]
+    block_lines = [
+        ln for ln in block_lines if ln.strip() != "" or (block_lines and ln.strip() == "")
+    ]
 
     text = "\n".join(block_lines).strip()
     if max_chars and len(text) > max_chars:
@@ -119,9 +120,7 @@ def get_trlc_article(article_number: int, *, max_chars: int = 1200) -> Optional[
     return TrlcArticle(number=number, title=title, text=text)
 
 
-def get_trlc_excerpt_for_keywords(
-    keywords: list[str], *, max_chars: int = 1200
-) -> Optional[str]:
+def get_trlc_excerpt_for_keywords(keywords: list[str], *, max_chars: int = 1200) -> Optional[str]:
     """
     Búsqueda simple por palabras clave dentro del corpus (extracto literal alrededor del match).
 
@@ -154,4 +153,3 @@ def get_trlc_excerpt_for_keywords(
     if len(excerpt) > max_chars:
         excerpt = excerpt[: max_chars - 40].rstrip() + "\n…[extracto truncado]"
     return excerpt
-

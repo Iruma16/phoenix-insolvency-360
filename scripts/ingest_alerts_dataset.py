@@ -30,7 +30,7 @@ def _find_repo_root(start: Path) -> Path:
 
 
 REPO_ROOT = _find_repo_root(Path(__file__).resolve())
-DEFAULT_DATASET_DIR = REPO_ROOT / "data" / "synthetic" / "alerts_dataset"
+DEFAULT_DATASET_DIR = REPO_ROOT / "clients_data" / "data" / "synthetic" / "alerts_dataset"
 
 
 def iter_files(root: Path) -> Iterable[Path]:
@@ -75,7 +75,7 @@ def main() -> None:
     ap.add_argument(
         "--dataset-dir",
         default=str(DEFAULT_DATASET_DIR),
-        help="Ruta al dataset (default: data/synthetic/alerts_dataset).",
+        help="Ruta al dataset (default: clients_data/data/synthetic/alerts_dataset).",
     )
     ap.add_argument("--case-id", default="", help="Si se indica, no crea caso, usa este case_id.")
     ap.add_argument(
@@ -116,11 +116,12 @@ def main() -> None:
 
     print("✅ Ingesta completada")
     print("Siguiente:")
-    print(f"  python scripts/validate_ingested_alerts_dataset.py --base-url {base_url} --case-id {case_id}")
+    print(
+        f"  python scripts/validate_ingested_alerts_dataset.py --base-url {base_url} --case-id {case_id}"
+    )
 
 
 if __name__ == "__main__":
     # Evitar que requests use proxies raros en entornos locales
     os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1")
     main()
-

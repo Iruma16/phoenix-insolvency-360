@@ -130,4 +130,3 @@ def test_smoke_generate_and_get_alerts_structure(client_with_db):
     assert "evidences" in detail
     assert isinstance(detail["evidences"], list)
     assert len(detail["evidences"]) >= 1
-

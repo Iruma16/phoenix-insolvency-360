@@ -11,7 +11,6 @@ def test_export_only_includes_validated_statuses(db_session, tmp_path, monkeypat
     case_id = "case_export_1"
 
     # Redirect reports dir to temp
-    from app import services as services_pkg
 
     # monkeypatch module constant
     import app.services.alerts_exporter as exporter
@@ -104,4 +103,3 @@ def test_export_only_includes_validated_statuses(db_session, tmp_path, monkeypat
     # file written
     p = tmp_path / case_id / res.markdown_filename
     assert p.exists()
-

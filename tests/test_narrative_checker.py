@@ -68,6 +68,7 @@ def test_blocks_ia_mentions():
     assert r.status == "FAIL"
     assert r.severity == "BLOCKING"
 
+
 def test_blocks_internal_labels():
     b = _bundle_with_citations()
     r = check_narrative("Alerta: SUSPICIOUS_PATTERN en el expediente.", bundle=b)
@@ -112,7 +113,8 @@ def test_rejects_penal_assertion():
 
 def test_allows_conditional_penal_language_as_soft_or_pass():
     b = _bundle_with_citations()
-    r = check_narrative("Podrían apreciarse indicios de fraude; existe riesgo y debe analizarse.", bundle=b)
+    r = check_narrative(
+        "Podrían apreciarse indicios de fraude; existe riesgo y debe analizarse.", bundle=b
+    )
     assert r.severity in ("SOFT", "BLOCKING", "PASS")  # no debe bloquear por penal assertion
     assert not any(e.type == "PENAL_ASSERTION" for e in r.errors)
-

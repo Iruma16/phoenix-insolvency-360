@@ -104,7 +104,9 @@ def test_alerts_generate_persists_and_patch_updates(client_with_db, monkeypatch)
             disclaimer_detail="Nota: revisión preliminar.",
         )
 
-    monkeypatch.setattr("app.services.alerts_generator.generate_voice_llm", _fake_generate_voice_llm)
+    monkeypatch.setattr(
+        "app.services.alerts_generator.generate_voice_llm", _fake_generate_voice_llm
+    )
 
     r = client.post(f"/api/cases/{case_id}/alerts/generate")
     assert r.status_code == 200, r.text
@@ -195,4 +197,3 @@ def test_documents_ingest_triggers_alerts_background_task(client_with_db, monkey
 
     # En TestClient, BackgroundTasks se ejecuta al finalizar el request
     assert called["ok"] is True
-

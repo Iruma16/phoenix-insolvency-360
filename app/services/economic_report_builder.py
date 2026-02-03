@@ -18,6 +18,7 @@ from typing import Optional
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.analysis_alerts import get_analysis_alerts
+from app.legal.trlc_corpus import get_trlc_article
 from app.models.case import Case
 from app.models.economic_report import (
     ClientSummary,
@@ -33,10 +34,9 @@ from app.models.economic_report import (
     LawyerSignature,
     LegalCitation,
     NarrativeContract,
-    RoadmapItem,
     RisksByInaction,
+    RoadmapItem,
 )
-from app.legal.trlc_corpus import get_trlc_article
 from app.services.financial_analysis import FinancialAnalysisResult
 from app.services.legal_synthesis import synthesize_legal_position
 
@@ -97,7 +97,13 @@ def _sanitize_timeline(financial: FinancialAnalysisResult) -> None:
             d = getattr(ev, "date", None)
             desc = (getattr(ev, "description", None) or "").strip()
             low = desc.lower()
-            if not desc or low == "none" or low.startswith("metadata:") or low.startswith("{") or low.startswith("["):
+            if (
+                not desc
+                or low == "none"
+                or low.startswith("metadata:")
+                or low.startswith("{")
+                or low.startswith("[")
+            ):
                 continue
 
             if d is not None:
@@ -134,10 +140,14 @@ def _build_client_summary(financial: FinancialAnalysisResult, alerts_count: int)
             next_7_days.append("Revisar de inmediato embargos/requerimientos y su calendario.")
         elif contables > 0 and exig > 0:
             situation = "preocupante"
-            next_7_days.append("Preparar relación de acreedores y vencimientos (facturas >90 días).")
+            next_7_days.append(
+                "Preparar relación de acreedores y vencimientos (facturas >90 días)."
+            )
         elif contables > 0:
             situation = "preocupante"
-            next_7_days.append("Completar documentación contable para confirmar diagnóstico (balance/PyG).")
+            next_7_days.append(
+                "Completar documentación contable para confirmar diagnóstico (balance/PyG)."
+            )
 
         if financial.insolvency.critical_missing_docs:
             warnings.append(
@@ -146,11 +156,17 @@ def _build_client_summary(financial: FinancialAnalysisResult, alerts_count: int)
             )
 
     if alerts_count > 0:
-        key_points.append("Se han detectado elementos del expediente que conviene revisar y depurar.")
-        next_7_days.append("Revisar inconsistencias, duplicidades y hechos a verificar en la documentación.")
+        key_points.append(
+            "Se han detectado elementos del expediente que conviene revisar y depurar."
+        )
+        next_7_days.append(
+            "Revisar inconsistencias, duplicidades y hechos a verificar en la documentación."
+        )
 
     if not key_points:
-        key_points.append("No hay datos suficientes para concluir una situación económica con seguridad.")
+        key_points.append(
+            "No hay datos suficientes para concluir una situación económica con seguridad."
+        )
 
     headline = {
         "critica": "Situación económica: requiere actuación inmediata.",
@@ -284,7 +300,6 @@ def _build_lawyer_signature_from_settings() -> Optional[LawyerSignature]:
         office_city=(os.getenv("LAWYER_OFFICE_CITY") or "").strip() or None,
         signature_date=sig_date,
     )
-
 
 
 def _get_legal_citations_bundle(debtor_type: str) -> dict[str, list[LegalCitation]]:
@@ -444,12 +459,18 @@ def _build_risks_by_inaction(
     personal: list[str] = []
 
     if client_summary.situation in ("critica", "preocupante"):
-        legal.append("Riesgo de continuidad de ejecuciones y medidas de apremio si existen procedimientos abiertos.")
+        legal.append(
+            "Riesgo de continuidad de ejecuciones y medidas de apremio si existen procedimientos abiertos."
+        )
         economic.append("Riesgo de aumento de recargos/intereses y deterioro de la tesorería.")
 
     if documents_missing:
-        legal.append("Riesgo de decisiones procesales con expediente incompleto (puede afectar la estrategia).")
-        economic.append("Riesgo de estimaciones erróneas por falta de balances/vencimientos completos.")
+        legal.append(
+            "Riesgo de decisiones procesales con expediente incompleto (puede afectar la estrategia)."
+        )
+        economic.append(
+            "Riesgo de estimaciones erróneas por falta de balances/vencimientos completos."
+        )
 
     if debtor_type == "company":
         personal.append(
@@ -473,7 +494,11 @@ def _build_narrative_contract(
 ) -> NarrativeContract:
     fin = bundle.financial_analysis
     return NarrativeContract(
-        case={"case_id": bundle.case_id, "case_name": bundle.case_name, "debtor_type": bundle.debtor_type},
+        case={
+            "case_id": bundle.case_id,
+            "case_name": bundle.case_name,
+            "debtor_type": bundle.debtor_type,
+        },
         client_summary=bundle.client_summary.model_dump(),
         documents={
             "presented_count": len(bundle.documents_presented or []),
@@ -485,16 +510,32 @@ def _build_narrative_contract(
             "total_debt": fin.total_debt,
             "ratios": [r.model_dump() for r in (fin.ratios or [])][:12],
             "timeline": [e.model_dump() for e in (fin.timeline or [])][:20],
-            "credit_classification": [c.model_dump() for c in (fin.credit_classification or [])][:30],
+            "credit_classification": [c.model_dump() for c in (fin.credit_classification or [])][
+                :30
+            ],
         },
         insolvency_signals=[
-            *( [s.description for s in (fin.insolvency.signals_impago or [])[:6]] if fin.insolvency else [] ),
-            *( [s.description for s in (fin.insolvency.signals_contables or [])[:6]] if fin.insolvency else [] ),
-            *( [s.description for s in (fin.insolvency.signals_exigibilidad or [])[:6]] if fin.insolvency else [] ),
+            *(
+                [s.description for s in (fin.insolvency.signals_impago or [])[:6]]
+                if fin.insolvency
+                else []
+            ),
+            *(
+                [s.description for s in (fin.insolvency.signals_contables or [])[:6]]
+                if fin.insolvency
+                else []
+            ),
+            *(
+                [s.description for s in (fin.insolvency.signals_exigibilidad or [])[:6]]
+                if fin.insolvency
+                else []
+            ),
         ],
         alerts=[
             {
-                "alert_type": (a.alert_type.value if hasattr(a.alert_type, "value") else str(a.alert_type)),
+                "alert_type": (
+                    a.alert_type.value if hasattr(a.alert_type, "value") else str(a.alert_type)
+                ),
                 "description": a.description,
                 "evidence_count": len(a.evidence or []),
             }
@@ -525,7 +566,10 @@ def _creditor_type(creditor_name: str) -> str:
         ]
     ):
         return "public"
-    if any(x in n for x in ["BANK", "BANCO", "CAIXA", "SANTANDER", "BBVA", "SABADELL", "UNICAJA", "ING"]):
+    if any(
+        x in n
+        for x in ["BANK", "BANCO", "CAIXA", "SANTANDER", "BBVA", "SABADELL", "UNICAJA", "ING"]
+    ):
         return "bank"
     if any(x in n for x in ["SOCIO", "ADMINISTRADOR", "FAMILIAR", "PARIENTE", "AMIGO"]):
         return "related_party"
@@ -577,7 +621,14 @@ def _build_debt_legal_applications(
         if ct == "public":
             public.append(c)
         elif ct is None:
-            if _creditor_type((getattr(c, "creditor_name", "") or "") + " " + (getattr(c, "description", "") or "")) == "public":
+            if (
+                _creditor_type(
+                    (getattr(c, "creditor_name", "") or "")
+                    + " "
+                    + (getattr(c, "description", "") or "")
+                )
+                == "public"
+            ):
                 public.append(c)
     others = [c for c in credits if c not in public]
     others_sorted = sorted(others, key=lambda x: float(getattr(x, "amount", 0) or 0), reverse=True)
@@ -601,6 +652,7 @@ def _build_debt_legal_applications(
     }
 
     for i, c in enumerate(selected, 1):
+
         def _infer_creditor_from_evidence(cand: object) -> str:
             """
             Si no consta acreedor, inferir etiqueta prudente desde evidencia/filename sin inventar.
@@ -615,7 +667,11 @@ def _build_debt_legal_applications(
                 m = re.search(r"(crd-\d{4}-\d+)", low)
                 if "contrato" in low and "credito" in low:
                     ref = m.group(1).upper() if m else None
-                    return f"Entidad financiera (contrato {ref})" if ref else "Entidad financiera (contrato de crédito)"
+                    return (
+                        f"Entidad financiera (contrato {ref})"
+                        if ref
+                        else "Entidad financiera (contrato de crédito)"
+                    )
                 # Facturas: proveedor no identificado en el filename -> etiqueta genérica
                 if "factura" in low:
                     return "Proveedor (según factura aportada)"
@@ -630,8 +686,14 @@ def _build_debt_legal_applications(
                 return "Acreedor"
 
         raw_creditor = (getattr(c, "creditor_name", None) or "").strip()
-        creditor = raw_creditor if raw_creditor and raw_creditor.upper() != "ACREEDOR" else _infer_creditor_from_evidence(c)
-        creditor_type = getattr(c, "creditor_type", None) or _creditor_type(creditor + " " + (getattr(c, "description", "") or ""))
+        creditor = (
+            raw_creditor
+            if raw_creditor and raw_creditor.upper() != "ACREEDOR"
+            else _infer_creditor_from_evidence(c)
+        )
+        creditor_type = getattr(c, "creditor_type", None) or _creditor_type(
+            creditor + " " + (getattr(c, "description", "") or "")
+        )
         ct = getattr(c, "credit_type", None)
         ct_val = getattr(ct, "value", None) or str(ct)
         proposed_bucket, conf = bucket_map.get(str(ct_val), ("no_determinable", "low"))
@@ -679,10 +741,15 @@ def _build_debt_legal_applications(
         # Base legal: escoger citas por tópico según tipo
         trlc_articles: list[DebtTrlcArticleRef] = []
         if creditor_type == "public":
-            for cite in (legal_citations.get("clasificacion_creditos", [])[:2] + legal_citations.get("credito_publico", [])[:1]):
+            for cite in (
+                legal_citations.get("clasificacion_creditos", [])[:2]
+                + legal_citations.get("credito_publico", [])[:1]
+            ):
                 trlc_articles.append(
                     DebtTrlcArticleRef(
-                        article_ref=str(getattr(cite, "citation", None) or "").replace("Art.", "art."),
+                        article_ref=str(getattr(cite, "citation", None) or "").replace(
+                            "Art.", "art."
+                        ),
                         topic="crédito público / clasificación",
                         relevance="Aplica al tratamiento concursal del crédito público identificado en el expediente.",
                     )
@@ -691,7 +758,9 @@ def _build_debt_legal_applications(
             for cite in legal_citations.get("pago_creditos_concursales", [])[:2]:
                 trlc_articles.append(
                     DebtTrlcArticleRef(
-                        article_ref=str(getattr(cite, "citation", None) or "").replace("Art.", "art."),
+                        article_ref=str(getattr(cite, "citation", None) or "").replace(
+                            "Art.", "art."
+                        ),
                         topic="pago de créditos concursales",
                         relevance="Aplica al orden de pago de esta deuda conforme al TRLC.",
                     )
@@ -705,21 +774,31 @@ def _build_debt_legal_applications(
             if security_type == "mortgage":
                 security_note = "Consta indicio de garantía hipotecaria (a verificar con documento de garantía)."
             elif security_type == "pledge":
-                security_note = "Consta indicio de garantía prendaria (a verificar con documento de garantía)."
+                security_note = (
+                    "Consta indicio de garantía prendaria (a verificar con documento de garantía)."
+                )
             elif security_type == "reservation_of_title":
                 security_note = "Consta indicio de reserva de dominio (a verificar con contrato)."
             else:
-                security_note = "Consta indicio de garantía real (a verificar con documento de garantía)."
+                security_note = (
+                    "Consta indicio de garantía real (a verificar con documento de garantía)."
+                )
         elif has_security is None:
             desc_scan = ((getattr(c, "description", None) or "") + " " + excerpt_for_scan).lower()
-            if any(k in desc_scan for k in ["hipoteca", "garantía hipotecaria", "garantia hipotecaria"]):
+            if any(
+                k in desc_scan for k in ["hipoteca", "garantía hipotecaria", "garantia hipotecaria"]
+            ):
                 has_security = True
                 security_type = "mortgage"
                 security_note = "Consta indicio de garantía hipotecaria (a verificar con documento de garantía)."
-            elif any(k in desc_scan for k in ["prenda", "garantía prendaria", "garantia prendaria"]):
+            elif any(
+                k in desc_scan for k in ["prenda", "garantía prendaria", "garantia prendaria"]
+            ):
                 has_security = True
                 security_type = "pledge"
-                security_note = "Consta indicio de garantía prendaria (a verificar con documento de garantía)."
+                security_note = (
+                    "Consta indicio de garantía prendaria (a verificar con documento de garantía)."
+                )
             elif any(k in desc_scan for k in ["reserva de dominio", "reserva dominio"]):
                 has_security = True
                 security_type = "reservation_of_title"
@@ -743,14 +822,18 @@ def _build_debt_legal_applications(
                         description="Valorar la inclusión de la deuda en el procedimiento concursal, asumiendo las limitaciones legales aplicables.",
                         prerequisites="Requiere identificación completa de la deuda y su calificación.",
                         legal_basis_refs=[a.article_ref for a in trlc_articles if a.article_ref],
-                        warnings=["Evitar actuaciones no documentadas que puedan afectar el tratamiento de la deuda."],
+                        warnings=[
+                            "Evitar actuaciones no documentadas que puedan afectar el tratamiento de la deuda."
+                        ],
                     ),
                     DebtLegalOption(
                         option_code="seek_deferral",
                         description="Valorar aplazamiento/fraccionamiento conforme a normativa específica (tributaria/Seguridad Social), si procede.",
                         prerequisites="Requiere documentación de deuda (períodos, recargos, sanciones) y requisitos específicos.",
                         legal_basis_refs=[],
-                        warnings=["La solicitud y su calendario deben coordinarse con la estrategia concursal."],
+                        warnings=[
+                            "La solicitud y su calendario deben coordinarse con la estrategia concursal."
+                        ],
                     ),
                 ]
             )
@@ -761,7 +844,9 @@ def _build_debt_legal_applications(
                     description="Incluir la deuda en el concurso y determinar su clasificación (privilegio/ordinario/subordinado) en el informe de la Administración Concursal.",
                     prerequisites="Requiere relación de acreedores e identificación del crédito.",
                     legal_basis_refs=[a.article_ref for a in trlc_articles if a.article_ref],
-                    warnings=["Si existe garantía real no documentada, la clasificación podría variar."],
+                    warnings=[
+                        "Si existe garantía real no documentada, la clasificación podría variar."
+                    ],
                 )
             )
         if creditor_type == "related_party":
@@ -771,7 +856,9 @@ def _build_debt_legal_applications(
                     description="Acreditar la relación con el acreedor (vinculación) y el origen de la deuda (préstamo, aportación, etc.).",
                     prerequisites="Requiere contratos, transferencias y soporte societario.",
                     legal_basis_refs=[],
-                    warnings=["La calificación puede verse afectada si existe vinculación, conforme al TRLC."],
+                    warnings=[
+                        "La calificación puede verse afectada si existe vinculación, conforme al TRLC."
+                    ],
                 )
             )
 
@@ -790,7 +877,10 @@ def _build_debt_legal_applications(
 
         period_start = getattr(c, "period_start", None)
         period_end = getattr(c, "period_end", None)
-        period_note = getattr(c, "period_note", None) or "No consta período exacto en la documentación aportada"
+        period_note = (
+            getattr(c, "period_note", None)
+            or "No consta período exacto en la documentación aportada"
+        )
         classification_basis = (
             f"Clasificación propuesta de forma prudente a partir del expediente (tipo: {ct_val}). "
             "Puede variar si se aporta documentación adicional (garantías, períodos, naturaleza exacta)."
@@ -802,7 +892,9 @@ def _build_debt_legal_applications(
                 "acredita vinculación en los términos del TRLC, a confirmar con documentación."
             )
 
-        amount_conf = getattr(c, "amount_confidence", None) or ("exact" if getattr(c, "amount", None) is not None else "unknown")
+        amount_conf = getattr(c, "amount_confidence", None) or (
+            "exact" if getattr(c, "amount", None) is not None else "unknown"
+        )
         summary_amount = (
             "No consta importe exacto"
             if getattr(c, "amount", None) is None
@@ -828,7 +920,9 @@ def _build_debt_legal_applications(
                 creditor_name=creditor,
                 creditor_type=creditor_type,  # type: ignore[arg-type]
                 source_section="financial",
-                amount_eur=float(getattr(c, "amount", None) or 0) if getattr(c, "amount", None) is not None else None,
+                amount_eur=float(getattr(c, "amount", None) or 0)
+                if getattr(c, "amount", None) is not None
+                else None,
                 amount_confidence=amount_conf,  # type: ignore[arg-type]
                 period_start=period_start,
                 period_end=period_end,
@@ -854,14 +948,23 @@ def _build_debt_legal_applications(
     except Exception:
         tl = []
 
-    enforcement_types = {"embargo", "ejecucion", "ejecución", "apremio", "reclamacion", "reclamación"}
+    enforcement_types = {
+        "embargo",
+        "ejecucion",
+        "ejecución",
+        "apremio",
+        "reclamacion",
+        "reclamación",
+    }
     extra_idx = 1
     for ev in tl:
         try:
             et = (getattr(ev, "event_type", None) or "").strip().lower()
             if et not in enforcement_types:
                 continue
-            desc = (getattr(ev, "description", None) or "").strip() or "Actuación de ejecución/embargo (a contextualizar)"
+            desc = (
+                getattr(ev, "description", None) or ""
+            ).strip() or "Actuación de ejecución/embargo (a contextualizar)"
             d = getattr(ev, "date", None)
             ev_amount = getattr(ev, "amount", None)
             ev_evidence = getattr(ev, "evidence", None)
@@ -882,9 +985,12 @@ def _build_debt_legal_applications(
                 evidence_refs.append(
                     DebtEvidenceRef(
                         document_id=getattr(ev_evidence, "document_id", None),
-                        document_name=getattr(ev_evidence, "filename", None) or "Evidencia timeline",
+                        document_name=getattr(ev_evidence, "filename", None)
+                        or "Evidencia timeline",
                         page=getattr(ev_evidence, "page", None),
-                        excerpt=(getattr(ev_evidence, "excerpt", None) or "No consta extracto")[:300],
+                        excerpt=(getattr(ev_evidence, "excerpt", None) or "No consta extracto")[
+                            :300
+                        ],
                     )
                 )
 
@@ -901,10 +1007,15 @@ def _build_debt_legal_applications(
                     period_note = "Fecha no determinada"
 
             trlc_articles: list[DebtTrlcArticleRef] = []
-            for cite in (legal_citations.get("concurso", [])[:1] + legal_citations.get("credito_publico", [])[:1]):
+            for cite in (
+                legal_citations.get("concurso", [])[:1]
+                + legal_citations.get("credito_publico", [])[:1]
+            ):
                 trlc_articles.append(
                     DebtTrlcArticleRef(
-                        article_ref=str(getattr(cite, "citation", None) or "").replace("Art.", "art."),
+                        article_ref=str(getattr(cite, "citation", None) or "").replace(
+                            "Art.", "art."
+                        ),
                         topic="actuaciones de ejecución / contexto concursal",
                         relevance="Se incorpora para contextualizar la actuación de embargo/ejecución reflejada en el expediente.",
                     )
@@ -916,7 +1027,9 @@ def _build_debt_legal_applications(
                     description="Identificar el procedimiento y obtener detalle (providencia, importe, concepto, períodos y estado).",
                     prerequisites="Requiere documentación del embargo/ejecución y, en su caso, certificados del organismo.",
                     legal_basis_refs=[],
-                    warnings=["Evitar actuaciones sin coordinación con el despacho mientras se determina el alcance del procedimiento."],
+                    warnings=[
+                        "Evitar actuaciones sin coordinación con el despacho mientras se determina el alcance del procedimiento."
+                    ],
                 ),
                 DebtLegalOption(
                     option_code="include_in_concurso",
@@ -933,12 +1046,16 @@ def _build_debt_legal_applications(
                         description="Valorar aplazamiento/fraccionamiento conforme a normativa específica, si procede.",
                         prerequisites="Requiere detalle de deuda y requisitos del organismo.",
                         legal_basis_refs=[],
-                        warnings=["Coordinar con la estrategia concursal y con la documentación aportada."],
+                        warnings=[
+                            "Coordinar con la estrategia concursal y con la documentación aportada."
+                        ],
                     )
                 )
 
             amount_conf = "unknown" if ev_amount is None else "approx"
-            amount_phrase = "" if ev_amount is None else f" por importe aproximado de {float(ev_amount):,.2f} €"
+            amount_phrase = (
+                "" if ev_amount is None else f" por importe aproximado de {float(ev_amount):,.2f} €"
+            )
             client_ready_summary = (
                 f"Consta una actuación de {et} en el expediente{amount_phrase}. {period_note}. "
                 "Debe identificarse el procedimiento y su alcance (acreedor, concepto y estado) para valorar su tratamiento "
@@ -972,7 +1089,9 @@ def _build_debt_legal_applications(
                         DebtRisk(
                             risk_level="high",
                             statement="Existe riesgo de agravamiento del procedimiento de ejecución si no se identifica y gestiona de forma ordenada.",
-                            related_refs=[a.article_ref for a in trlc_articles if a.article_ref][:2],
+                            related_refs=[a.article_ref for a in trlc_articles if a.article_ref][
+                                :2
+                            ],
                         )
                     ],
                     evidence_refs=evidence_refs,
@@ -1017,17 +1136,25 @@ def _build_debt_legal_applications(
                 evidence_refs.append(
                     DebtEvidenceRef(
                         document_id=getattr(sev_evidence, "document_id", None),
-                        document_name=getattr(sev_evidence, "filename", None) or "Evidencia señal de impago",
+                        document_name=getattr(sev_evidence, "filename", None)
+                        or "Evidencia señal de impago",
                         page=getattr(sev_evidence, "page", None),
-                        excerpt=(getattr(sev_evidence, "excerpt", None) or "No consta extracto")[:300],
+                        excerpt=(getattr(sev_evidence, "excerpt", None) or "No consta extracto")[
+                            :300
+                        ],
                     )
                 )
 
             trlc_articles: list[DebtTrlcArticleRef] = []
-            for cite in (legal_citations.get("concurso", [])[:1] + legal_citations.get("credito_publico", [])[:1]):
+            for cite in (
+                legal_citations.get("concurso", [])[:1]
+                + legal_citations.get("credito_publico", [])[:1]
+            ):
                 trlc_articles.append(
                     DebtTrlcArticleRef(
-                        article_ref=str(getattr(cite, "citation", None) or "").replace("Art.", "art."),
+                        article_ref=str(getattr(cite, "citation", None) or "").replace(
+                            "Art.", "art."
+                        ),
                         topic="señales de impago / ejecución",
                         relevance="Se incorpora por constar una señal de impago (embargo/ejecución/reclamación) en el expediente.",
                     )
@@ -1039,7 +1166,9 @@ def _build_debt_legal_applications(
                     description="Obtener detalle de la actuación (procedimiento, acreedor, importe, concepto y estado).",
                     prerequisites="Requiere documentación asociada a la actuación y soporte del expediente.",
                     legal_basis_refs=[],
-                    warnings=["Coordinar cualquier actuación con el despacho mientras se determina el alcance."],
+                    warnings=[
+                        "Coordinar cualquier actuación con el despacho mientras se determina el alcance."
+                    ],
                 ),
                 DebtLegalOption(
                     option_code="include_in_concurso",
@@ -1056,7 +1185,9 @@ def _build_debt_legal_applications(
                         description="Valorar aplazamiento/fraccionamiento conforme a normativa específica, si procede.",
                         prerequisites="Requiere identificación completa de la deuda subyacente.",
                         legal_basis_refs=[],
-                        warnings=["Coordinar con la estrategia concursal y con la documentación aportada."],
+                        warnings=[
+                            "Coordinar con la estrategia concursal y con la documentación aportada."
+                        ],
                     )
                 )
 
@@ -1087,7 +1218,9 @@ def _build_debt_legal_applications(
                         DebtRisk(
                             risk_level="high",
                             statement="Existe riesgo de avance de la actuación si no se identifica y gestiona de forma ordenada.",
-                            related_refs=[a.article_ref for a in trlc_articles if a.article_ref][:2],
+                            related_refs=[a.article_ref for a in trlc_articles if a.article_ref][
+                                :2
+                            ],
                         )
                     ],
                     evidence_refs=evidence_refs,
@@ -1118,7 +1251,9 @@ def _build_roadmap(
     ev = _pick_any_evidence(financial)
     steps: list[RoadmapItem] = []
 
-    missing = set((financial.insolvency.critical_missing_docs or []) if financial.insolvency else [])
+    missing = set(
+        (financial.insolvency.critical_missing_docs or []) if financial.insolvency else []
+    )
 
     # Fase 0-7 días
     steps.append(
@@ -1223,12 +1358,11 @@ def _build_roadmap(
     return steps
 
 
-def build_economic_report_bundle(db: Session, *, case_id: str, financial_analysis: FinancialAnalysisResult) -> EconomicReportBundle:
+def build_economic_report_bundle(
+    db: Session, *, case_id: str, financial_analysis: FinancialAnalysisResult
+) -> EconomicReportBundle:
     case = (
-        db.query(Case)
-        .options(joinedload(Case.documents))
-        .filter(Case.case_id == case_id)
-        .first()
+        db.query(Case).options(joinedload(Case.documents)).filter(Case.case_id == case_id).first()
     )
     if not case:
         raise ValueError(f"Caso '{case_id}' no encontrado")
@@ -1273,7 +1407,9 @@ def build_economic_report_bundle(db: Session, *, case_id: str, financial_analysi
             )
 
     # Riesgos por validaciones contables
-    if financial_analysis.validation_result and isinstance(financial_analysis.validation_result, dict):
+    if financial_analysis.validation_result and isinstance(
+        financial_analysis.validation_result, dict
+    ):
         issues = financial_analysis.validation_result.get("issues") or []
         if issues:
             risks.append(
@@ -1313,7 +1449,9 @@ def build_economic_report_bundle(db: Session, *, case_id: str, financial_analysi
                     "document_id": d.document_id,
                     "filename": d.filename,
                     "doc_type": getattr(d, "doc_type", None),
-                    "created_at": d.created_at.isoformat() if getattr(d, "created_at", None) else None,
+                    "created_at": d.created_at.isoformat()
+                    if getattr(d, "created_at", None)
+                    else None,
                 }
             )
     except Exception:
@@ -1439,4 +1577,3 @@ def build_economic_report_bundle(db: Session, *, case_id: str, financial_analysi
     # Validación final (fail fast)
     json.dumps(bundle.model_dump(), ensure_ascii=False, default=str)
     return bundle
-

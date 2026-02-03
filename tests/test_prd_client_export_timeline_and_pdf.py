@@ -5,6 +5,7 @@ from pypdf import PdfReader
 
 from app.core.database import get_session
 from app.legal.checker.export_checker import check_export
+from app.models.economic_report import LawyerSignature
 from app.reports.pdf.economic_pdf import generate_economic_report_pdf
 from app.services.economic_report_builder import build_economic_report_bundle
 from app.services.financial_analysis import (
@@ -14,7 +15,6 @@ from app.services.financial_analysis import (
     FinancialAnalysisResult,
     TimelineEvent,
 )
-from app.models.economic_report import LawyerSignature
 
 
 def test_client_export_allows_undetermined_date_and_pdf_has_prd_blocks(tmp_path: Path):
@@ -102,4 +102,3 @@ def test_client_export_allows_undetermined_date_and_pdf_has_prd_blocks(tmp_path:
     assert "Puntos clave" not in text
     assert "Qué hacer en 7 días" not in text
     assert "Confianza:" not in text
-

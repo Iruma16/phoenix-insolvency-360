@@ -57,4 +57,3 @@ def test_generate_economic_report_pdf_smoke():
     assert isinstance(pdf_bytes, (bytes, bytearray))
     assert pdf_bytes[:4] == b"%PDF"
     assert len(pdf_bytes) > 1024
-

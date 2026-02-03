@@ -1,7 +1,12 @@
 from datetime import datetime, timezone
 
 from app.legal.checker.export_checker import check_export
-from app.models.economic_report import ClientSummary, EconomicReportBundle, LawyerSignature, NarrativeContract
+from app.models.economic_report import (
+    ClientSummary,
+    EconomicReportBundle,
+    LawyerSignature,
+    NarrativeContract,
+)
 from app.services.financial_analysis import FinancialAnalysisResult
 
 
@@ -66,4 +71,3 @@ def test_blocks_untraceable_money_in_client_text():
     rep = check_export(b, audience="client")
     assert rep.ok is False
     assert any(v.rule_id == "R6" and v.action == "BLOCK_CLIENT_OUTPUT" for v in rep.violations)
-

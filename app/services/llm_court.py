@@ -10,7 +10,9 @@ def make_source_hash(payload: dict[str, Any]) -> str:
     """
     sha256(json canonical): JSON con claves ordenadas, sin espacios, UTF-8.
     """
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     return sha256(raw).hexdigest()
 
 
@@ -66,13 +68,18 @@ def save_cache(
 
 
 def generate_memoria(payload: dict[str, Any]) -> dict[str, Any]:
-    raise NotImplementedError("LLM disabled/stub: generate_memoria(payload) no implementado en app/services/llm_court.py")
+    raise NotImplementedError(
+        "LLM disabled/stub: generate_memoria(payload) no implementado en app/services/llm_court.py"
+    )
 
 
 def review_document(payload: dict[str, Any]) -> dict[str, Any]:
-    raise NotImplementedError("LLM disabled/stub: review_document(payload) no implementado en app/services/llm_court.py")
+    raise NotImplementedError(
+        "LLM disabled/stub: review_document(payload) no implementado en app/services/llm_court.py"
+    )
 
 
 def review_diff(payload: dict[str, Any]) -> dict[str, Any]:
-    raise NotImplementedError("LLM disabled/stub: review_diff(payload) no implementado en app/services/llm_court.py")
-
+    raise NotImplementedError(
+        "LLM disabled/stub: review_diff(payload) no implementado en app/services/llm_court.py"
+    )

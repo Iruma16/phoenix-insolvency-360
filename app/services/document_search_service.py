@@ -134,7 +134,10 @@ def search_documents(
                     DocumentChunk.document_id == doc.document_id,
                     func.lower(DocumentChunk.content).like(f"%{q_lower2}%"),
                 )
-                .order_by(func.coalesce(DocumentChunk.page_start, 0).asc(), DocumentChunk.chunk_index.asc())
+                .order_by(
+                    func.coalesce(DocumentChunk.page_start, 0).asc(),
+                    DocumentChunk.chunk_index.asc(),
+                )
                 .first()
             )
         # Sin query, podemos mostrar primer chunk como vista previa.
@@ -142,7 +145,10 @@ def search_documents(
             chunk = (
                 db.query(DocumentChunk)
                 .filter(DocumentChunk.document_id == doc.document_id)
-                .order_by(func.coalesce(DocumentChunk.page_start, 0).asc(), DocumentChunk.chunk_index.asc())
+                .order_by(
+                    func.coalesce(DocumentChunk.page_start, 0).asc(),
+                    DocumentChunk.chunk_index.asc(),
+                )
                 .first()
             )
 
@@ -181,4 +187,3 @@ def search_documents(
         )
 
     return DocumentSearchResponse(items=items, page=page, page_size=page_size, total=total)
-

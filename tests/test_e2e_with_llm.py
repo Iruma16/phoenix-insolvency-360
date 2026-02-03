@@ -242,7 +242,9 @@ def test_llm_graceful_degradation():
 
         # Validar que el resto del análisis funciona (en modo degradado puede haber menos señales)
         assert len(result.get("risks", [])) > 0, "Debería haber riesgos detectados"
-        assert isinstance(result.get("timeline", []), list), "Timeline debe existir (puede estar vacío)"
+        assert isinstance(
+            result.get("timeline", []), list
+        ), "Timeline debe existir (puede estar vacío)"
         assert result.get("report") is not None, "Debería haber report"
 
         print("\n✅ Degradación graciosa validada: sistema funciona sin LLM")

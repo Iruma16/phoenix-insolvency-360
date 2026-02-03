@@ -1,6 +1,6 @@
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -102,4 +102,3 @@ def test_link_targets_invoice_ranks_invoice_number_over_supplier(client_with_db)
     items = r.json()["items"]
     assert len(items) >= 2
     assert items[0]["record_id"] == a_id
-

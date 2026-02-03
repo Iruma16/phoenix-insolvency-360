@@ -1,6 +1,6 @@
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -74,7 +74,9 @@ def test_capa2_writes_canonical_evidence_and_audit_only(client_with_db):
         json={
             "created_by": "abogado",
             "reason": "Alta con evidencia canónica",
-            "evidence": [{"document_id": "doc_can_1", "page": 1, "note": "Consta en documento aportado."}],
+            "evidence": [
+                {"document_id": "doc_can_1", "page": 1, "note": "Consta en documento aportado."}
+            ],
             "supplier": "Proveedor SL",
             "amount_total": 100.0,
             "status": "pendiente",
@@ -102,4 +104,3 @@ def test_capa2_writes_canonical_evidence_and_audit_only(client_with_db):
     # Legacy no debe recibir writes
     assert db.query(SituationEvidence).count() == 0
     assert db.query(SituationAuditLog).count() == 0
-

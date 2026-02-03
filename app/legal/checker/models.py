@@ -21,4 +21,3 @@ class CheckResult(BaseModel):
 
     class Config:
         extra = "forbid"
-

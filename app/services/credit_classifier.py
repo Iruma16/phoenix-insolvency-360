@@ -8,8 +8,8 @@ Mejoras críticas:
 - NUNCA inventa fechas (skip si no hay fecha)
 - Evidence completa por crédito/evento
 """
-import re
 import hashlib
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -206,7 +206,9 @@ def _infer_creditor_and_security(
             or _snippet(text or "", "garantía real")
             or _snippet(text or "", "garantia real")
         )
-    elif any(x in blob for x in ["prenda", "prenda inscrita", "garantía prendaria", "garantia prendaria"]):
+    elif any(
+        x in blob for x in ["prenda", "prenda inscrita", "garantía prendaria", "garantia prendaria"]
+    ):
         has_security = True
         security_type = "pledge"
         security_excerpt = (
@@ -217,12 +219,16 @@ def _infer_creditor_and_security(
     elif any(x in blob for x in ["reserva de dominio", "reserva dominio"]):
         has_security = True
         security_type = "reservation_of_title"
-        security_excerpt = _snippet(text or "", "reserva de dominio") or _snippet(text or "", "reserva dominio")
+        security_excerpt = _snippet(text or "", "reserva de dominio") or _snippet(
+            text or "", "reserva dominio"
+        )
 
     # Acreedor / tipo
     if any(x in blob for x in ["aeat", "agencia tributaria", "hacienda"]):
         return ("AEAT", "public", has_security, security_type, security_excerpt)
-    if any(x in blob for x in ["tgss", "tesorería general", "tesoreria general", "seguridad social"]):
+    if any(
+        x in blob for x in ["tgss", "tesorería general", "tesoreria general", "seguridad social"]
+    ):
         return ("TGSS", "public", has_security, security_type, security_excerpt)
 
     # Bancos (nombre si se reconoce, si no solo tipo)
@@ -237,7 +243,18 @@ def _infer_creditor_and_security(
     for name, keys in bank_map:
         if any(k in blob for k in keys):
             return (name, "bank", has_security, security_type, security_excerpt)
-    if any(k in blob for k in ["banco", "bank", "entidad financiera", "prestamo", "préstamo", "crédito bancario", "credito bancario"]):
+    if any(
+        k in blob
+        for k in [
+            "banco",
+            "bank",
+            "entidad financiera",
+            "prestamo",
+            "préstamo",
+            "crédito bancario",
+            "credito bancario",
+        ]
+    ):
         return (None, "bank", has_security, security_type, security_excerpt)
 
     if any(k in blob for k in ["nómina", "nomina", "salario", "indemnización", "indemnizacion"]):
@@ -317,14 +334,16 @@ def extract_date_from_document(text: str, filename: str) -> Optional[tuple[datet
     return None
 
 
-def extract_period_from_text(text: str) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+def extract_period_from_text(
+    text: str,
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
     Extrae un período asociado a una deuda.
 
     Regla PRD: no inventar fechas. Solo devuelve YYYY-MM-DD cuando el texto lo contiene.
     En caso contrario, devuelve (None, None, note).
     """
-    t = (text or "")
+    t = text or ""
 
     # Rango con fechas exactas
     m = re.search(
@@ -334,6 +353,7 @@ def extract_period_from_text(text: str) -> tuple[Optional[str], Optional[str], O
     )
     if m:
         d1, d2 = m.group(1), m.group(2)
+
         # Normalizar a YYYY-MM-DD si es d/m/y
         def _norm(d: str) -> Optional[str]:
             d = d.replace("-", "/")
@@ -355,12 +375,22 @@ def extract_period_from_text(text: str) -> tuple[Optional[str], Optional[str], O
     m = re.search(r"(?:ejercicios?|años?)\s+(\d{4})\s*(?:-|–|a|hasta)\s*(\d{4})", t, re.IGNORECASE)
     if m:
         y1, y2 = m.group(1), m.group(2)
-        return (None, None, f"Entre los ejercicios {y1}–{y2} (sin constancia de fechas exactas).", m.group(0)[:300])
+        return (
+            None,
+            None,
+            f"Entre los ejercicios {y1}–{y2} (sin constancia de fechas exactas).",
+            m.group(0)[:300],
+        )
 
     m = re.search(r"\b(\d{4})\s*(?:-|–)\s*(\d{4})\b", t)
     if m:
         y1, y2 = m.group(1), m.group(2)
-        return (None, None, f"Entre los ejercicios {y1}–{y2} (sin constancia de fechas exactas).", m.group(0)[:300])
+        return (
+            None,
+            None,
+            f"Entre los ejercicios {y1}–{y2} (sin constancia de fechas exactas).",
+            m.group(0)[:300],
+        )
 
     m = re.search(r"(?:ejercicio)\s+(\d{4})", t, re.IGNORECASE)
     if m:
@@ -371,11 +401,25 @@ def extract_period_from_text(text: str) -> tuple[Optional[str], Optional[str], O
     m = re.search(r"\b(0?[1-9]|1[0-2])[/-](\d{4})\b", t)
     if m:
         mm, yy = m.group(1), m.group(2)
-        return (None, None, f"En torno a {int(mm):02d}/{yy} (sin constancia de fechas exactas).", m.group(0)[:300])
-    m = re.search(r"\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de?\s*(\d{4})\b", t, re.IGNORECASE)
+        return (
+            None,
+            None,
+            f"En torno a {int(mm):02d}/{yy} (sin constancia de fechas exactas).",
+            m.group(0)[:300],
+        )
+    m = re.search(
+        r"\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de?\s*(\d{4})\b",
+        t,
+        re.IGNORECASE,
+    )
     if m:
         mes, yy = m.group(1), m.group(2)
-        return (None, None, f"En torno a {mes.lower()} {yy} (sin constancia de fechas exactas).", m.group(0)[:300])
+        return (
+            None,
+            None,
+            f"En torno a {mes.lower()} {yy} (sin constancia de fechas exactas).",
+            m.group(0)[:300],
+        )
 
     return (None, None, None, None)
 
@@ -438,9 +482,13 @@ def classify_credits_from_documents(
         # Clasificar (con confidence)
         credit_type, classification_confidence = classify_credit_type(full_text, doc.filename)
 
-        creditor_name, creditor_type, has_security, security_type, security_excerpt = _infer_creditor_and_security(
-            full_text, doc.filename
-        )
+        (
+            creditor_name,
+            creditor_type,
+            has_security,
+            security_type,
+            security_excerpt,
+        ) = _infer_creditor_and_security(full_text, doc.filename)
         period_start, period_end, period_note, period_excerpt = extract_period_from_text(full_text)
 
         # Generar descripción

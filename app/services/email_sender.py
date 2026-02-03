@@ -60,4 +60,3 @@ def send_email_with_attachment(
             smtp.send_message(msg)
     except Exception as e:
         raise EmailSendError(f"Fallo enviando email SMTP: {e}")
-

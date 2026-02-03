@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
 import time
 import zipfile
 from dataclasses import dataclass
@@ -189,7 +188,12 @@ def save_doc0_state(
 
     new_state = {"fields": fields, "updated_at": now}
     state_path.write_text(json.dumps(new_state, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"saved": True, "changed": changed, "state_path": str(state_path), "audit_path": str(audit_path)}
+    return {
+        "saved": True,
+        "changed": changed,
+        "state_path": str(state_path),
+        "audit_path": str(audit_path),
+    }
 
 
 def render_filled_doc0_pdf_bytes(
@@ -201,7 +205,9 @@ def render_filled_doc0_pdf_bytes(
     Genera un PDF rellenado (bytes) aplicando el state.json.
     Si no se puede, devuelve (None, motivo).
     """
-    doc0_path = doc0_pdf_path or (case_root / "courtpack" / "documento_0" / "documento_0_oficial.pdf")
+    doc0_path = doc0_pdf_path or (
+        case_root / "courtpack" / "documento_0" / "documento_0_oficial.pdf"
+    )
     if not doc0_path.exists():
         return None, "missing_doc0_in_case"
 
@@ -259,16 +265,36 @@ def build_zip_bytes(*, case_root: Path = CASE_ROOT) -> tuple[bytes, dict[str, An
             b = doc0_in_case.read_bytes()
             arc = "Documento_0/Formulario_oficial.pdf"
             zf.writestr(arc, b)
-            entries.append({"path": arc, "sha256": _sha256_bytes(b), "size_bytes": len(b), "role": "documento_0_oficial"})
+            entries.append(
+                {
+                    "path": arc,
+                    "sha256": _sha256_bytes(b),
+                    "size_bytes": len(b),
+                    "role": "documento_0_oficial",
+                }
+            )
 
         # Documento 0 rellenado
         filled_bytes, filled_err = render_filled_doc0_pdf_bytes(case_root=case_root)
         if filled_bytes:
             arc = "Documento_0/Formulario_rellenado.pdf"
             zf.writestr(arc, filled_bytes)
-            entries.append({"path": arc, "sha256": _sha256_bytes(filled_bytes), "size_bytes": len(filled_bytes), "role": "documento_0_rellenado"})
+            entries.append(
+                {
+                    "path": arc,
+                    "sha256": _sha256_bytes(filled_bytes),
+                    "size_bytes": len(filled_bytes),
+                    "role": "documento_0_rellenado",
+                }
+            )
         elif filled_err:
-            entries.append({"path": "Documento_0/Formulario_rellenado.pdf", "error": filled_err, "role": "documento_0_rellenado"})
+            entries.append(
+                {
+                    "path": "Documento_0/Formulario_rellenado.pdf",
+                    "error": filled_err,
+                    "role": "documento_0_rellenado",
+                }
+            )
 
         # State + audit
         state_path = case_root / "courtpack" / "documento_0" / "state.json"
@@ -276,14 +302,18 @@ def build_zip_bytes(*, case_root: Path = CASE_ROOT) -> tuple[bytes, dict[str, An
             b = state_path.read_bytes()
             arc = "Documento_0/state.json"
             zf.writestr(arc, b)
-            entries.append({"path": arc, "sha256": _sha256_bytes(b), "size_bytes": len(b), "role": "state"})
+            entries.append(
+                {"path": arc, "sha256": _sha256_bytes(b), "size_bytes": len(b), "role": "state"}
+            )
 
         audit_path = case_root / "courtpack" / "documento_0" / "audit.ndjson"
         if audit_path.exists():
             b = audit_path.read_bytes()
             arc = "Documento_0/audit.ndjson"
             zf.writestr(arc, b)
-            entries.append({"path": arc, "sha256": _sha256_bytes(b), "size_bytes": len(b), "role": "audit"})
+            entries.append(
+                {"path": arc, "sha256": _sha256_bytes(b), "size_bytes": len(b), "role": "audit"}
+            )
 
         manifest = {
             "rules_version": RULES_VERSION,
@@ -297,7 +327,12 @@ def build_zip_bytes(*, case_root: Path = CASE_ROOT) -> tuple[bytes, dict[str, An
         manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
         zf.writestr("MANIFEST.json", manifest_bytes)
         entries.append(
-            {"path": "MANIFEST.json", "sha256": _sha256_bytes(manifest_bytes), "size_bytes": len(manifest_bytes), "role": "manifest"}
+            {
+                "path": "MANIFEST.json",
+                "sha256": _sha256_bytes(manifest_bytes),
+                "size_bytes": len(manifest_bytes),
+                "role": "manifest",
+            }
         )
 
     # Recalcular manifest final (incluyendo su propio hash ya incluido como entry).
@@ -323,5 +358,9 @@ def present_simulated(*, case_root: Path = CASE_ROOT) -> dict[str, Any]:
         "manifest": manifest,
     }
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"ok": True, "acuse_path": str(out_path), "zip_sha256": zip_hash, "zip_size_bytes": len(zip_bytes)}
-
+    return {
+        "ok": True,
+        "acuse_path": str(out_path),
+        "zip_sha256": zip_hash,
+        "zip_size_bytes": len(zip_bytes),
+    }

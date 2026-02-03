@@ -13,8 +13,6 @@ Nota:
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -25,16 +23,19 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.api.analysis_alerts import get_analysis_alerts
 from app.core.database import get_db
+from app.models.analysis_alert import AnalysisAlert
 from app.models.case import Case
 from app.models.document import Document
-from app.models.analysis_alert import AnalysisAlert
-from app.models.document_chunk import DocumentChunk
-from app.api.analysis_alerts import get_analysis_alerts
 from app.services.alert_merge_policy import compute_fingerprint
 from app.services.assistant_alert_voice import AlertDomain, EvidenceRef, Relevance, VoiceInput
-from app.services.assistant_alert_voice_llm import PROMPT_VERSION as VOICE_PROMPT_VERSION, generate_voice_llm
-
+from app.services.assistant_alert_voice_llm import (
+    PROMPT_VERSION as VOICE_PROMPT_VERSION,
+)
+from app.services.assistant_alert_voice_llm import (
+    generate_voice_llm,
+)
 
 router = APIRouter(prefix="/cases/{case_id}/alerts-voice", tags=["alerts-voice"])
 
@@ -183,9 +184,15 @@ def _infer_domain(alert: AnalysisAlert) -> AlertDomain:
     blob = text + " " + fn_text
     if any(k in blob for k in ["tgss", "seguridad social", "apremio", "providencia", "rnt", "rlc"]):
         return AlertDomain.TGSS
-    if any(k in blob for k in ["extracto", "banc", "iban", "transfer", "comisión", "reintegro", "cajero"]):
+    if any(
+        k in blob
+        for k in ["extracto", "banc", "iban", "transfer", "comisión", "reintegro", "cajero"]
+    ):
         return AlertDomain.BANCO
-    if any(k in blob for k in ["factura", "iva", "472", "libro mayor", "sumas", "saldos", "contabilidad"]):
+    if any(
+        k in blob
+        for k in ["factura", "iva", "472", "libro mayor", "sumas", "saldos", "contabilidad"]
+    ):
         return AlertDomain.CONTABILIDAD
     if any(k in blob for k in ["vinculad", "grupo", "socio", "administrador", "entregables"]):
         return AlertDomain.VINCULADAS
@@ -231,7 +238,9 @@ def _findings_from_technical_description(desc: str) -> list[str]:
         return []
     # Reescrituras mínimas
     d = re.sub(r"^Detectad[oa]s?\s+", "aparecen ", d, flags=re.IGNORECASE)
-    d = re.sub(r"^Duplicidad rara:\s+", "hay varias copias del mismo archivo; ", d, flags=re.IGNORECASE)
+    d = re.sub(
+        r"^Duplicidad rara:\s+", "hay varias copias del mismo archivo; ", d, flags=re.IGNORECASE
+    )
     d = d.replace("Señal de manipulación/calidad:", "calidad de extracción a revisar:")
     # Evitar “puede indicar” categórico
     d = d.replace("Puede indicar", "Conviene revisar si esto responde a")
@@ -298,10 +307,14 @@ def _voice_input_from_alert(alert: AnalysisAlert) -> VoiceInput:
 
 
 @router.get("/status", response_model=AlertsVoiceStatusResponse)
-def get_alerts_voice_status(case_id: str, db: Session = Depends(get_db)) -> AlertsVoiceStatusResponse:
+def get_alerts_voice_status(
+    case_id: str, db: Session = Depends(get_db)
+) -> AlertsVoiceStatusResponse:
     case = db.query(Case).filter(Case.case_id == case_id).first()
     if not case:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
+        )
 
     state_obj = _load_state(case_id)
     bundle = _load_bundle(case_id)
@@ -341,7 +354,9 @@ def get_alerts_voice_status(case_id: str, db: Session = Depends(get_db)) -> Aler
 def generate_alerts_voice(case_id: str, db: Session = Depends(get_db)) -> dict:
     case = db.query(Case).filter(Case.case_id == case_id).first()
     if not case:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
+        )
 
     # 1) Generar alertas técnicas actuales
     alerts: list[AnalysisAlert] = get_analysis_alerts(case_id=case_id, db=db)
@@ -422,11 +437,16 @@ def generate_alerts_voice(case_id: str, db: Session = Depends(get_db)) -> dict:
 def get_alerts_voice(case_id: str, db: Session = Depends(get_db)) -> dict:
     case = db.query(Case).filter(Case.case_id == case_id).first()
     if not case:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso '{case_id}' no encontrado"
+        )
 
     bundle = _load_bundle(case_id)
     if not bundle:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No hay bundle generado. Ejecuta /generate.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No hay bundle generado. Ejecuta /generate.",
+        )
 
     state_obj = _load_state(case_id)
 
@@ -479,4 +499,3 @@ def update_alert_voice_card(
     _save_state(case_id, state_obj)
 
     return {"status": "ok", "card_id": card_id, "overrides_version": state_obj.overrides_version}
-

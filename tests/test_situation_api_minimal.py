@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -8,7 +10,6 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models.case import Case
 from app.models.document import Document
-from datetime import datetime
 
 
 @pytest.fixture
@@ -82,7 +83,9 @@ def test_create_invoice_ok_with_evidence(client_with_db):
         json={
             "created_by": "abogado",
             "reason": "Alta inicial con evidencia",
-            "evidence": [{"document_id": "doc_s1", "page": 1, "note": "Consta en documento aportado."}],
+            "evidence": [
+                {"document_id": "doc_s1", "page": 1, "note": "Consta en documento aportado."}
+            ],
             "supplier": "Proveedor SL",
             "amount_total": 100.0,
         },
@@ -92,4 +95,3 @@ def test_create_invoice_ok_with_evidence(client_with_db):
     assert data["logical_id"]
     assert data["version"] == 1
     assert data["evidence_count"] >= 1
-

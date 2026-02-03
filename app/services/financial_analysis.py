@@ -180,8 +180,12 @@ class CreditClassification(BaseModel):
     )
     period_start: Optional[str] = Field(None, description="Inicio período (YYYY-MM-DD) si consta")
     period_end: Optional[str] = Field(None, description="Fin período (YYYY-MM-DD) si consta")
-    period_note: Optional[str] = Field(None, description="Nota de período si no consta fecha exacta")
-    period_excerpt: Optional[str] = Field(None, description="Extracto breve que soporta el período (si consta)")
+    period_note: Optional[str] = Field(
+        None, description="Nota de período si no consta fecha exacta"
+    )
+    period_excerpt: Optional[str] = Field(
+        None, description="Extracto breve que soporta el período (si consta)"
+    )
     has_security: Optional[bool] = Field(
         None,
         description="Garantía real: True si consta, None si no consta (no afirmar sin evidencia)",
@@ -190,7 +194,9 @@ class CreditClassification(BaseModel):
         None,
         description="Tipo de garantía (mortgage/pledge/reservation_of_title/other) si consta",
     )
-    security_excerpt: Optional[str] = Field(None, description="Extracto breve que soporta la garantía (si consta)")
+    security_excerpt: Optional[str] = Field(
+        None, description="Extracto breve que soporta la garantía (si consta)"
+    )
     description: str
     evidence: Evidence
 

@@ -12,7 +12,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements-dev.txt
       - run: pip install -e .
-      - run: cp .env.example .env
+      - run: cp env.example .env
       - run: make init-db
       - run: make check
 

@@ -4,11 +4,6 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-# DB bootstrap (SQLite dev): ensure Alembic schema exists (prevents 500 "no such table")
-from app.core.config import settings
-from app.core.init_db import main as init_db_main
-from app.core.logger import logger
-
 # 👉 IMPORT DEL AGENTE 1 (AUDITOR)
 from app.agents.agent_1_auditor.runner import run_auditor
 
@@ -20,11 +15,16 @@ from app.agents.agent_legal.runner import run_legal_agent
 
 # 👉 IMPORT DEL HANDOFF
 from app.agents.handoff import HandoffPayload
+from app.api.alerts import router_alerts as alerts_router
+from app.api.alerts import router_cases as case_alerts_router
+from app.api.alerts_voice import router as alerts_voice_router
 from app.api.analysis_alerts import router as analysis_alerts_router
 from app.api.auth import router as auth_router
 from app.api.balance_concursal import router as balance_concursal_router
+from app.api.case_evidence import router as case_evidence_router
 from app.api.cases import router as cases_router
 from app.api.chunks import router as chunks_router
+from app.api.court_pack import router as court_pack_router
 from app.api.documents import router as documents_router
 from app.api.economic_report import router as economic_report_router
 from app.api.financial_analysis import router as financial_analysis_router
@@ -37,17 +37,18 @@ from app.api.reports import router as reports_router
 from app.api.situation import router as situation_router
 from app.api.submissions import router as submissions_router
 from app.api.templates import router as templates_router
-from app.api.case_evidence import router as case_evidence_router
-from app.api.court_pack import router as court_pack_router
-from app.api.alerts_voice import router as alerts_voice_router
-from app.api.alerts import router_alerts as alerts_router, router_cases as case_alerts_router
 from app.api.timeline import router as timeline_router  # ✅ NUEVO: Timeline paginado
 
 # ✅ RE-HABILITADO (imports corregidos)
 from app.api.trace import router as trace_router
 from app.api.v2_auditor import router as v2_auditor_router
 from app.api.v2_prosecutor import router as v2_prosecutor_router
+
+# DB bootstrap (SQLite dev): ensure Alembic schema exists (prevents 500 "no such table")
+from app.core.config import settings
 from app.core.database import get_db, get_engine
+from app.core.init_db import main as init_db_main
+from app.core.logger import logger
 from app.rag.case_rag.rag import router as rag_router
 
 # =========================================================

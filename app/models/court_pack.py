@@ -84,4 +84,3 @@ class CourtPackState(BaseModel):
     manual_overrides_count: int
 
     model_config = {"extra": "forbid"}
-

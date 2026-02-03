@@ -14,12 +14,11 @@ Endpoints:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Literal, Optional
-import json
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -27,14 +26,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.financial_analysis import get_financial_analysis
-from app.core.config import settings
 from app.core.auth import User, get_current_user
+from app.core.config import settings
 from app.core.database import get_db
+from app.legal.checker.export_checker import check_export
+from app.legal.checker.narrative_checker import check_narrative
 from app.models.case import Case
 from app.models.economic_report import EconomicReportBundle, LawyerSignature
 from app.reports.pdf.economic_pdf import generate_economic_report_pdf
-from app.legal.checker.narrative_checker import check_narrative
-from app.legal.checker.export_checker import check_export
 from app.services.economic_report_builder import (
     _build_lawyer_signature_from_settings,
     build_economic_report_bundle,
@@ -167,7 +166,9 @@ def _apply_structured_overrides(bundle: EconomicReportBundle, state: ClientRepor
     try:
         contract = getattr(bundle, "narrative_contract", None)
         apps = list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
-        by_id: dict[str, object] = {str(getattr(d, "debt_id", "") or ""): d for d in apps if getattr(d, "debt_id", None)}
+        by_id: dict[str, object] = {
+            str(getattr(d, "debt_id", "") or ""): d for d in apps if getattr(d, "debt_id", None)
+        }
         for o in (state.debt_overrides or [])[:300]:
             debt_id = str((o or {}).get("debt_id") or "").strip()
             if not debt_id or debt_id not in by_id:
@@ -199,7 +200,11 @@ def _apply_structured_overrides(bundle: EconomicReportBundle, state: ClientRepor
         tl = list(getattr(bundle.financial_analysis, "timeline", None) or [])
         if not tl:
             return
-        ov = {str((x or {}).get("event_key") or ""): x for x in (state.timeline_overrides or []) if (x or {}).get("event_key")}
+        ov = {
+            str((x or {}).get("event_key") or ""): x
+            for x in (state.timeline_overrides or [])
+            if (x or {}).get("event_key")
+        }
         out = []
         for ev in tl:
             k = _event_key(ev)
@@ -312,8 +317,8 @@ def _sanitize_bundle_for_client(bundle: EconomicReportBundle) -> None:
     except Exception:
         pass
     try:
-        for ev in (bundle.financial_analysis.timeline or []):
-            desc = (getattr(ev, "description", None) or "")
+        for ev in bundle.financial_analysis.timeline or []:
+            desc = getattr(ev, "description", None) or ""
             desc = desc.replace("1970-01-01 00:00:00.000000150", "").strip()
             desc = desc.replace("1970-01-01", "").strip()
             if not desc:
@@ -324,8 +329,12 @@ def _sanitize_bundle_for_client(bundle: EconomicReportBundle) -> None:
     try:
         ins = bundle.financial_analysis.insolvency
         if ins:
-            for s in (ins.signals_impago or []) + (ins.signals_contables or []) + (ins.signals_exigibilidad or []):
-                d = (getattr(s, "description", None) or "")
+            for s in (
+                (ins.signals_impago or [])
+                + (ins.signals_contables or [])
+                + (ins.signals_exigibilidad or [])
+            ):
+                d = getattr(s, "description", None) or ""
                 if "Metadata:" in d:
                     d = d.replace("Metadata:", "").strip()
                 setattr(s, "description", d)
@@ -409,7 +418,9 @@ def generate_economic_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    bundle = _generate_bundle_strict(case_id=case_id, request=request, db=db, current_user=current_user)
+    bundle = _generate_bundle_strict(
+        case_id=case_id, request=request, db=db, current_user=current_user
+    )
 
     # Indexado interno (opcional): nunca debe bloquear el PDF.
     try:
@@ -454,6 +465,7 @@ def generate_economic_report(
         pass
 
     return {"status": "ok", "case_id": case_id, "report_id": bundle.report_id}
+
 
 @router.get(
     "/economic-report/status",
@@ -560,7 +572,9 @@ def get_economic_report_sections(
     # Block 1
     b1 = f"**{_md(bundle.client_summary.headline)}**\n"
     if bundle.client_summary.warnings:
-        b1 += "\n**Advertencias:**\n" + "\n".join([f"- {x}" for x in bundle.client_summary.warnings[:8]])
+        b1 += "\n**Advertencias:**\n" + "\n".join(
+            [f"- {x}" for x in bundle.client_summary.warnings[:8]]
+        )
 
     # Block 2
     tl = []
@@ -575,12 +589,18 @@ def get_economic_report_sections(
 
     # Block 3
     docs = [f"- {d.filename}" for d in (bundle.documents_presented or [])[:18]]
-    b3 = "**Documentos aportados (muestra):**\n" + ("\n".join(docs) if docs else "- No hay") + "\n\n"
+    b3 = (
+        "**Documentos aportados (muestra):**\n" + ("\n".join(docs) if docs else "- No hay") + "\n\n"
+    )
     b3 += "**Documentos faltantes (críticos):**\n" + (
-        "\n".join([f"- {x}" for x in (bundle.documents_missing or [])[:12]]) if bundle.documents_missing else "- No hay"
+        "\n".join([f"- {x}" for x in (bundle.documents_missing or [])[:12]])
+        if bundle.documents_missing
+        else "- No hay"
     )
     b3 += "\n\n**Documentación recomendada:**\n" + (
-        "\n".join([f"- {x}" for x in (bundle.documents_recommended or [])[:12]]) if bundle.documents_recommended else "- No hay"
+        "\n".join([f"- {x}" for x in (bundle.documents_recommended or [])[:12]])
+        if bundle.documents_recommended
+        else "- No hay"
     )
 
     # Block 4
@@ -610,15 +630,23 @@ def get_economic_report_sections(
         contract = bundle.narrative_contract
         apps = list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
         for d in apps[:12]:
-            debts.append(f"- {getattr(d,'creditor_name','?')} — {getattr(d,'amount_eur',None)} € — {getattr(d,'proposed_trlc_bucket','no_determinable')}")
+            debts.append(
+                f"- {getattr(d,'creditor_name','?')} — {getattr(d,'amount_eur',None)} € — {getattr(d,'proposed_trlc_bucket','no_determinable')}"
+            )
     except Exception:
         pass
-    b5 = "\n".join(debts) if debts else "No hay clasificación deuda-a-deuda disponible con los datos actuales."
+    b5 = (
+        "\n".join(debts)
+        if debts
+        else "No hay clasificación deuda-a-deuda disponible con los datos actuales."
+    )
 
     # Block 6-8 (roadmap)
     steps = []
     for s in (bundle.roadmap or [])[:20]:
-        steps.append(f"- ({getattr(s,'actor','no_determinable')}) {getattr(s,'phase','')} — {getattr(s,'step','')}")
+        steps.append(
+            f"- ({getattr(s,'actor','no_determinable')}) {getattr(s,'phase','')} — {getattr(s,'step','')}"
+        )
     b8 = "\n".join(steps) if steps else "No hay hoja de ruta estructurada con los datos actuales."
 
     # Block 9 (firma)
@@ -649,7 +677,11 @@ def get_economic_report_sections(
             {"id": "5", "title": "5. Clasificación de deudas", "content_md": b5},
             {"id": "8", "title": "8. Hoja de ruta", "content_md": b8},
             {"id": "9", "title": "9. Firma del abogado", "content_md": b9},
-            {"id": "addendum", "title": "Adenda del abogado (si aplica)", "content_md": add_md or "—"},
+            {
+                "id": "addendum",
+                "title": "Adenda del abogado (si aplica)",
+                "content_md": add_md or "—",
+            },
         ],
     }
 
@@ -710,7 +742,9 @@ def get_economic_report_editables(
             timeline.append(
                 {
                     "event_key": _event_key(ev),
-                    "date": getattr(ev, "date", None).date().isoformat() if getattr(ev, "date", None) else "",
+                    "date": getattr(ev, "date", None).date().isoformat()
+                    if getattr(ev, "date", None)
+                    else "",
                     "event_type": getattr(ev, "event_type", ""),
                     "description": getattr(ev, "description", ""),
                     "exclude_from_client": False,
@@ -798,7 +832,11 @@ def apply_economic_report_overrides(
     )
     _save_client_state(case_id, state)
 
-    return {"status": "ok", "overrides_version": state.overrides_version, "mode": _compute_client_mode(state)}
+    return {
+        "status": "ok",
+        "overrides_version": state.overrides_version,
+        "mode": _compute_client_mode(state),
+    }
 
 
 @router.post(
@@ -866,7 +904,11 @@ def save_economic_report_signature(
         detail="Firma guardada (borrador marcado como pendiente de validación).",
     )
     _save_client_state(case_id, state)
-    return {"status": "ok", "mode": _compute_client_mode(state), "lawyer_signature": state.lawyer_signature}
+    return {
+        "status": "ok",
+        "mode": _compute_client_mode(state),
+        "lawyer_signature": state.lawyer_signature,
+    }
 
 
 @router.post(
@@ -893,7 +935,9 @@ def validate_economic_report_client_export(
     try:
         bundle = EconomicReportBundle.model_validate_json(json_path.read_text(encoding="utf-8"))
     except Exception:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No se pudo cargar el informe.")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No se pudo cargar el informe."
+        )
 
     # Refrescar firma desde settings
     try:
@@ -1009,26 +1053,39 @@ def download_economic_report_pdf(
         # Guardrail: PDF cliente SOLO si está validado (PASS) y no hay cambios pendientes.
         state = _load_client_state(case_id)
         mode = _compute_client_mode(state)
-        if mode != "PUBLICABLE" or state.validation.status != "PASS" or state.dirty_since_last_validation:
+        if (
+            mode != "PUBLICABLE"
+            or state.validation.status != "PASS"
+            or state.dirty_since_last_validation
+        ):
             reasons = [f"{x.rule_id}: {x.message}" for x in (state.validation.reasons or [])[:12]]
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"message": "Debes validar la exportación a cliente antes de descargar", "reasons": reasons},
+                detail={
+                    "message": "Debes validar la exportación a cliente antes de descargar",
+                    "reasons": reasons,
+                },
             )
         p = _client_validated_pdf_path(case_id)
         if not p.exists():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"message": "No existe PDF cliente validado. Ejecuta /economic-report/validate.", "reasons": []},
+                detail={
+                    "message": "No existe PDF cliente validado. Ejecuta /economic-report/validate.",
+                    "reasons": [],
+                },
             )
         pdf_bytes = p.read_bytes()
 
-    filename = f"informe_situacion_economica_{case_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+    filename = (
+        f"informe_situacion_economica_{case_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+    )
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
 
 @router.post(
     "/economic-report/email",
@@ -1049,11 +1106,18 @@ def email_economic_report(
     # Guardrail: email SOLO si está validado (PASS) y con PDF cliente validado.
     state = _load_client_state(case_id)
     mode = _compute_client_mode(state)
-    if mode != "PUBLICABLE" or state.validation.status != "PASS" or state.dirty_since_last_validation:
+    if (
+        mode != "PUBLICABLE"
+        or state.validation.status != "PASS"
+        or state.dirty_since_last_validation
+    ):
         reasons = [f"{x.rule_id}: {x.message}" for x in (state.validation.reasons or [])[:12]]
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"message": "Debes validar la exportación a cliente antes de enviar por email", "reasons": reasons},
+            detail={
+                "message": "Debes validar la exportación a cliente antes de enviar por email",
+                "reasons": reasons,
+            },
         )
     pdf_path = _client_validated_pdf_path(case_id)
     if not pdf_path.exists():
@@ -1066,7 +1130,9 @@ def email_economic_report(
     # Asunto básico (sin necesidad de regenerar bundle)
     filename = f"informe_situacion_economica_{case_id}.pdf"
     subject = f"Informe de situación económica — Caso {case_id}"
-    body = "Adjunto encontrarás el informe de situación económica (versión validada para entrega).\n"
+    body = (
+        "Adjunto encontrarás el informe de situación económica (versión validada para entrega).\n"
+    )
 
     send_email_with_attachment(
         to_email=payload.to_email,
@@ -1101,4 +1167,3 @@ def mark_client_report_dirty(case_id: str, *, actor: str, detail: str) -> None:
         _save_client_state(case_id, state)
     except Exception:
         return None
-

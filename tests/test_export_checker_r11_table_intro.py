@@ -1,7 +1,12 @@
 from datetime import datetime, timezone
 
 from app.legal.checker.export_checker import check_export
-from app.models.economic_report import ClientSummary, EconomicReportBundle, LawyerSignature, NarrativeContract
+from app.models.economic_report import (
+    ClientSummary,
+    EconomicReportBundle,
+    LawyerSignature,
+    NarrativeContract,
+)
 from app.services.financial_analysis import FinancialAnalysisResult
 
 
@@ -66,4 +71,3 @@ def test_r11_flags_table_without_intro_in_narrative():
     rep = check_export(b, audience="client")
     assert rep.ok is True  # R11 es blando (retry), no bloquea export
     assert any(v.rule_id == "R11" for v in rep.violations)
-

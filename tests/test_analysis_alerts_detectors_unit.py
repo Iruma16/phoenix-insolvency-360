@@ -239,4 +239,3 @@ def test_detector_tgss_bank_window_correlation_flag(db_session):
     alerts = _detect_bank_alerts(case_id, chunks, db_session)
     assert alerts, "debe generar alerta banco"
     assert any("tgss↔banco" in (a.description or "").lower() for a in alerts)
-

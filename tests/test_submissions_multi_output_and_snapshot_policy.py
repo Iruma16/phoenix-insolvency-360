@@ -1,7 +1,6 @@
-import os
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -10,15 +9,14 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models.case import Case
+from app.models.case_central import CaseRecordAudit, FormFieldValue
 from app.models.document import Document
-from app.models.case_central import CaseRecordAudit
 from app.services.submission_engine import (
-    TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ,
     TEMPLATE_CODE_MEMORIA_ECONOMICA_JURIDICA,
-    ensure_template_solicitud_concurso_pj,
+    TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ,
     ensure_template_memoria_economica_juridica,
+    ensure_template_solicitud_concurso_pj,
 )
-from app.models.case_central import FormFieldValue
 
 
 @pytest.fixture
@@ -81,7 +79,9 @@ def client_with_db(tmp_path, monkeypatch):
                 field_key=k,
                 value_json=v,
                 evidence_id=None,
-                justification="Justificación suficientemente larga para cumplir reglas." if v.get("text") == "NO CONSTA" else None,
+                justification="Justificación suficientemente larga para cumplir reglas."
+                if v.get("text") == "NO CONSTA"
+                else None,
                 updated_by="abogado",
             )
         )
@@ -109,7 +109,12 @@ def test_multi_output_generate_two_templates(client_with_db):
     # Crear submission
     r = client_with_db.post(
         "/api/cases/case_submo1/submissions",
-        json={"target": "JUZGADO", "reference": "Autos 1/2026", "created_by": "abogado", "notes": "Alta"},
+        json={
+            "target": "JUZGADO",
+            "reference": "Autos 1/2026",
+            "created_by": "abogado",
+            "notes": "Alta",
+        },
     )
     assert r.status_code == 201, r.text
     sub_id = r.json()["submission_id"]
@@ -143,6 +148,10 @@ def test_multi_output_generate_two_templates(client_with_db):
     assert any(x["snapshot_id"] for x in items)
 
     # Auditoría: debe existir OUTPUT_GENERATE al menos 2 veces
-    actions = [x[0] for x in db.query(CaseRecordAudit.action).filter(CaseRecordAudit.case_id == "case_submo1").all()]
+    actions = [
+        x[0]
+        for x in db.query(CaseRecordAudit.action)
+        .filter(CaseRecordAudit.case_id == "case_submo1")
+        .all()
+    ]
     assert actions.count("OUTPUT_GENERATE") >= 2
-

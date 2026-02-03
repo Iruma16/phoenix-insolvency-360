@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-import chromadb
 from openai import OpenAI
 
 from app.core.variables import (
@@ -398,6 +397,9 @@ def _get_legal_collection(vectorstore_path: Path, collection_name: str = "chunks
     """Obtiene o crea una colección de ChromaDB para contenido legal."""
     # Crear el directorio si no existe
     vectorstore_path.mkdir(parents=True, exist_ok=True)
+
+    # Import lazy para evitar side-effects al importar el módulo.
+    import chromadb  # type: ignore
 
     client = chromadb.PersistentClient(path=str(vectorstore_path))
 

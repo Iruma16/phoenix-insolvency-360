@@ -85,12 +85,36 @@ def test_submissions_end_to_end_minimal(client_with_db):
         f"/api/cases/case_sub_1/templates/{template_code}/values",
         json={
             "values": [
-                {"field_key": "debtor.tax_id", "value_json": {"text": "B12345678"}, "updated_by": "abogado"},
-                {"field_key": "debtor.address", "value_json": {"text": "C/ Mayor 1, Madrid"}, "updated_by": "abogado"},
-                {"field_key": "insolvency.kind", "value_json": {"text": "ACTUAL"}, "updated_by": "abogado"},
-                {"field_key": "insolvency.facts", "value_json": {"text": "Impagos reiterados y falta de liquidez."}, "updated_by": "abogado"},
-                {"field_key": "workers.count", "value_json": {"number": 3}, "updated_by": "abogado"},
-                {"field_key": "totals.cash", "value_json": {"number": 1200.0}, "updated_by": "abogado"},
+                {
+                    "field_key": "debtor.tax_id",
+                    "value_json": {"text": "B12345678"},
+                    "updated_by": "abogado",
+                },
+                {
+                    "field_key": "debtor.address",
+                    "value_json": {"text": "C/ Mayor 1, Madrid"},
+                    "updated_by": "abogado",
+                },
+                {
+                    "field_key": "insolvency.kind",
+                    "value_json": {"text": "ACTUAL"},
+                    "updated_by": "abogado",
+                },
+                {
+                    "field_key": "insolvency.facts",
+                    "value_json": {"text": "Impagos reiterados y falta de liquidez."},
+                    "updated_by": "abogado",
+                },
+                {
+                    "field_key": "workers.count",
+                    "value_json": {"number": 3},
+                    "updated_by": "abogado",
+                },
+                {
+                    "field_key": "totals.cash",
+                    "value_json": {"number": 1200.0},
+                    "updated_by": "abogado",
+                },
             ]
         },
     )
@@ -128,4 +152,3 @@ def test_submissions_end_to_end_minimal(client_with_db):
     )
     assert r.status_code == 200, r.text
     assert len(r.content) > 1000
-

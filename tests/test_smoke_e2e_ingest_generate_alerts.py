@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -66,7 +64,9 @@ def test_smoke_ingest_dataset_then_generate_alerts(client_with_db):
             tipo_documento="txt",
         )
 
-    def _fake_chunking(*, db, document_id: str, case_id: str, text: str, parsing_result, overwrite: bool, **_):
+    def _fake_chunking(
+        *, db, document_id: str, case_id: str, text: str, parsing_result, overwrite: bool, **_
+    ):
         # Minimal chunk to allow analysis_alerts to build evidence.
         db.add(
             DocumentChunk(
@@ -115,4 +115,3 @@ def test_smoke_ingest_dataset_then_generate_alerts(client_with_db):
     r3 = client.get(f"/api/cases/{case_id}/alerts")
     assert r3.status_code == 200, r3.text
     assert isinstance(r3.json(), list)
-

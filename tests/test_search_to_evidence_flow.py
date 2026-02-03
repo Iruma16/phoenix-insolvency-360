@@ -1,6 +1,6 @@
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -10,8 +10,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models.case import Case
 from app.models.document import Document
-from app.models.document_chunk import DocumentChunk
-from app.models.document_chunk import ExtractionMethod
+from app.models.document_chunk import DocumentChunk, ExtractionMethod
 
 
 @pytest.fixture
@@ -116,4 +115,3 @@ def test_search_returns_chunk_id_and_can_create_evidence_from_result(client_with
     assert out["record_type"] == "other"
     assert out["document_id"] == "doc_se1"
     assert out["chunk_id"] == "chunk_se1"
-

@@ -45,6 +45,7 @@ from app.services.vectorstore_versioning import (
     get_active_version,
 )
 
+
 # region agent log (debug-mode)
 def _dbg_log_retrieve(hypothesis_id: str, location: str, message: str, data: dict) -> None:
     try:
@@ -62,6 +63,7 @@ def _dbg_log_retrieve(hypothesis_id: str, location: str, message: str, data: dic
             f.write(__import__("json").dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
 
 # endregion agent log (debug-mode)
 
@@ -402,7 +404,8 @@ def rag_answer_internal(
             context_text="",
             sources=[],
             confidence="baja",
-            warnings=warnings + [f"RAG no disponible: error consultando vectorstore ({type(e).__name__})."],
+            warnings=warnings
+            + [f"RAG no disponible: error consultando vectorstore ({type(e).__name__})."],
             hallucination_risk=True,
         )
 

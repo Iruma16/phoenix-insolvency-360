@@ -21,9 +21,9 @@ from app.services.confidence_scoring import (
 from app.services.legal_phrasing import (
     get_insufficient_evidence_message,
     get_no_relevant_context_message,
-    get_technical_unavailable_message,
     get_partial_information_message,
     get_response_type_from_policy_decision,
+    get_technical_unavailable_message,
     print_response_type_decision,
     wrap_response_with_evidence_notice,
 )
@@ -34,6 +34,7 @@ from app.services.response_policy import (
 )
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
+
 
 # region agent log (debug-mode)
 def _dbg_log_rag(hypothesis_id: str, location: str, message: str, data: dict) -> None:
@@ -52,6 +53,7 @@ def _dbg_log_rag(hypothesis_id: str, location: str, message: str, data: dict) ->
             f.write(__import__("json").dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
 
 # endregion agent log (debug-mode)
 
@@ -202,7 +204,13 @@ def ask_rag(
         }.get(result.status, "No se pudo recuperar contexto para esta pregunta.")
 
         # UX: para problemas de configuración/estado del RAG, no decir "evidencia insuficiente"
-        if result.status in ("RAG_NOT_READY", "RAG_CONFIG_MISSING", "LLM_UNAVAILABLE", "NO_EMBEDDINGS", "NO_CHUNKS"):
+        if result.status in (
+            "RAG_NOT_READY",
+            "RAG_CONFIG_MISSING",
+            "LLM_UNAVAILABLE",
+            "NO_EMBEDDINGS",
+            "NO_CHUNKS",
+        ):
             final_message = get_technical_unavailable_message(error_message)
             response_type = "SISTEMA_NO_DISPONIBLE"
             _dbg_log_rag(
@@ -301,10 +309,13 @@ def ask_rag(
     # REGLA 2: Si no cumple política → BLOQUEAR respuesta
     if not cumple_politica:
         # UX (D): información parcial / no concluyente por política (no culpar a falta de docs si ya hay chunks)
-        final_message = get_partial_information_message(
-            confidence_score=confidence_score,
-            num_chunks=len(result.sources),
-        ) + f"\n\nMotivo (política): {motivo_politica}"
+        final_message = (
+            get_partial_information_message(
+                confidence_score=confidence_score,
+                num_chunks=len(result.sources),
+            )
+            + f"\n\nMotivo (política): {motivo_politica}"
+        )
         _dbg_log_rag(
             "H5",
             "app/rag/case_rag/rag.py:ask_rag",
@@ -420,7 +431,9 @@ def ask_rag(
                 "case_id": str(payload.case_id),
                 "llm_answer_len": len(llm_answer or ""),
                 "llm_answer_is_exact_no_evidence": str((llm_answer or "").strip() == _no_ev),
-                "llm_answer_starts_with_no_evidence": str((llm_answer or "").strip().startswith(_no_ev)),
+                "llm_answer_starts_with_no_evidence": str(
+                    (llm_answer or "").strip().startswith(_no_ev)
+                ),
             },
         )
     except Exception:
@@ -445,7 +458,10 @@ def ask_rag(
             answer=get_no_relevant_context_message(),
             sources=[RAGSource(**s) for s in result.sources],
             confidence="baja",
-            warnings=result.warnings + ["LLM_NO_EVIDENCE: el LLM no encontró evidencia explícita en el contexto recuperado."],
+            warnings=result.warnings
+            + [
+                "LLM_NO_EVIDENCE: el LLM no encontró evidencia explícita en el contexto recuperado."
+            ],
             hallucination_risk=False,
             confidence_score=0.0,
             response_type="EVIDENCIA_INSUFICIENTE",

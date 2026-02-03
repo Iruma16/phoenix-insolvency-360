@@ -1,3 +1,0 @@
-"""
-Ingesta de jurisprudencia.
-"""

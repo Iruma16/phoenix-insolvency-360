@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path

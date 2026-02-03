@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -86,4 +85,3 @@ def test_download_document_original_serves_file(client_with_db):
     r = client.get(f"/api/cases/{case_id}/documents/{doc_id}/download")
     assert r.status_code == 200
     assert r.headers.get("content-type", "").startswith("application/pdf")
-

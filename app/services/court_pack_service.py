@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import json
 import re
-import time
 import zipfile
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -18,7 +17,6 @@ from app.models.court_pack import (
     DocumentStatus,
     PackStatus,
 )
-
 
 RULES_VERSION = "juzgado_tab_v1"
 
@@ -119,7 +117,9 @@ def ensure_court_pack_dirs(case_root: Path) -> dict[str, Path]:
         "inputs_wizard": court_pack / "inputs" / "wizard.json",
         "inputs_wizard_answers": court_pack / "inputs" / "wizard_answers.json",
         "inputs_field_map_effective": court_pack / "inputs" / "field_map_effective.json",
-        "generated_doc0": court_pack / "generated" / "Documento_0_Formulario_Solicitud_Concurso.pdf",
+        "generated_doc0": court_pack
+        / "generated"
+        / "Documento_0_Formulario_Solicitud_Concurso.pdf",
     }
 
     # Ensure dirs
@@ -195,15 +195,47 @@ def compute_required_docs(flags: DebtorFlags) -> list[dict[str, Any]]:
     No inference: only direct boolean checks.
     """
     defs: list[dict[str, Any]] = [
-        {"doc_type": "doc0_formulario", "display_name": "Formulario solicitud concurso voluntario (PJ)", "is_required": True},
-        {"doc_type": "memoria", "display_name": "Memoria económica y jurídica", "is_required": True},
-        {"doc_type": "inventario", "display_name": "Inventario de bienes y derechos", "is_required": True},
+        {
+            "doc_type": "doc0_formulario",
+            "display_name": "Formulario solicitud concurso voluntario (PJ)",
+            "is_required": True,
+        },
+        {
+            "doc_type": "memoria",
+            "display_name": "Memoria económica y jurídica",
+            "is_required": True,
+        },
+        {
+            "doc_type": "inventario",
+            "display_name": "Inventario de bienes y derechos",
+            "is_required": True,
+        },
         {"doc_type": "acreedores", "display_name": "Relación de acreedores", "is_required": True},
-        {"doc_type": "trabajadores", "display_name": "Trabajadores", "is_required": bool(flags.has_workers)},
-        {"doc_type": "cuentas_anuales", "display_name": "Cuentas anuales", "is_required": bool(flags.accounting_obligation)},
-        {"doc_type": "auditoria", "display_name": "Auditoría", "is_required": bool(flags.requires_audit)},
-        {"doc_type": "escritura_estatutos", "display_name": "Escritura / estatutos", "is_required": flags.debtor_type == "juridica"},
-        {"doc_type": "poder_apud_acta", "display_name": "Poder apud acta", "is_required": bool(flags.has_procurador)},
+        {
+            "doc_type": "trabajadores",
+            "display_name": "Trabajadores",
+            "is_required": bool(flags.has_workers),
+        },
+        {
+            "doc_type": "cuentas_anuales",
+            "display_name": "Cuentas anuales",
+            "is_required": bool(flags.accounting_obligation),
+        },
+        {
+            "doc_type": "auditoria",
+            "display_name": "Auditoría",
+            "is_required": bool(flags.requires_audit),
+        },
+        {
+            "doc_type": "escritura_estatutos",
+            "display_name": "Escritura / estatutos",
+            "is_required": flags.debtor_type == "juridica",
+        },
+        {
+            "doc_type": "poder_apud_acta",
+            "display_name": "Poder apud acta",
+            "is_required": bool(flags.has_procurador),
+        },
     ]
     return defs
 
@@ -269,7 +301,9 @@ def load_state(case_root: Path) -> CourtPackState:
     flags = _read_flags_from_inputs(case_root)
     if flags is None:
         # Cannot invent DebtorFlags; keep placeholders and raise explicit error.
-        raise ValueError("Missing debtor_flags in inputs/*.json; cannot init CourtPackState without flags.")
+        raise ValueError(
+            "Missing debtor_flags in inputs/*.json; cannot init CourtPackState without flags."
+        )
 
     state = init_state(case_root, case_id, flags)
     save_state(case_root, state)
@@ -285,7 +319,12 @@ def save_state(case_root: Path, state: CourtPackState) -> None:
     p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
     _audit_append(
         case_root,
-        {"ts": _utc_now_iso(), "actor": "service", "action": "save_state", "path": str(p.relative_to(case_root))},
+        {
+            "ts": _utc_now_iso(),
+            "actor": "service",
+            "action": "save_state",
+            "path": str(p.relative_to(case_root)),
+        },
     )
 
 
@@ -331,7 +370,16 @@ def add_attachment(
         save_state(case_root, st2)
     except Exception:
         pass
-    _audit_append(case_root, {"ts": _utc_now_iso(), "actor": "service", "action": "add_attachment", "attachment_id": attachment_id, "rel_path": rel_path})
+    _audit_append(
+        case_root,
+        {
+            "ts": _utc_now_iso(),
+            "actor": "service",
+            "action": "add_attachment",
+            "attachment_id": attachment_id,
+            "rel_path": rel_path,
+        },
+    )
     return att
 
 
@@ -356,7 +404,16 @@ def remove_attachment(case_root: Path, attachment_id: str) -> None:
             save_state(case_root, st2)
     except Exception:
         pass
-    _audit_append(case_root, {"ts": _utc_now_iso(), "actor": "service", "action": "remove_attachment", "attachment_id": attachment_id, "court_pack": str(court_pack)})
+    _audit_append(
+        case_root,
+        {
+            "ts": _utc_now_iso(),
+            "actor": "service",
+            "action": "remove_attachment",
+            "attachment_id": attachment_id,
+            "court_pack": str(court_pack),
+        },
+    )
 
 
 def export_expediente_zip(case_root: Path) -> Tuple[bytes, str]:
@@ -387,7 +444,14 @@ def export_expediente_zip(case_root: Path) -> Tuple[bytes, str]:
             arc = str(rel)
             b = p.read_bytes()
             zf.writestr(arc, b)
-            items.append({"role": "generated", "rel_path": arc, "sha256": _sha256_bytes(b), "size_bytes": len(b)})
+            items.append(
+                {
+                    "role": "generated",
+                    "rel_path": arc,
+                    "sha256": _sha256_bytes(b),
+                    "size_bytes": len(b),
+                }
+            )
 
         # attachments/*
         for p in sorted(attachments_dir.rglob("*")):
@@ -397,7 +461,14 @@ def export_expediente_zip(case_root: Path) -> Tuple[bytes, str]:
             arc = str(rel)
             b = p.read_bytes()
             zf.writestr(arc, b)
-            items.append({"role": "attachment", "rel_path": arc, "sha256": _sha256_bytes(b), "size_bytes": len(b)})
+            items.append(
+                {
+                    "role": "attachment",
+                    "rel_path": arc,
+                    "sha256": _sha256_bytes(b),
+                    "size_bytes": len(b),
+                }
+            )
 
         manifest = {
             "created_at": created_at,
@@ -407,9 +478,24 @@ def export_expediente_zip(case_root: Path) -> Tuple[bytes, str]:
         }
         manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
         zf.writestr("manifest.json", manifest_bytes)
-        items.append({"role": "manifest", "rel_path": "manifest.json", "sha256": _sha256_bytes(manifest_bytes), "size_bytes": len(manifest_bytes)})
+        items.append(
+            {
+                "role": "manifest",
+                "rel_path": "manifest.json",
+                "sha256": _sha256_bytes(manifest_bytes),
+                "size_bytes": len(manifest_bytes),
+            }
+        )
 
     zip_filename = f"court_pack_expediente_{case_id}.zip"
-    _audit_append(case_root, {"ts": _utc_now_iso(), "actor": "service", "action": "export_expediente_zip", "zip_filename": zip_filename, "items_count": len(items)})
+    _audit_append(
+        case_root,
+        {
+            "ts": _utc_now_iso(),
+            "actor": "service",
+            "action": "export_expediente_zip",
+            "zip_filename": zip_filename,
+            "items_count": len(items),
+        },
+    )
     return zip_buf.getvalue(), zip_filename
-

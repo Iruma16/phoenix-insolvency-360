@@ -114,15 +114,18 @@ def test_r13_blocks_unauthorized_recommendation_in_client():
 
 
 def test_r13_allows_allowed_gather_docs_recommendation():
-    b = _bundle_with_debt_option(narrative_md="Se recomienda recopilar la documentación y obtener certificados del acreedor.")
+    b = _bundle_with_debt_option(
+        narrative_md="Se recomienda recopilar la documentación y obtener certificados del acreedor."
+    )
     rep = check_export(b, audience="client")
     assert rep.ok is True
     assert not any(v.rule_id == "R13" for v in rep.violations)
 
 
 def test_r13_does_not_block_warning_style_avoidance():
-    b = _bundle_with_debt_option(narrative_md="Se recomienda evitar pagos selectivos mientras se ordena el expediente.")
+    b = _bundle_with_debt_option(
+        narrative_md="Se recomienda evitar pagos selectivos mientras se ordena el expediente."
+    )
     rep = check_export(b, audience="client")
     assert rep.ok is True
     assert not any(v.rule_id == "R13" for v in rep.violations)
-

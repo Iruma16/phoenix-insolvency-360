@@ -9,9 +9,9 @@ Incluye:
 - Manejo de errores específico por código HTTP
 - Timeouts explícitos
 """
-from typing import Any, Optional
 import json
 import time
+from typing import Any, Optional
 
 import requests
 from pydantic import ValidationError
@@ -100,7 +100,12 @@ class PhoenixLegalClient:
                     self._dbg(
                         "api_client.py:Session.request",
                         "EXCEPTION",
-                        {"method": method, "url": url, "error_type": type(e).__name__, "error": str(e)[:400]},
+                        {
+                            "method": method,
+                            "url": url,
+                            "error_type": type(e).__name__,
+                            "error": str(e)[:400],
+                        },
                     )
                 except Exception:
                     pass
@@ -114,7 +119,12 @@ class PhoenixLegalClient:
                 self._dbg(
                     "api_client.py:Session.request",
                     "RESPONSE",
-                    {"status_code": resp.status_code, "url": url, "content_type": ct, "body_head": body_head},
+                    {
+                        "status_code": resp.status_code,
+                        "url": url,
+                        "content_type": ct,
+                        "body_head": body_head,
+                    },
                 )
             except Exception:
                 pass
@@ -423,7 +433,11 @@ class PhoenixLegalClient:
         Endpoint:
         GET /api/cases/{case_id}/documents/search
         """
-        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_chunk_id": bool(include_chunk_id)}
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            "include_chunk_id": bool(include_chunk_id),
+        }
         if q:
             params["q"] = q
         if category:
@@ -432,7 +446,9 @@ class PhoenixLegalClient:
             # FastAPI acepta arrays como múltiples query params: doc_types=a&doc_types=b
             params["doc_types"] = doc_types
 
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/documents/search", params=params)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/documents/search", params=params
+        )
         response.raise_for_status()
         return response.json()
 
@@ -455,7 +471,11 @@ class PhoenixLegalClient:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            "include_history": include_history,
+        }
         if supplier:
             params["supplier"] = supplier
         if status:
@@ -495,7 +515,9 @@ class PhoenixLegalClient:
         }
         if record_types:
             params["record_types"] = record_types
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/search", params=params)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/search", params=params
+        )
         response.raise_for_status()
         return response.json()
 
@@ -514,7 +536,9 @@ class PhoenixLegalClient:
         return response.json()
 
     def download_situation_invoices_excel(self, case_id: str) -> bytes:
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/invoices/export.xlsx")
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/invoices/export.xlsx"
+        )
         response.raise_for_status()
         return response.content
 
@@ -530,7 +554,11 @@ class PhoenixLegalClient:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            "include_history": include_history,
+        }
         if creditor:
             params["creditor"] = creditor
         if secured is not None:
@@ -539,7 +567,9 @@ class PhoenixLegalClient:
             params["min_amount"] = float(min_amount)
         if max_amount is not None:
             params["max_amount"] = float(max_amount)
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/credits", params=params)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/credits", params=params
+        )
         response.raise_for_status()
         return response.json()
 
@@ -558,7 +588,9 @@ class PhoenixLegalClient:
         return response.json()
 
     def download_situation_credits_excel(self, case_id: str) -> bytes:
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/credits/export.xlsx")
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/credits/export.xlsx"
+        )
         response.raise_for_status()
         return response.content
 
@@ -576,7 +608,11 @@ class PhoenixLegalClient:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            "include_history": include_history,
+        }
         if asset_type:
             params["asset_type"] = asset_type
         if description:
@@ -611,7 +647,9 @@ class PhoenixLegalClient:
         return response.json()
 
     def download_situation_assets_excel(self, case_id: str) -> bytes:
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/assets/export.xlsx")
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/assets/export.xlsx"
+        )
         response.raise_for_status()
         return response.content
 
@@ -627,7 +665,11 @@ class PhoenixLegalClient:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            "include_history": include_history,
+        }
         if authority:
             params["authority"] = authority
         if deferred is not None:
@@ -676,7 +718,11 @@ class PhoenixLegalClient:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"page": page, "page_size": page_size, "include_history": include_history}
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            "include_history": include_history,
+        }
         if action_type:
             params["action_type"] = action_type
         if procedure_number:
@@ -693,14 +739,18 @@ class PhoenixLegalClient:
         response.raise_for_status()
         return response.json()
 
-    def create_situation_court_record(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def create_situation_court_record(
+        self, case_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         response = self.session.post(
             f"{self.base_url}/api/cases/{case_id}/situation/court-records", json=payload
         )
         response.raise_for_status()
         return response.json()
 
-    def update_situation_court_record(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def update_situation_court_record(
+        self, case_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         response = self.session.post(
             f"{self.base_url}/api/cases/{case_id}/situation/court-records/update", json=payload
         )
@@ -723,7 +773,9 @@ class PhoenixLegalClient:
     # CUADRO DE SITUACIÓN — Evidencia / Auditoría
     # =========================================
 
-    def list_situation_record_evidence(self, case_id: str, *, entity: str, record_id: str) -> dict[str, Any]:
+    def list_situation_record_evidence(
+        self, case_id: str, *, entity: str, record_id: str
+    ) -> dict[str, Any]:
         response = self.session.get(
             f"{self.base_url}/api/cases/{case_id}/situation/{entity}/{record_id}/evidence"
         )
@@ -752,11 +804,15 @@ class PhoenixLegalClient:
     # =========================================
 
     def create_submission(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.session.post(f"{self.base_url}/api/cases/{case_id}/submissions", json=payload)
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/submissions", json=payload
+        )
         response.raise_for_status()
         return response.json()
 
-    def list_submissions(self, case_id: str, *, page: int = 1, page_size: int = 20) -> dict[str, Any]:
+    def list_submissions(
+        self, case_id: str, *, page: int = 1, page_size: int = 20
+    ) -> dict[str, Any]:
         response = self.session.get(
             f"{self.base_url}/api/cases/{case_id}/submissions",
             params={"page": page, "page_size": page_size},
@@ -784,7 +840,9 @@ class PhoenixLegalClient:
         response.raise_for_status()
         return response.json()
 
-    def snapshot_submission(self, case_id: str, submission_id: str, *, template_code: str) -> dict[str, Any]:
+    def snapshot_submission(
+        self, case_id: str, submission_id: str, *, template_code: str
+    ) -> dict[str, Any]:
         response = self.session.post(
             f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/snapshot",
             json={"template_code": template_code},
@@ -802,7 +860,9 @@ class PhoenixLegalClient:
         response.raise_for_status()
         return response.json()
 
-    def list_generated_submission_docs(self, case_id: str, submission_id: str) -> list[dict[str, Any]]:
+    def list_generated_submission_docs(
+        self, case_id: str, submission_id: str
+    ) -> list[dict[str, Any]]:
         response = self.session.get(
             f"{self.base_url}/api/cases/{case_id}/submissions/{submission_id}/generated"
         )
@@ -839,11 +899,15 @@ class PhoenixLegalClient:
     # =========================================
 
     def get_template_fields(self, case_id: str, template_code: str) -> dict[str, Any]:
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/templates/{template_code}/fields")
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/templates/{template_code}/fields"
+        )
         response.raise_for_status()
         return response.json()
 
-    def upsert_template_values(self, case_id: str, template_code: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def upsert_template_values(
+        self, case_id: str, template_code: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         response = self.session.put(
             f"{self.base_url}/api/cases/{case_id}/templates/{template_code}/values", json=payload
         )
@@ -876,10 +940,16 @@ class PhoenixLegalClient:
         page_size: int = 20,
         active_only: bool = True,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"page": page, "page_size": page_size, "active_only": bool(active_only)}
+        params: dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+            "active_only": bool(active_only),
+        }
         if q:
             params["q"] = q
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/templates/fields", params=params)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/templates/fields", params=params
+        )
         response.raise_for_status()
         return response.json()
 
@@ -888,7 +958,9 @@ class PhoenixLegalClient:
     # =========================================
 
     def snapshot_court_case_profile(self, case_id: str) -> dict[str, Any]:
-        response = self.session.post(f"{self.base_url}/api/cases/{case_id}/court-pack/case-profile/snapshot")
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/court-pack/case-profile/snapshot"
+        )
         response.raise_for_status()
         return response.json()
 
@@ -949,7 +1021,9 @@ class PhoenixLegalClient:
         params: dict[str, Any] = {"record_type": record_type, "page": page, "page_size": page_size}
         if q:
             params["q"] = q
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/situation/link-targets", params=params)
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/situation/link-targets", params=params
+        )
         response.raise_for_status()
         return response.json()
 
@@ -967,8 +1041,12 @@ class PhoenixLegalClient:
         response.raise_for_status()
         return response.json()
 
-    def list_case_evidence(self, case_id: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/evidence", params=params or {})
+    def list_case_evidence(
+        self, case_id: str, params: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/evidence", params=params or {}
+        )
         response.raise_for_status()
         return response.json()
 
@@ -1087,7 +1165,11 @@ class PhoenixLegalClient:
             GET /api/cases/{case_id}/alerts
         """
         url = f"{self.base_url}/api/cases/{case_id}/alerts"
-        self._dbg("api_client.py:list_case_alerts_desk", "REQUEST", {"method": "GET", "url": url, "case_id": case_id})
+        self._dbg(
+            "api_client.py:list_case_alerts_desk",
+            "REQUEST",
+            {"method": "GET", "url": url, "case_id": case_id},
+        )
         response = self.session.get(url)
         self._dbg(
             "api_client.py:list_case_alerts_desk",
@@ -1127,7 +1209,11 @@ class PhoenixLegalClient:
             GET /api/alerts/{alert_id}
         """
         url = f"{self.base_url}/api/alerts/{alert_id}"
-        self._dbg("api_client.py:get_alert_detail_desk", "REQUEST", {"method": "GET", "url": url, "alert_id": alert_id})
+        self._dbg(
+            "api_client.py:get_alert_detail_desk",
+            "REQUEST",
+            {"method": "GET", "url": url, "alert_id": alert_id},
+        )
         response = self.session.get(url)
         self._dbg(
             "api_client.py:get_alert_detail_desk",
@@ -1205,7 +1291,11 @@ class PhoenixLegalClient:
             GET /api/cases/{case_id}/alerts/export
         """
         url = f"{self.base_url}/api/cases/{case_id}/alerts/export"
-        self._dbg("api_client.py:export_alerts_desk_validated", "REQUEST", {"method": "GET", "url": url, "case_id": case_id})
+        self._dbg(
+            "api_client.py:export_alerts_desk_validated",
+            "REQUEST",
+            {"method": "GET", "url": url, "case_id": case_id},
+        )
         response = self.session.get(url)
         self._dbg(
             "api_client.py:export_alerts_desk_validated",
@@ -1451,11 +1541,15 @@ class PhoenixLegalClient:
         return response.json()
 
     def validate_economic_report_client_export(self, case_id: str) -> dict[str, Any]:
-        response = self.session.post(f"{self.base_url}/api/cases/{case_id}/economic-report/validate")
+        response = self.session.post(
+            f"{self.base_url}/api/cases/{case_id}/economic-report/validate"
+        )
         response.raise_for_status()
         return response.json()
 
-    def save_economic_report_signature(self, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def save_economic_report_signature(
+        self, case_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         response = self.session.post(
             f"{self.base_url}/api/cases/{case_id}/economic-report/signature",
             json=payload,
@@ -1464,7 +1558,9 @@ class PhoenixLegalClient:
         return response.json()
 
     def get_economic_report_editables(self, case_id: str) -> dict[str, Any]:
-        response = self.session.get(f"{self.base_url}/api/cases/{case_id}/economic-report/editables")
+        response = self.session.get(
+            f"{self.base_url}/api/cases/{case_id}/economic-report/editables"
+        )
         response.raise_for_status()
         return response.json()
 

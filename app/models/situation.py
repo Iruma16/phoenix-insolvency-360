@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -35,7 +35,10 @@ class SituationEvidence(Base):
     record_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
 
     document_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("documents.document_id", ondelete="RESTRICT"), nullable=False, index=True
+        String(36),
+        ForeignKey("documents.document_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     chunk_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -114,13 +117,19 @@ class SituationInvoice(Base):
     withholding_amount: Mapped[Optional[float]] = mapped_column(nullable=True)
     amount_total: Mapped[float] = mapped_column(nullable=False, default=0.0)
 
-    status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # pendiente/pagada/impagada
+    status: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )  # pendiente/pagada/impagada
     payment_terms: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     payment_method: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
     iban_masked: Mapped[Optional[str]] = mapped_column(String(34), nullable=True)
 
-    invoice_type: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # ordinaria/rectificativa/...
-    source_ref: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # pedido/albarán/...
+    invoice_type: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )  # ordinaria/rectificativa/...
+    source_ref: Mapped[Optional[str]] = mapped_column(
+        String(200), nullable=True
+    )  # pedido/albarán/...
 
     is_disputed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     dispute_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -144,7 +153,9 @@ class SituationCredit(Base):
     )
 
     creditor: Mapped[str] = mapped_column(String(255), nullable=False)  # lender_name
-    creditor_tax_id: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # lender_tax_id
+    creditor_tax_id: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True
+    )  # lender_tax_id
     lender_address: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     lender_email: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     lender_phone: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
@@ -156,14 +167,18 @@ class SituationCredit(Base):
     principal_initial: Mapped[Optional[float]] = mapped_column(nullable=True)
     outstanding_principal: Mapped[Optional[float]] = mapped_column(nullable=True)
     accrued_interest: Mapped[Optional[float]] = mapped_column(nullable=True)
-    interest_rate: Mapped[Optional[float]] = mapped_column(nullable=True)  # porcentaje anual (0..100)
+    interest_rate: Mapped[Optional[float]] = mapped_column(
+        nullable=True
+    )  # porcentaje anual (0..100)
     interest_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # fijo/variable
     spread: Mapped[Optional[float]] = mapped_column(nullable=True)
 
     secured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     guarantee_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    secured_type: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # hipoteca/prenda/aval/...
+    secured_type: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )  # hipoteca/prenda/aval/...
     collateral_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     collateral_registry_ref: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     guarantor_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -171,10 +186,16 @@ class SituationCredit(Base):
 
     maturity_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # YYYY-MM-DD
     default_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # YYYY-MM-DD
-    last_payment_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # YYYY-MM-DD
+    last_payment_date: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True
+    )  # YYYY-MM-DD
 
-    enforcement_stage: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # amistosa/ejecutiva/...
-    procedure_ref: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)  # si judicializado
+    enforcement_stage: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )  # amistosa/ejecutiva/...
+    procedure_ref: Mapped[Optional[str]] = mapped_column(
+        String(120), nullable=True
+    )  # si judicializado
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
@@ -193,7 +214,9 @@ class SituationAsset(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    asset_type: Mapped[str] = mapped_column(String(40), nullable=False)  # INMUEBLE/VEHICULO/MAQUINARIA
+    asset_type: Mapped[str] = mapped_column(
+        String(40), nullable=False
+    )  # INMUEBLE/VEHICULO/MAQUINARIA
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
@@ -208,7 +231,9 @@ class SituationAsset(Base):
     province: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     cadastral_ref: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
-    registry_type: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # prop/mercantil/...
+    registry_type: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )  # prop/mercantil/...
     registry_ref: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     finca_registral: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     tomo: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
@@ -224,7 +249,9 @@ class SituationAsset(Base):
     mortgage_bank: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     mortgage_outstanding: Mapped[Optional[float]] = mapped_column(nullable=True)
 
-    disposal_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # vendible/ocupado/litigioso
+    disposal_status: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )  # vendible/ocupado/litigioso
     occupancy_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -265,7 +292,9 @@ class SituationPublicDebt(Base):
     penalties: Mapped[Optional[float]] = mapped_column(nullable=True)
     amount_total: Mapped[float] = mapped_column(nullable=False, default=0.0)
 
-    debt_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # voluntaria/ejecutiva/aplazada
+    debt_status: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )  # voluntaria/ejecutiva/aplazada
     enforcement_stage: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     deferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -289,10 +318,14 @@ class SituationCourtRecord(Base):
     court: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     court_city: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     court_section: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
-    procedure_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # procedure_ref
+    procedure_number: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )  # procedure_ref
     autos_ref: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     case_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    case_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)  # demandante/demandado
+    case_role: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )  # demandante/demandado
 
     claimant: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     party_counterparty_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -301,9 +334,13 @@ class SituationCourtRecord(Base):
     lawyer_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     procurator_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
-    action_type: Mapped[str] = mapped_column(String(80), nullable=False)  # demanda/monitorio/ejecucion/...
+    action_type: Mapped[str] = mapped_column(
+        String(80), nullable=False
+    )  # demanda/monitorio/ejecucion/...
     action_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    next_hearing_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # YYYY-MM-DD
+    next_hearing_date: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True
+    )  # YYYY-MM-DD
 
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="EUR")
     amount_claimed: Mapped[Optional[float]] = mapped_column(nullable=True)
@@ -316,4 +353,3 @@ class SituationCourtRecord(Base):
     enforcement_flag: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     seizures_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-

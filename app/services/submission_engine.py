@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
-import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -16,14 +16,12 @@ from app.models.case import Case
 from app.models.case_central import (
     CaseGeneratedDocument,
     CaseRecordEvidence,
-    CaseSubmission,
     CaseSubmissionItem,
     FieldMapping,
     FormFieldValue,
     MappingFallback,
     MappingSourceKind,
     OutputFormat,
-    SubmissionStatus,
     SubmissionTarget,
     Template,
     TemplateField,
@@ -36,7 +34,6 @@ from app.models.situation import (
     SituationInvoice,
     SituationPublicDebt,
 )
-
 
 TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ = "JUZ_SOL_CONCURSO_VOLUNTARIO_PJ"
 TEMPLATE_CODE_MEMORIA_ECONOMICA_JURIDICA = "MEMORIA_ECONOMICA_JURIDICA"
@@ -57,7 +54,9 @@ def _is_no_consta_value(v: Any) -> bool:
     return False
 
 
-def _get_manual_value_row(db: Session, *, case_id: str, template_id: str, field_key: str) -> Optional[FormFieldValue]:
+def _get_manual_value_row(
+    db: Session, *, case_id: str, template_id: str, field_key: str
+) -> Optional[FormFieldValue]:
     return (
         db.query(FormFieldValue)
         .filter(
@@ -94,7 +93,9 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
         try:
             existing = {
                 m.field_key: m
-                for m in db.query(FieldMapping).filter(FieldMapping.template_id == tpl.template_id).all()
+                for m in db.query(FieldMapping)
+                .filter(FieldMapping.template_id == tpl.template_id)
+                .all()
             }
             desired: dict[str, tuple[str, dict, str]] = {
                 "debtor.tax_id": (
@@ -112,7 +113,11 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
             for field_key, (sk, spec, fb) in desired.items():
                 cur = existing.get(field_key)
                 if cur:
-                    if cur.source_kind != sk or (cur.source_spec_json or {}).get("kind") != spec.get("kind") or cur.fallback != fb:
+                    if (
+                        cur.source_kind != sk
+                        or (cur.source_spec_json or {}).get("kind") != spec.get("kind")
+                        or cur.fallback != fb
+                    ):
                         cur.source_kind = sk
                         cur.source_spec_json = spec
                         cur.fallback = fb
@@ -163,15 +168,42 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
 
     # Validación por campo (si quieres endurecer fallback NO_CONSTA, marca critical + requisitos)
     critical_cfg: dict[str, dict[str, Any]] = {
-        "debtor.tax_id": {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": True}},
-        "debtor.address": {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
-        "insolvency.kind": {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
-        "insolvency.facts": {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
-        "workers.count": {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
-        "totals.passive_amount": {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
-        "creditors.count": {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
-        "totals.asset_value": {"critical": False, "no_consta": {"justification_min": 20, "evidence_required": False}},
-        "totals.cash": {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
+        "debtor.tax_id": {
+            "critical": True,
+            "no_consta": {"justification_min": 20, "evidence_required": True},
+        },
+        "debtor.address": {
+            "critical": True,
+            "no_consta": {"justification_min": 20, "evidence_required": False},
+        },
+        "insolvency.kind": {
+            "critical": True,
+            "no_consta": {"justification_min": 20, "evidence_required": False},
+        },
+        "insolvency.facts": {
+            "critical": True,
+            "no_consta": {"justification_min": 20, "evidence_required": False},
+        },
+        "workers.count": {
+            "critical": True,
+            "no_consta": {"justification_min": 20, "evidence_required": False},
+        },
+        "totals.passive_amount": {
+            "critical": True,
+            "no_consta": {"justification_min": 20, "evidence_required": False},
+        },
+        "creditors.count": {
+            "critical": True,
+            "no_consta": {"justification_min": 20, "evidence_required": False},
+        },
+        "totals.asset_value": {
+            "critical": False,
+            "no_consta": {"justification_min": 20, "evidence_required": False},
+        },
+        "totals.cash": {
+            "critical": True,
+            "no_consta": {"justification_min": 20, "evidence_required": False},
+        },
     }
 
     for field_key, label, dtype, required in fields:
@@ -216,7 +248,12 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
             MappingFallback.NO_CONSTA.value,
         ),
         # tesorería no existe estructurada en MVP
-        ("totals.cash", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
+        (
+            "totals.cash",
+            MappingSourceKind.MANUAL.value,
+            {"kind": "manual"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
         # Deudor: intentar desde BD (best-effort) y dejar manual como fallback
         (
             "debtor.tax_id",
@@ -242,15 +279,30 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
             {"kind": "debtor_address_best_effort"},
             MappingFallback.MANUAL_REQUIRED.value,
         ),
-        ("insolvency.kind", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
-        ("insolvency.facts", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
+        (
+            "insolvency.kind",
+            MappingSourceKind.MANUAL.value,
+            {"kind": "manual"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
+        (
+            "insolvency.facts",
+            MappingSourceKind.MANUAL.value,
+            {"kind": "manual"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
         (
             "company.ceased_activity",
             MappingSourceKind.MANUAL.value,
             {"kind": "manual"},
             MappingFallback.EMPTY.value,
         ),
-        ("workers.count", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
+        (
+            "workers.count",
+            MappingSourceKind.MANUAL.value,
+            {"kind": "manual"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
     ]
 
     for field_key, source_kind, spec, fallback in mappings:
@@ -270,7 +322,9 @@ def ensure_template_solicitud_concurso_pj(db: Session) -> Template:
 
 
 def ensure_template_memoria_economica_juridica(db: Session) -> Template:
-    tpl = db.query(Template).filter(Template.code == TEMPLATE_CODE_MEMORIA_ECONOMICA_JURIDICA).first()
+    tpl = (
+        db.query(Template).filter(Template.code == TEMPLATE_CODE_MEMORIA_ECONOMICA_JURIDICA).first()
+    )
     if tpl:
         return tpl
 
@@ -285,11 +339,41 @@ def ensure_template_memoria_economica_juridica(db: Session) -> Template:
     db.flush()
 
     fields: list[tuple[str, str, str, bool, Optional[dict[str, Any]]]] = [
-        ("debtor.name", "Denominación social", "string", True, {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}}),
-        ("debtor.tax_id", "CIF/NIF", "string", True, {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": True}}),
-        ("totals.passive_amount", "Cuantía del pasivo (estimación)", "number", True, {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}}),
-        ("totals.asset_value", "Valoración del activo (mejor estimación)", "number", True, {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}}),
-        ("creditors.count", "Número de acreedores (estimación)", "number", True, {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}}),
+        (
+            "debtor.name",
+            "Denominación social",
+            "string",
+            True,
+            {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
+        ),
+        (
+            "debtor.tax_id",
+            "CIF/NIF",
+            "string",
+            True,
+            {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": True}},
+        ),
+        (
+            "totals.passive_amount",
+            "Cuantía del pasivo (estimación)",
+            "number",
+            True,
+            {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
+        ),
+        (
+            "totals.asset_value",
+            "Valoración del activo (mejor estimación)",
+            "number",
+            True,
+            {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
+        ),
+        (
+            "creditors.count",
+            "Número de acreedores (estimación)",
+            "number",
+            True,
+            {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
+        ),
         ("invoices.list", "Listado de facturas vigentes (resumen)", "json", False, None),
         ("credits.list", "Listado de créditos vigentes (resumen)", "json", False, None),
         ("notes", "Notas / observaciones", "string", False, None),
@@ -308,21 +392,70 @@ def ensure_template_memoria_economica_juridica(db: Session) -> Template:
         )
 
     mappings: list[tuple[str, str, dict, str]] = [
-        ("debtor.name", MappingSourceKind.AGGREGATION.value, {"kind": "case_name"}, MappingFallback.MANUAL_REQUIRED.value),
-        ("debtor.tax_id", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.MANUAL_REQUIRED.value),
-        ("totals.passive_amount", MappingSourceKind.AGGREGATION.value, {"kind": "sum_passive"}, MappingFallback.NO_CONSTA.value),
-        ("totals.asset_value", MappingSourceKind.AGGREGATION.value, {"kind": "sum_assets_best_valuation"}, MappingFallback.NO_CONSTA.value),
-        ("creditors.count", MappingSourceKind.AGGREGATION.value, {"kind": "count_creditors_distinct"}, MappingFallback.NO_CONSTA.value),
+        (
+            "debtor.name",
+            MappingSourceKind.AGGREGATION.value,
+            {"kind": "case_name"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
+        (
+            "debtor.tax_id",
+            MappingSourceKind.MANUAL.value,
+            {"kind": "manual"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
+        (
+            "totals.passive_amount",
+            MappingSourceKind.AGGREGATION.value,
+            {"kind": "sum_passive"},
+            MappingFallback.NO_CONSTA.value,
+        ),
+        (
+            "totals.asset_value",
+            MappingSourceKind.AGGREGATION.value,
+            {"kind": "sum_assets_best_valuation"},
+            MappingFallback.NO_CONSTA.value,
+        ),
+        (
+            "creditors.count",
+            MappingSourceKind.AGGREGATION.value,
+            {"kind": "count_creditors_distinct"},
+            MappingFallback.NO_CONSTA.value,
+        ),
         (
             "invoices.list",
             MappingSourceKind.SQL_QUERY.value,
-            {"entity": "invoice", "aggregation": "list", "fields": ["supplier", "invoice_number", "issue_date", "due_date", "currency", "amount_total"], "limit": 200},
+            {
+                "entity": "invoice",
+                "aggregation": "list",
+                "fields": [
+                    "supplier",
+                    "invoice_number",
+                    "issue_date",
+                    "due_date",
+                    "currency",
+                    "amount_total",
+                ],
+                "limit": 200,
+            },
             MappingFallback.EMPTY.value,
         ),
         (
             "credits.list",
             MappingSourceKind.SQL_QUERY.value,
-            {"entity": "loan", "aggregation": "list", "fields": ["creditor", "contract_ref", "currency", "amount_total", "secured", "maturity_date"], "limit": 200},
+            {
+                "entity": "loan",
+                "aggregation": "list",
+                "fields": [
+                    "creditor",
+                    "contract_ref",
+                    "currency",
+                    "amount_total",
+                    "secured",
+                    "maturity_date",
+                ],
+                "limit": 200,
+            },
             MappingFallback.EMPTY.value,
         ),
         ("notes", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.EMPTY.value),
@@ -360,11 +493,29 @@ def ensure_template_informe_admin_concursal(db: Session) -> Template:
     db.flush()
 
     fields: list[tuple[str, str, str, bool, Optional[dict[str, Any]]]] = [
-        ("case.name", "Identificación del caso", "string", True, {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}}),
-        ("totals.passive_amount", "Total pasivo (estimación)", "number", True, {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}}),
+        (
+            "case.name",
+            "Identificación del caso",
+            "string",
+            True,
+            {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
+        ),
+        (
+            "totals.passive_amount",
+            "Total pasivo (estimación)",
+            "number",
+            True,
+            {"critical": True, "no_consta": {"justification_min": 20, "evidence_required": False}},
+        ),
         ("public_debt.total", "Total deuda pública (estimación)", "number", False, None),
         ("assets.list", "Listado de bienes (resumen)", "json", False, None),
-        ("court_claims.list", "Listado de actuaciones/procedimientos (resumen)", "json", False, None),
+        (
+            "court_claims.list",
+            "Listado de actuaciones/procedimientos (resumen)",
+            "json",
+            False,
+            None,
+        ),
         ("observations", "Observaciones AC", "string", False, None),
     ]
 
@@ -381,8 +532,18 @@ def ensure_template_informe_admin_concursal(db: Session) -> Template:
         )
 
     mappings: list[tuple[str, str, dict, str]] = [
-        ("case.name", MappingSourceKind.AGGREGATION.value, {"kind": "case_name"}, MappingFallback.MANUAL_REQUIRED.value),
-        ("totals.passive_amount", MappingSourceKind.AGGREGATION.value, {"kind": "sum_passive"}, MappingFallback.NO_CONSTA.value),
+        (
+            "case.name",
+            MappingSourceKind.AGGREGATION.value,
+            {"kind": "case_name"},
+            MappingFallback.MANUAL_REQUIRED.value,
+        ),
+        (
+            "totals.passive_amount",
+            MappingSourceKind.AGGREGATION.value,
+            {"kind": "sum_passive"},
+            MappingFallback.NO_CONSTA.value,
+        ),
         (
             "public_debt.total",
             MappingSourceKind.SQL_QUERY.value,
@@ -392,16 +553,37 @@ def ensure_template_informe_admin_concursal(db: Session) -> Template:
         (
             "assets.list",
             MappingSourceKind.SQL_QUERY.value,
-            {"entity": "asset", "aggregation": "list", "fields": ["asset_type", "description", "currency", "valuation_admin_concursal", "valuation_external"], "limit": 200},
+            {
+                "entity": "asset",
+                "aggregation": "list",
+                "fields": [
+                    "asset_type",
+                    "description",
+                    "currency",
+                    "valuation_admin_concursal",
+                    "valuation_external",
+                ],
+                "limit": 200,
+            },
             MappingFallback.EMPTY.value,
         ),
         (
             "court_claims.list",
             MappingSourceKind.SQL_QUERY.value,
-            {"entity": "court_claim", "aggregation": "list", "fields": ["court", "procedure_number", "action_type", "action_date", "status"], "limit": 200},
+            {
+                "entity": "court_claim",
+                "aggregation": "list",
+                "fields": ["court", "procedure_number", "action_type", "action_date", "status"],
+                "limit": 200,
+            },
             MappingFallback.EMPTY.value,
         ),
-        ("observations", MappingSourceKind.MANUAL.value, {"kind": "manual"}, MappingFallback.EMPTY.value),
+        (
+            "observations",
+            MappingSourceKind.MANUAL.value,
+            {"kind": "manual"},
+            MappingFallback.EMPTY.value,
+        ),
     ]
 
     for field_key, source_kind, spec, fallback in mappings:
@@ -430,7 +612,11 @@ def _get_case(db: Session, case_id: str) -> Case:
 def _manual_value(db: Session, case_id: str, template_id: str, field_key: str) -> Optional[dict]:
     row = (
         db.query(FormFieldValue)
-        .filter(FormFieldValue.case_id == case_id, FormFieldValue.template_id == template_id, FormFieldValue.field_key == field_key)
+        .filter(
+            FormFieldValue.case_id == case_id,
+            FormFieldValue.template_id == template_id,
+            FormFieldValue.field_key == field_key,
+        )
         .first()
     )
     return row.value_json if row else None
@@ -461,7 +647,9 @@ def _agg_debtor_tax_id_best_effort(db: Session, case_id: str) -> Optional[str]:
     try:
         rows = (
             db.query(SituationPublicDebt.taxpayer_tax_id)
-            .filter(SituationPublicDebt.case_id == case_id, SituationPublicDebt.is_current.is_(True))
+            .filter(
+                SituationPublicDebt.case_id == case_id, SituationPublicDebt.is_current.is_(True)
+            )
             .order_by(SituationPublicDebt.created_at.desc())
             .limit(200)
             .all()
@@ -589,7 +777,10 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
         raise HTTPException(status_code=404, detail=f"Plantilla no encontrada: {template_code}")
 
     fields = db.query(TemplateField).filter(TemplateField.template_id == tpl.template_id).all()
-    mappings = {m.field_key: m for m in db.query(FieldMapping).filter(FieldMapping.template_id == tpl.template_id).all()}
+    mappings = {
+        m.field_key: m
+        for m in db.query(FieldMapping).filter(FieldMapping.template_id == tpl.template_id).all()
+    }
 
     resolved: dict[str, Any] = {}
     missing_required: list[str] = []
@@ -622,8 +813,13 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
             val = _manual_value(db, case_id, tpl.template_id, f.field_key)
             if val is None:
                 if mapping.fallback == MappingFallback.NO_CONSTA.value:
-                    warnings.append(f"{f.field_key}: fallback NO_CONSTA (requiere valor manual 'NO CONSTA')")
-                if f.required and mapping.fallback in (MappingFallback.MANUAL_REQUIRED.value, MappingFallback.NO_CONSTA.value):
+                    warnings.append(
+                        f"{f.field_key}: fallback NO_CONSTA (requiere valor manual 'NO CONSTA')"
+                    )
+                if f.required and mapping.fallback in (
+                    MappingFallback.MANUAL_REQUIRED.value,
+                    MappingFallback.NO_CONSTA.value,
+                ):
                     missing_required.append(f.field_key)
                 resolved[f.field_key] = None
             else:
@@ -693,7 +889,8 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
             elif entity == "court_claim":
                 model = SituationCourtRecord
                 base_q = db.query(SituationCourtRecord).filter(
-                    SituationCourtRecord.case_id == case_id, SituationCourtRecord.is_current.is_(True)
+                    SituationCourtRecord.case_id == case_id,
+                    SituationCourtRecord.is_current.is_(True),
                 )
             else:
                 model = None
@@ -702,7 +899,10 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
             if not model or base_q is None:
                 resolved[f.field_key] = None
                 warnings.append(f"{f.field_key}: SQL_QUERY entity inválida: {entity}")
-                if f.required and mapping.fallback in (MappingFallback.NO_CONSTA.value, MappingFallback.MANUAL_REQUIRED.value):
+                if f.required and mapping.fallback in (
+                    MappingFallback.NO_CONSTA.value,
+                    MappingFallback.MANUAL_REQUIRED.value,
+                ):
                     missing_required.append(f.field_key)
                 continue
 
@@ -735,9 +935,14 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
                     except Exception:
                         continue
                 resolved[f.field_key] = total if ok_any else None
-                if resolved.get(f.field_key) is None and f.required and mapping.fallback in (
-                    MappingFallback.NO_CONSTA.value,
-                    MappingFallback.MANUAL_REQUIRED.value,
+                if (
+                    resolved.get(f.field_key) is None
+                    and f.required
+                    and mapping.fallback
+                    in (
+                        MappingFallback.NO_CONSTA.value,
+                        MappingFallback.MANUAL_REQUIRED.value,
+                    )
                 ):
                     missing_required.append(f.field_key)
                 continue
@@ -747,7 +952,10 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
             if not col:
                 resolved[f.field_key] = None
                 warnings.append(f"{f.field_key}: SQL_QUERY requiere column para aggregation={agg}")
-                if f.required and mapping.fallback in (MappingFallback.NO_CONSTA.value, MappingFallback.MANUAL_REQUIRED.value):
+                if f.required and mapping.fallback in (
+                    MappingFallback.NO_CONSTA.value,
+                    MappingFallback.MANUAL_REQUIRED.value,
+                ):
                     missing_required.append(f.field_key)
                 continue
 
@@ -761,9 +969,14 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
                 got = v
                 break
             resolved[f.field_key] = got
-            if resolved.get(f.field_key) is None and f.required and mapping.fallback in (
-                MappingFallback.NO_CONSTA.value,
-                MappingFallback.MANUAL_REQUIRED.value,
+            if (
+                resolved.get(f.field_key) is None
+                and f.required
+                and mapping.fallback
+                in (
+                    MappingFallback.NO_CONSTA.value,
+                    MappingFallback.MANUAL_REQUIRED.value,
+                )
             ):
                 missing_required.append(f.field_key)
             continue
@@ -774,10 +987,14 @@ def resolve_template_fields(db: Session, *, case_id: str, template_code: str) ->
             missing_required.append(f.field_key)
         warnings.append(f"{f.field_key}: source_kind desconocido: {mapping.source_kind}")
 
-    return ResolveResult(template=tpl, resolved_fields=resolved, missing_required=missing_required, warnings=warnings)
+    return ResolveResult(
+        template=tpl, resolved_fields=resolved, missing_required=missing_required, warnings=warnings
+    )
 
 
-def validate_resolved_fields(db: Session, *, case_id: str, template: Template, resolved_fields: dict[str, Any]) -> dict[str, Any]:
+def validate_resolved_fields(
+    db: Session, *, case_id: str, template: Template, resolved_fields: dict[str, Any]
+) -> dict[str, Any]:
     # Validación conservadora: required no nulo/empty y tipos básicos.
     fields = db.query(TemplateField).filter(TemplateField.template_id == template.template_id).all()
     field_by_key = {f.field_key: f for f in fields}
@@ -804,7 +1021,9 @@ def validate_resolved_fields(db: Session, *, case_id: str, template: Template, r
             rule = (vcfg.get("no_consta") or {}) if isinstance(vcfg.get("no_consta"), dict) else {}
             min_len = int(rule.get("justification_min") or 20)
             evidence_required = bool(rule.get("evidence_required"))
-            row = _get_manual_value_row(db, case_id=case_id, template_id=template.template_id, field_key=k)
+            row = _get_manual_value_row(
+                db, case_id=case_id, template_id=template.template_id, field_key=k
+            )
             if not row:
                 errors.append(
                     f"Campo crítico {k}: NO CONSTA requiere guardar valor manual con justificación"
@@ -841,7 +1060,9 @@ def snapshot_submission(
     snapshot_id = str(uuid.uuid4())
     created = 0
 
-    def _evidence_ids_for_record(*, record_type: str, record_id: Optional[str]) -> Optional[list[str]]:
+    def _evidence_ids_for_record(
+        *, record_type: str, record_id: Optional[str]
+    ) -> Optional[list[str]]:
         if not record_id:
             return None
         rows = (
@@ -885,7 +1106,9 @@ def snapshot_submission(
     field_keys = [f.field_key for f in fields]
     manual_values = (
         db.query(FormFieldValue)
-        .filter(FormFieldValue.case_id == case_id, FormFieldValue.template_id == template.template_id)
+        .filter(
+            FormFieldValue.case_id == case_id, FormFieldValue.template_id == template.template_id
+        )
         .all()
     )
     by_key = {v.field_key: v for v in manual_values}
@@ -935,7 +1158,9 @@ def snapshot_submission(
                     record_id=getattr(r, "record_id", None),
                     record_hash=stable_json_hash(payload),
                     snapshot_json=payload,
-                    evidence_ids=_evidence_ids_for_record(record_type=record_type, record_id=getattr(r, "record_id", None)),
+                    evidence_ids=_evidence_ids_for_record(
+                        record_type=record_type, record_id=getattr(r, "record_id", None)
+                    ),
                 )
             )
             created += 1
@@ -1342,4 +1567,3 @@ def generate_submission_output_docx(
     db.commit()
     db.refresh(row)
     return row
-

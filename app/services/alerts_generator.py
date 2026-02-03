@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import time
 from datetime import datetime
 from typing import Any, Optional
 
@@ -25,6 +24,8 @@ from app.services.alert_merge_policy import compute_fingerprint
 from app.services.assistant_alert_voice import AlertDomain, EvidenceRef, Relevance, VoiceInput
 from app.services.assistant_alert_voice_llm import (
     PROMPT_VERSION as VOICE_PROMPT_VERSION,
+)
+from app.services.assistant_alert_voice_llm import (
     generate_voice_llm,
 )
 
@@ -61,13 +62,20 @@ def _de_robotize_desc(desc: str) -> str:
         t = re.sub(pat, rpl, t, flags=re.IGNORECASE)
     return t
 
+
 def _infer_domain(desc: str, evidence_filenames: list[str]) -> str:
     blob = (desc or "").lower() + " " + " ".join(evidence_filenames).lower()
     if any(k in blob for k in ["tgss", "seguridad social", "apremio", "providencia", "rnt", "rlc"]):
         return "TGSS"
-    if any(k in blob for k in ["extracto", "banc", "iban", "transfer", "comisión", "reintegro", "cajero"]):
+    if any(
+        k in blob
+        for k in ["extracto", "banc", "iban", "transfer", "comisión", "reintegro", "cajero"]
+    ):
         return "BANCO"
-    if any(k in blob for k in ["factura", "iva", "472", "libro mayor", "sumas", "saldos", "contabilidad"]):
+    if any(
+        k in blob
+        for k in ["factura", "iva", "472", "libro mayor", "sumas", "saldos", "contabilidad"]
+    ):
         return "CONTABILIDAD"
     if any(k in blob for k in ["vinculad", "grupo", "socio", "administrador", "entregables"]):
         return "VINCULADAS"
@@ -184,7 +192,11 @@ def _to_clarify_struct(domain: str, items: list[str]) -> list[dict[str, Any]]:
         if not txt:
             continue
         low = txt.lower()
-        blocking = "bloquea" if any(k in low for k in ["certificado", "rnt", "rlc", "conciliac"]) else "no_bloquea"
+        blocking = (
+            "bloquea"
+            if any(k in low for k in ["certificado", "rnt", "rlc", "conciliac"])
+            else "no_bloquea"
+        )
         out.append({"item_text": txt, "why_needed": "", "blocking_level": blocking})
     return out[:8]
 
@@ -277,7 +289,9 @@ def generate_persisted_alerts_for_case(*, case_id: str, db: Session) -> int:
         to_clarify_struct = _to_clarify_struct(domain, list(voice_in.to_clarify or []))
         recommended_actions = _recommended_actions_from_to_clarify(to_clarify_struct)
 
-        existing: Optional[AlertORM] = db.query(AlertORM).filter(AlertORM.alert_id == alert_id).first()
+        existing: Optional[AlertORM] = (
+            db.query(AlertORM).filter(AlertORM.alert_id == alert_id).first()
+        )
         if existing:
             # Merge editorial: NO machacar status/nota/para_informe/updated_by
             old_fp = existing.fingerprint
@@ -400,4 +414,3 @@ def generate_persisted_alerts_for_case_in_new_session(*, case_id: str) -> int:
         return 0
     finally:
         db.close()
-

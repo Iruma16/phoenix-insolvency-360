@@ -32,4 +32,3 @@ def test_infer_doc_type_extracto_manda_sobre_factura():
         raw_text_preview="Extracto bancario. IBAN ES12... Saldo. Concepto: factura 123",
     )
     assert inf.doc_type == "EXTRACTO_BANCARIO"
-

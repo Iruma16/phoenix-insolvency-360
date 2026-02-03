@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.core.variables import DATA
 from app.models.case import Case
+
 # Importar DocumentChunk para asegurar registro de mappers (evita fallos por orden de imports en scripts/tests)
 from app.models.document_chunk import DocumentChunk  # noqa: F401
 

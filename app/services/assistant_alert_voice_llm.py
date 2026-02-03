@@ -16,8 +16,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict
-from typing import Any, Optional
+from typing import Any
 
 from app.services.assistant_alert_voice import (
     VoiceInput,
@@ -26,7 +25,6 @@ from app.services.assistant_alert_voice import (
     generate_voice,
 )
 from app.services.llm_executor import execute_llm
-
 
 PROMPT_VERSION = "assistant_alert_voice_llm_v1"
 
@@ -167,7 +165,6 @@ def generate_voice_llm(
     if not res.success or not res.output_text:
         return fallback
 
-    last_err: Optional[Exception] = None
     txt = res.output_text
 
     for _ in range(max(0, int(retries_on_validation)) + 1):
@@ -181,8 +178,7 @@ def generate_voice_llm(
                 to_clarify=fallback.to_clarify,
                 disclaimer_detail=out.disclaimer_detail or fallback.disclaimer_detail,
             )
-        except Exception as e:
-            last_err = e
+        except Exception:
             # Reintento con instrucción extra (sin cambiar hechos).
             # Nota: no hacemos bucle infinito; máximo 1 (configurable).
             fix_prompt = (
@@ -205,4 +201,3 @@ def generate_voice_llm(
 
     # Si todo falla, fallback (fail-safe)
     return fallback
-

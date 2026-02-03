@@ -17,22 +17,22 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import AliasChoices, BaseModel, Field
-from sqlalchemy import case as sa_case, func, or_
+from sqlalchemy import String, func, or_
+from sqlalchemy import case as sa_case
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.record_types import ENTITY_ALLOWED, record_type_from_entity
 from app.models.case import Case
-from app.models.case_central import AuditAction, CaseRecordAudit, CaseRecordEvidence
+from app.models.case_central import CaseRecordAudit, CaseRecordEvidence
 from app.models.document import Document
 from app.models.situation import (
+    SituationAsset,
     SituationCourtRecord,
     SituationCredit,
     SituationInvoice,
-    SituationAsset,
     SituationPublicDebt,
 )
-
 
 router = APIRouter(prefix="/cases/{case_id}/situation", tags=["situation"])
 
@@ -56,7 +56,9 @@ class EvidenceInput(BaseModel):
     chunk_id: Optional[str] = None
     page: Optional[int] = Field(None, ge=1)
     note: str = Field(..., min_length=10, max_length=500)
-    source_type: str = Field("DOCUMENTO", max_length=30)  # DOCUMENTO/CLIENTE/CONTABILIDAD/CRITERIO_PROFESIONAL
+    source_type: str = Field(
+        "DOCUMENTO", max_length=30
+    )  # DOCUMENTO/CLIENTE/CONTABILIDAD/CRITERIO_PROFESIONAL
     certainty_level: str = Field("CONSTA", max_length=20)  # CONSTA/NO_CONSTA/ESTIMADO
     excerpt: Optional[str] = Field(None, max_length=1200)
 
@@ -72,7 +74,12 @@ class _BaseUpsert(BaseModel):
 
 
 class CreateInvoiceRequest(_BaseUpsert):
-    supplier: str = Field(..., min_length=2, max_length=255, validation_alias=AliasChoices("supplier", "creditor_name"))
+    supplier: str = Field(
+        ...,
+        min_length=2,
+        max_length=255,
+        validation_alias=AliasChoices("supplier", "creditor_name"),
+    )
     supplier_tax_id: Optional[str] = Field(
         None, max_length=30, validation_alias=AliasChoices("supplier_tax_id", "creditor_tax_id")
     )
@@ -147,7 +154,9 @@ class UpdateInvoiceRequest(_BaseUpsert):
 
 
 class CreateCreditRequest(_BaseUpsert):
-    creditor: str = Field(..., min_length=2, max_length=255, validation_alias=AliasChoices("creditor", "lender_name"))
+    creditor: str = Field(
+        ..., min_length=2, max_length=255, validation_alias=AliasChoices("creditor", "lender_name")
+    )
     creditor_tax_id: Optional[str] = Field(None, max_length=30)
     lender_address: Optional[str] = Field(None, max_length=300)
     lender_email: Optional[str] = Field(None, max_length=120)
@@ -561,7 +570,9 @@ def _validate_evidence(db: Session, case_id: str, evidence: list[EvidenceInput])
         if st not in allowed_source:
             raise HTTPException(status_code=422, detail=f"source_type inválido: {ev.source_type}")
         if cl not in allowed_certainty:
-            raise HTTPException(status_code=422, detail=f"certainty_level inválido: {ev.certainty_level}")
+            raise HTTPException(
+                status_code=422, detail=f"certainty_level inválido: {ev.certainty_level}"
+            )
 
         # Regla dura: NO_CONSTA requiere justificación más fuerte (evitar "NO_CONSTA" vacío).
         if cl == "NO_CONSTA" and len((ev.note or "").strip()) < 20:
@@ -578,17 +589,27 @@ def _validate_evidence(db: Session, case_id: str, evidence: list[EvidenceInput])
                 )
         else:
             # Regla dura: si source_type != DOCUMENTO -> document_id/chunk_id/page deben ser null
-            if (ev.document_id or "").strip() or (ev.chunk_id or "").strip() or (ev.page is not None):
+            if (
+                (ev.document_id or "").strip()
+                or (ev.chunk_id or "").strip()
+                or (ev.page is not None)
+            ):
                 raise HTTPException(
                     status_code=422,
                     detail="Evidencia inválida: source_type != DOCUMENTO requiere document_id/chunk_id/page null",
                 )
 
     # Validar que los documents existen y pertenecen al caso (si se proporcionan)
-    doc_ids = list({(e.document_id or "").strip() for e in evidence if (e.document_id or "").strip()})
+    doc_ids = list(
+        {(e.document_id or "").strip() for e in evidence if (e.document_id or "").strip()}
+    )
     existing = (
         db.query(Document.document_id)
-        .filter(Document.case_id == case_id, Document.document_id.in_(doc_ids), Document.deleted_at.is_(None))
+        .filter(
+            Document.case_id == case_id,
+            Document.document_id.in_(doc_ids),
+            Document.deleted_at.is_(None),
+        )
         .all()
     )
     found = {d[0] for d in existing}
@@ -701,7 +722,12 @@ def _require_date_order(
 
 
 def _validate_invoice_consistency(*, payload: dict[str, Any]) -> None:
-    _require_date_order(payload.get("issue_date"), a_field="issue_date", b=payload.get("due_date"), b_field="due_date")
+    _require_date_order(
+        payload.get("issue_date"),
+        a_field="issue_date",
+        b=payload.get("due_date"),
+        b_field="due_date",
+    )
     issue = payload.get("issue_date")
     paid = payload.get("paid_date")
     if paid:
@@ -726,14 +752,19 @@ def _validate_invoice_consistency(*, payload: dict[str, Any]) -> None:
 
 def _validate_public_debt_consistency(*, payload: dict[str, Any]) -> None:
     _require_date_order(
-        payload.get("period_start"), a_field="period_start", b=payload.get("period_end"), b_field="period_end"
+        payload.get("period_start"),
+        a_field="period_start",
+        b=payload.get("period_end"),
+        b_field="period_end",
     )
     principal = payload.get("principal")
     sur = payload.get("surcharges")
     it = payload.get("interest")
     pen = payload.get("penalties")
     if principal is not None or sur is not None or it is not None or pen is not None:
-        expected = float(principal or 0.0) + float(sur or 0.0) + float(it or 0.0) + float(pen or 0.0)
+        expected = (
+            float(principal or 0.0) + float(sur or 0.0) + float(it or 0.0) + float(pen or 0.0)
+        )
         total = float(payload.get("amount_total") or 0.0)
         if abs(expected - total) > 0.01:
             raise HTTPException(
@@ -744,7 +775,12 @@ def _validate_public_debt_consistency(*, payload: dict[str, Any]) -> None:
 
 def _validate_credit_consistency(*, payload: dict[str, Any]) -> None:
     # Fechas coherentes (si existen)
-    _require_date_order(payload.get("default_date"), a_field="default_date", b=payload.get("maturity_date"), b_field="maturity_date")
+    _require_date_order(
+        payload.get("default_date"),
+        a_field="default_date",
+        b=payload.get("maturity_date"),
+        b_field="maturity_date",
+    )
     _require_date_order(
         payload.get("last_payment_date"),
         a_field="last_payment_date",
@@ -755,7 +791,11 @@ def _validate_credit_consistency(*, payload: dict[str, Any]) -> None:
     # Coherencias básicas de importes (si existen)
     principal_initial = payload.get("principal_initial")
     outstanding = payload.get("outstanding_principal")
-    if principal_initial is not None and outstanding is not None and float(outstanding) - float(principal_initial) > 0.01:
+    if (
+        principal_initial is not None
+        and outstanding is not None
+        and float(outstanding) - float(principal_initial) > 0.01
+    ):
         raise HTTPException(
             status_code=422,
             detail="Incoherencia: outstanding_principal no puede ser mayor que principal_initial",
@@ -780,21 +820,20 @@ def _check_duplicate_invoice(
     iss = (issue_date or "").strip()
     if not (stid and inv and iss):
         return
-    q = (
-        db.query(SituationInvoice.record_id, SituationInvoice.logical_id)
-        .filter(
-            SituationInvoice.case_id == case_id,
-            SituationInvoice.is_current.is_(True),
-            func.lower(SituationInvoice.supplier_tax_id) == func.lower(stid),
-            func.lower(SituationInvoice.invoice_number) == func.lower(inv),
-            SituationInvoice.issue_date == iss,
-        )
+    q = db.query(SituationInvoice.record_id, SituationInvoice.logical_id).filter(
+        SituationInvoice.case_id == case_id,
+        SituationInvoice.is_current.is_(True),
+        func.lower(SituationInvoice.supplier_tax_id) == func.lower(stid),
+        func.lower(SituationInvoice.invoice_number) == func.lower(inv),
+        SituationInvoice.issue_date == iss,
     )
     if exclude_logical_id:
         q = q.filter(SituationInvoice.logical_id != exclude_logical_id)
     hit = q.first()
     if hit:
-        raise HTTPException(status_code=409, detail="DUPLICATE_INVOICE: ya existe una factura vigente con esa clave")
+        raise HTTPException(
+            status_code=409, detail="DUPLICATE_INVOICE: ya existe una factura vigente con esa clave"
+        )
 
 
 def _check_duplicate_credit(
@@ -809,20 +848,19 @@ def _check_duplicate_credit(
     cref = (contract_ref or "").strip()
     if not (ctid and cref):
         return
-    q = (
-        db.query(SituationCredit.record_id, SituationCredit.logical_id)
-        .filter(
-            SituationCredit.case_id == case_id,
-            SituationCredit.is_current.is_(True),
-            func.lower(SituationCredit.creditor_tax_id) == func.lower(ctid),
-            func.lower(SituationCredit.contract_ref) == func.lower(cref),
-        )
+    q = db.query(SituationCredit.record_id, SituationCredit.logical_id).filter(
+        SituationCredit.case_id == case_id,
+        SituationCredit.is_current.is_(True),
+        func.lower(SituationCredit.creditor_tax_id) == func.lower(ctid),
+        func.lower(SituationCredit.contract_ref) == func.lower(cref),
     )
     if exclude_logical_id:
         q = q.filter(SituationCredit.logical_id != exclude_logical_id)
     hit = q.first()
     if hit:
-        raise HTTPException(status_code=409, detail="DUPLICATE_CREDIT: ya existe un crédito vigente con esa clave")
+        raise HTTPException(
+            status_code=409, detail="DUPLICATE_CREDIT: ya existe un crédito vigente con esa clave"
+        )
 
 
 @router.get(
@@ -832,7 +870,9 @@ def _check_duplicate_credit(
 )
 def list_link_targets(
     case_id: str,
-    record_type: str = Query(..., description="invoice|loan|asset|public_debt|court_claim|form_field"),
+    record_type: str = Query(
+        ..., description="invoice|loan|asset|public_debt|court_claim|form_field"
+    ),
     q: str = Query("", max_length=200),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -906,7 +946,9 @@ def list_link_targets(
         )
         total = int(base.count())
         rows = (
-            base.order_by(*_order_by_score(score_expr=score, created_col=SituationInvoice.created_at))
+            base.order_by(
+                *_order_by_score(score_expr=score, created_col=SituationInvoice.created_at)
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
             .all()
@@ -958,7 +1000,9 @@ def list_link_targets(
         )
         total = int(base.count())
         rows = (
-            base.order_by(*_order_by_score(score_expr=score, created_col=SituationCredit.created_at))
+            base.order_by(
+                *_order_by_score(score_expr=score, created_col=SituationCredit.created_at)
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
             .all()
@@ -1067,7 +1111,9 @@ def list_link_targets(
         )
         total = int(base.count())
         rows = (
-            base.order_by(*_order_by_score(score_expr=score, created_col=SituationPublicDebt.created_at))
+            base.order_by(
+                *_order_by_score(score_expr=score, created_col=SituationPublicDebt.created_at)
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
             .all()
@@ -1129,7 +1175,9 @@ def list_link_targets(
         )
         total = int(base.count())
         rows = (
-            base.order_by(*_order_by_score(score_expr=score, created_col=SituationCourtRecord.created_at))
+            base.order_by(
+                *_order_by_score(score_expr=score, created_col=SituationCourtRecord.created_at)
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
             .all()
@@ -1197,7 +1245,9 @@ def _count_evidence(db: Session, *, case_id: str, entity: str, record_id: str) -
     )
 
 
-def _get_evidence_items(db: Session, *, case_id: str, entity: str, record_id: str) -> list[SituationEvidenceItem]:
+def _get_evidence_items(
+    db: Session, *, case_id: str, entity: str, record_id: str
+) -> list[SituationEvidenceItem]:
     record_type = record_type_from_entity(entity)
     rows_new = (
         db.query(CaseRecordEvidence)
@@ -1359,7 +1409,9 @@ def list_audit_for_logical(
     return SituationAuditListResponse(items=items)
 
 
-def _export_rows_to_xlsx(rows: list[dict[str, Any]], sheet_name: str, filename: str) -> StreamingResponse:
+def _export_rows_to_xlsx(
+    rows: list[dict[str, Any]], sheet_name: str, filename: str
+) -> StreamingResponse:
     try:
         import pandas as pd  # type: ignore
     except Exception as e:
@@ -1443,7 +1495,11 @@ def _build_evidence_ref_map(
 def search_situation(
     case_id: str,
     *,
-    q: str = Query("", description="Texto libre (proveedor, nº factura, acreedor, procedimiento…)", max_length=200),
+    q: str = Query(
+        "",
+        description="Texto libre (proveedor, nº factura, acreedor, procedimiento…)",
+        max_length=200,
+    ),
     record_types: list[str] = Query(
         default=[],
         description="Filtro opcional: invoice|credit|public_debt|court (si vacío, busca en todos)",
@@ -1493,11 +1549,15 @@ def search_situation(
             .limit(page_size)
             .all()
         )
-        ev_ref = _build_evidence_ref_map(db, case_id=case_id, entity="INVOICE", record_ids=[r.record_id for r in rows])
+        ev_ref = _build_evidence_ref_map(
+            db, case_id=case_id, entity="INVOICE", record_ids=[r.record_id for r in rows]
+        )
         items = []
         for r in rows:
             inv_no = r.invoice_number or "sin nº"
-            label = f"{r.supplier} | {inv_no} | {r.amount_total:.2f} {r.currency} | {r.status or '—'}"
+            label = (
+                f"{r.supplier} | {inv_no} | {r.amount_total:.2f} {r.currency} | {r.status or '—'}"
+            )
             items.append(
                 SituationSearchItem(
                     entity="INVOICE",
@@ -1540,7 +1600,9 @@ def search_situation(
             .limit(page_size)
             .all()
         )
-        ev_ref = _build_evidence_ref_map(db, case_id=case_id, entity="CREDIT", record_ids=[r.record_id for r in rows])
+        ev_ref = _build_evidence_ref_map(
+            db, case_id=case_id, entity="CREDIT", record_ids=[r.record_id for r in rows]
+        )
         items = []
         for r in rows:
             cref = r.contract_ref or "s/ref"
@@ -1593,7 +1655,9 @@ def search_situation(
             .limit(page_size)
             .all()
         )
-        ev_ref = _build_evidence_ref_map(db, case_id=case_id, entity="PUBLIC_DEBT", record_ids=[r.record_id for r in rows])
+        ev_ref = _build_evidence_ref_map(
+            db, case_id=case_id, entity="PUBLIC_DEBT", record_ids=[r.record_id for r in rows]
+        )
         items = []
         for r in rows:
             label = f"{r.authority} | {r.concept or 's/concepto'} | {r.amount_total:.2f} {r.currency} | {r.debt_status or r.enforcement_stage or '—'}"
@@ -1651,12 +1715,18 @@ def search_situation(
             .limit(page_size)
             .all()
         )
-        ev_ref = _build_evidence_ref_map(db, case_id=case_id, entity="COURT", record_ids=[r.record_id for r in rows])
+        ev_ref = _build_evidence_ref_map(
+            db, case_id=case_id, entity="COURT", record_ids=[r.record_id for r in rows]
+        )
         items = []
         for r in rows:
             proc = r.procedure_number or "s/ref"
             court = r.court or "Juzgado"
-            amt = f"{float(r.amount_claimed or 0.0):.2f} {r.currency or 'EUR'}" if r.amount_claimed else "s/imp"
+            amt = (
+                f"{float(r.amount_claimed or 0.0):.2f} {r.currency or 'EUR'}"
+                if r.amount_claimed
+                else "s/imp"
+            )
             label = f"{court} | {proc} | {amt} | {r.stage or r.status or '—'}"
             items.append(
                 SituationSearchItem(
@@ -1719,11 +1789,21 @@ def export_situation_excel(case_id: str, db: Session = Depends(get_db)) -> Strea
         .all()
     )
 
-    inv_ev = _build_evidence_ref_map(db, case_id=case_id, entity="INVOICE", record_ids=[r.record_id for r in inv])
-    cred_ev = _build_evidence_ref_map(db, case_id=case_id, entity="CREDIT", record_ids=[r.record_id for r in cred])
-    asset_ev = _build_evidence_ref_map(db, case_id=case_id, entity="ASSET", record_ids=[r.record_id for r in assets])
-    pub_ev = _build_evidence_ref_map(db, case_id=case_id, entity="PUBLIC_DEBT", record_ids=[r.record_id for r in pub])
-    court_ev = _build_evidence_ref_map(db, case_id=case_id, entity="COURT", record_ids=[r.record_id for r in court])
+    inv_ev = _build_evidence_ref_map(
+        db, case_id=case_id, entity="INVOICE", record_ids=[r.record_id for r in inv]
+    )
+    cred_ev = _build_evidence_ref_map(
+        db, case_id=case_id, entity="CREDIT", record_ids=[r.record_id for r in cred]
+    )
+    asset_ev = _build_evidence_ref_map(
+        db, case_id=case_id, entity="ASSET", record_ids=[r.record_id for r in assets]
+    )
+    pub_ev = _build_evidence_ref_map(
+        db, case_id=case_id, entity="PUBLIC_DEBT", record_ids=[r.record_id for r in pub]
+    )
+    court_ev = _build_evidence_ref_map(
+        db, case_id=case_id, entity="COURT", record_ids=[r.record_id for r in court]
+    )
 
     sheets: dict[str, list[dict[str, Any]]] = {}
     sheets["Facturas"] = [
@@ -1902,7 +1982,9 @@ def get_situation_kpis(case_id: str, db: Session = Depends(get_db)) -> Situation
         db.query(
             func.count(
                 func.distinct(
-                    func.lower(func.coalesce(SituationCredit.creditor_tax_id, SituationCredit.creditor))
+                    func.lower(
+                        func.coalesce(SituationCredit.creditor_tax_id, SituationCredit.creditor)
+                    )
                 )
             )
         )
@@ -1932,7 +2014,12 @@ def get_situation_kpis(case_id: str, db: Session = Depends(get_db)) -> Situation
         )
 
     total_deuda_publica = float(sum(pub_map.values()))
-    total_pasivo = float(sum((inv_open_map.get(c, 0.0) + cred_map.get(c, 0.0) + pub_map.get(c, 0.0)) for c in currencies))
+    total_pasivo = float(
+        sum(
+            (inv_open_map.get(c, 0.0) + cred_map.get(c, 0.0) + pub_map.get(c, 0.0))
+            for c in currencies
+        )
+    )
 
     return SituationKpisResponse(
         total_pasivo=total_pasivo,
@@ -2033,7 +2120,9 @@ def list_invoices(
                     "dispute_reason": r.dispute_reason,
                     "notes": r.notes,
                 },
-                evidence_count=_count_evidence(db, case_id=case_id, entity="INVOICE", record_id=r.record_id),
+                evidence_count=_count_evidence(
+                    db, case_id=case_id, entity="INVOICE", record_id=r.record_id
+                ),
             )
         )
     return SituationListResponse(items=items, page=page, page_size=page_size, total=total)
@@ -2085,7 +2174,9 @@ def export_invoices_excel(case_id: str, db: Session = Depends(get_db)) -> Stream
                 "is_disputed": r.is_disputed,
                 "dispute_reason": r.dispute_reason,
                 "notes": r.notes,
-                "evidence_count": _count_evidence(db, case_id=case_id, entity="INVOICE", record_id=r.record_id),
+                "evidence_count": _count_evidence(
+                    db, case_id=case_id, entity="INVOICE", record_id=r.record_id
+                ),
             }
         )
     return _export_rows_to_xlsx(
@@ -2096,7 +2187,9 @@ def export_invoices_excel(case_id: str, db: Session = Depends(get_db)) -> Stream
 
 
 @router.post("/invoices", response_model=SituationRecordSummary, summary="Crear factura")
-def create_invoice(case_id: str, req: CreateInvoiceRequest, db: Session = Depends(get_db)) -> SituationRecordSummary:
+def create_invoice(
+    case_id: str, req: CreateInvoiceRequest, db: Session = Depends(get_db)
+) -> SituationRecordSummary:
     _require_case(db, case_id)
     _validate_evidence(db, case_id, req.evidence)
 
@@ -2248,12 +2341,20 @@ def create_invoice(case_id: str, req: CreateInvoiceRequest, db: Session = Depend
             "dispute_reason": record.dispute_reason,
             "notes": record.notes,
         },
-        evidence_count=_count_evidence(db, case_id=case_id, entity="INVOICE", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="INVOICE", record_id=record.record_id
+        ),
     )
 
 
-@router.post("/invoices/update", response_model=SituationRecordSummary, summary="Actualizar factura (nueva versión)")
-def update_invoice(case_id: str, req: UpdateInvoiceRequest, db: Session = Depends(get_db)) -> SituationRecordSummary:
+@router.post(
+    "/invoices/update",
+    response_model=SituationRecordSummary,
+    summary="Actualizar factura (nueva versión)",
+)
+def update_invoice(
+    case_id: str, req: UpdateInvoiceRequest, db: Session = Depends(get_db)
+) -> SituationRecordSummary:
     _require_case(db, case_id)
     _validate_evidence(db, case_id, req.evidence)
 
@@ -2318,32 +2419,48 @@ def update_invoice(case_id: str, req: UpdateInvoiceRequest, db: Session = Depend
         supersedes_record_id=current.record_id,
         created_by=req.created_by,
         supplier=req.supplier if req.supplier is not None else current.supplier,
-        supplier_tax_id=req.supplier_tax_id if req.supplier_tax_id is not None else current.supplier_tax_id,
-        supplier_address=req.supplier_address if req.supplier_address is not None else current.supplier_address,
-        supplier_email=req.supplier_email if req.supplier_email is not None else current.supplier_email,
+        supplier_tax_id=req.supplier_tax_id
+        if req.supplier_tax_id is not None
+        else current.supplier_tax_id,
+        supplier_address=req.supplier_address
+        if req.supplier_address is not None
+        else current.supplier_address,
+        supplier_email=req.supplier_email
+        if req.supplier_email is not None
+        else current.supplier_email,
         buyer_name=req.buyer_name if req.buyer_name is not None else current.buyer_name,
         buyer_tax_id=req.buyer_tax_id if req.buyer_tax_id is not None else current.buyer_tax_id,
         buyer_address=req.buyer_address if req.buyer_address is not None else current.buyer_address,
         buyer_email=req.buyer_email if req.buyer_email is not None else current.buyer_email,
-        invoice_number=req.invoice_number if req.invoice_number is not None else current.invoice_number,
+        invoice_number=req.invoice_number
+        if req.invoice_number is not None
+        else current.invoice_number,
         contract_ref=req.contract_ref if req.contract_ref is not None else current.contract_ref,
         issue_date=req.issue_date if req.issue_date is not None else current.issue_date,
         due_date=req.due_date if req.due_date is not None else current.due_date,
         paid_date=req.paid_date if req.paid_date is not None else current.paid_date,
         currency=req.currency if req.currency is not None else current.currency,
-        currency_fx_rate=req.currency_fx_rate if req.currency_fx_rate is not None else current.currency_fx_rate,
+        currency_fx_rate=req.currency_fx_rate
+        if req.currency_fx_rate is not None
+        else current.currency_fx_rate,
         base_amount=req.base_amount if req.base_amount is not None else current.base_amount,
         vat_amount=req.vat_amount if req.vat_amount is not None else current.vat_amount,
-        withholding_amount=req.withholding_amount if req.withholding_amount is not None else current.withholding_amount,
+        withholding_amount=req.withholding_amount
+        if req.withholding_amount is not None
+        else current.withholding_amount,
         amount_total=req.amount_total if req.amount_total is not None else current.amount_total,
         status=req.status if req.status is not None else current.status,
         payment_terms=req.payment_terms if req.payment_terms is not None else current.payment_terms,
-        payment_method=req.payment_method if req.payment_method is not None else current.payment_method,
+        payment_method=req.payment_method
+        if req.payment_method is not None
+        else current.payment_method,
         iban_masked=req.iban_masked if req.iban_masked is not None else current.iban_masked,
         invoice_type=req.invoice_type if req.invoice_type is not None else current.invoice_type,
         source_ref=req.source_ref if req.source_ref is not None else current.source_ref,
         is_disputed=req.is_disputed if req.is_disputed is not None else current.is_disputed,
-        dispute_reason=req.dispute_reason if req.dispute_reason is not None else current.dispute_reason,
+        dispute_reason=req.dispute_reason
+        if req.dispute_reason is not None
+        else current.dispute_reason,
         notes=req.notes if req.notes is not None else current.notes,
     )
     db.add(record)
@@ -2421,7 +2538,9 @@ def update_invoice(case_id: str, req: UpdateInvoiceRequest, db: Session = Depend
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="INVOICE", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="INVOICE", record_id=record.record_id
+        ),
     )
 
 
@@ -2502,7 +2621,9 @@ def list_credits(
                     "procedure_ref": r.procedure_ref,
                     "notes": r.notes,
                 },
-                evidence_count=_count_evidence(db, case_id=case_id, entity="CREDIT", record_id=r.record_id),
+                evidence_count=_count_evidence(
+                    db, case_id=case_id, entity="CREDIT", record_id=r.record_id
+                ),
             )
         )
     return SituationListResponse(items=items, page=page, page_size=page_size, total=total)
@@ -2553,7 +2674,9 @@ def export_credits_excel(case_id: str, db: Session = Depends(get_db)) -> Streami
                 "enforcement_stage": r.enforcement_stage,
                 "procedure_ref": r.procedure_ref,
                 "notes": r.notes,
-                "evidence_count": _count_evidence(db, case_id=case_id, entity="CREDIT", record_id=r.record_id),
+                "evidence_count": _count_evidence(
+                    db, case_id=case_id, entity="CREDIT", record_id=r.record_id
+                ),
             }
         )
     return _export_rows_to_xlsx(
@@ -2564,7 +2687,9 @@ def export_credits_excel(case_id: str, db: Session = Depends(get_db)) -> Streami
 
 
 @router.post("/credits", response_model=SituationRecordSummary, summary="Crear crédito")
-def create_credit(case_id: str, req: CreateCreditRequest, db: Session = Depends(get_db)) -> SituationRecordSummary:
+def create_credit(
+    case_id: str, req: CreateCreditRequest, db: Session = Depends(get_db)
+) -> SituationRecordSummary:
     _require_case(db, case_id)
     _validate_evidence(db, case_id, req.evidence)
 
@@ -2688,12 +2813,20 @@ def create_credit(case_id: str, req: CreateCreditRequest, db: Session = Depends(
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="CREDIT", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="CREDIT", record_id=record.record_id
+        ),
     )
 
 
-@router.post("/credits/update", response_model=SituationRecordSummary, summary="Actualizar crédito (nueva versión)")
-def update_credit(case_id: str, req: UpdateCreditRequest, db: Session = Depends(get_db)) -> SituationRecordSummary:
+@router.post(
+    "/credits/update",
+    response_model=SituationRecordSummary,
+    summary="Actualizar crédito (nueva versión)",
+)
+def update_credit(
+    case_id: str, req: UpdateCreditRequest, db: Session = Depends(get_db)
+) -> SituationRecordSummary:
     _require_case(db, case_id)
     _validate_evidence(db, case_id, req.evidence)
 
@@ -2755,8 +2888,12 @@ def update_credit(case_id: str, req: UpdateCreditRequest, db: Session = Depends(
         supersedes_record_id=current.record_id,
         created_by=req.created_by,
         creditor=req.creditor if req.creditor is not None else current.creditor,
-        creditor_tax_id=req.creditor_tax_id if req.creditor_tax_id is not None else current.creditor_tax_id,
-        lender_address=req.lender_address if req.lender_address is not None else current.lender_address,
+        creditor_tax_id=req.creditor_tax_id
+        if req.creditor_tax_id is not None
+        else current.creditor_tax_id,
+        lender_address=req.lender_address
+        if req.lender_address is not None
+        else current.lender_address,
         lender_email=req.lender_email if req.lender_email is not None else current.lender_email,
         lender_phone=req.lender_phone if req.lender_phone is not None else current.lender_phone,
         contract_ref=req.contract_ref if req.contract_ref is not None else current.contract_ref,
@@ -2768,7 +2905,9 @@ def update_credit(case_id: str, req: UpdateCreditRequest, db: Session = Depends(
         outstanding_principal=req.outstanding_principal
         if req.outstanding_principal is not None
         else current.outstanding_principal,
-        accrued_interest=req.accrued_interest if req.accrued_interest is not None else current.accrued_interest,
+        accrued_interest=req.accrued_interest
+        if req.accrued_interest is not None
+        else current.accrued_interest,
         interest_rate=req.interest_rate if req.interest_rate is not None else current.interest_rate,
         interest_type=req.interest_type if req.interest_type is not None else current.interest_type,
         spread=req.spread if req.spread is not None else current.spread,
@@ -2783,12 +2922,20 @@ def update_credit(case_id: str, req: UpdateCreditRequest, db: Session = Depends(
         collateral_registry_ref=req.collateral_registry_ref
         if req.collateral_registry_ref is not None
         else current.collateral_registry_ref,
-        guarantor_name=req.guarantor_name if req.guarantor_name is not None else current.guarantor_name,
-        guarantor_tax_id=req.guarantor_tax_id if req.guarantor_tax_id is not None else current.guarantor_tax_id,
+        guarantor_name=req.guarantor_name
+        if req.guarantor_name is not None
+        else current.guarantor_name,
+        guarantor_tax_id=req.guarantor_tax_id
+        if req.guarantor_tax_id is not None
+        else current.guarantor_tax_id,
         maturity_date=req.maturity_date if req.maturity_date is not None else current.maturity_date,
         default_date=req.default_date if req.default_date is not None else current.default_date,
-        last_payment_date=req.last_payment_date if req.last_payment_date is not None else current.last_payment_date,
-        enforcement_stage=req.enforcement_stage if req.enforcement_stage is not None else current.enforcement_stage,
+        last_payment_date=req.last_payment_date
+        if req.last_payment_date is not None
+        else current.last_payment_date,
+        enforcement_stage=req.enforcement_stage
+        if req.enforcement_stage is not None
+        else current.enforcement_stage,
         procedure_ref=req.procedure_ref if req.procedure_ref is not None else current.procedure_ref,
         notes=req.notes if req.notes is not None else current.notes,
     )
@@ -2867,7 +3014,9 @@ def update_credit(case_id: str, req: UpdateCreditRequest, db: Session = Depends(
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="CREDIT", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="CREDIT", record_id=record.record_id
+        ),
     )
 
 
@@ -2968,7 +3117,9 @@ def list_assets(
                     "occupancy_status": r.occupancy_status,
                     "notes": r.notes,
                 },
-                evidence_count=_count_evidence(db, case_id=case_id, entity="ASSET", record_id=r.record_id),
+                evidence_count=_count_evidence(
+                    db, case_id=case_id, entity="ASSET", record_id=r.record_id
+                ),
             )
         )
     return SituationListResponse(items=items, page=page, page_size=page_size, total=total)
@@ -3021,7 +3172,9 @@ def export_assets_excel(case_id: str, db: Session = Depends(get_db)) -> Streamin
                 "disposal_status": r.disposal_status,
                 "occupancy_status": r.occupancy_status,
                 "notes": r.notes,
-                "evidence_count": _count_evidence(db, case_id=case_id, entity="ASSET", record_id=r.record_id),
+                "evidence_count": _count_evidence(
+                    db, case_id=case_id, entity="ASSET", record_id=r.record_id
+                ),
             }
         )
     return _export_rows_to_xlsx(
@@ -3032,7 +3185,9 @@ def export_assets_excel(case_id: str, db: Session = Depends(get_db)) -> Streamin
 
 
 @router.post("/assets", response_model=SituationRecordSummary, summary="Crear bien")
-def create_asset(case_id: str, req: CreateAssetRequest, db: Session = Depends(get_db)) -> SituationRecordSummary:
+def create_asset(
+    case_id: str, req: CreateAssetRequest, db: Session = Depends(get_db)
+) -> SituationRecordSummary:
     _require_case(db, case_id)
     _validate_evidence(db, case_id, req.evidence)
 
@@ -3141,12 +3296,20 @@ def create_asset(case_id: str, req: CreateAssetRequest, db: Session = Depends(ge
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="ASSET", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="ASSET", record_id=record.record_id
+        ),
     )
 
 
-@router.post("/assets/update", response_model=SituationRecordSummary, summary="Actualizar bien (nueva versión)")
-def update_asset(case_id: str, req: UpdateAssetRequest, db: Session = Depends(get_db)) -> SituationRecordSummary:
+@router.post(
+    "/assets/update",
+    response_model=SituationRecordSummary,
+    summary="Actualizar bien (nueva versión)",
+)
+def update_asset(
+    case_id: str, req: UpdateAssetRequest, db: Session = Depends(get_db)
+) -> SituationRecordSummary:
     _require_case(db, case_id)
     _validate_evidence(db, case_id, req.evidence)
 
@@ -3213,9 +3376,15 @@ def update_asset(case_id: str, req: UpdateAssetRequest, db: Session = Depends(ge
         description=req.description if req.description is not None else current.description,
         location=req.location if req.location is not None else current.location,
         owner=req.owner if req.owner is not None else current.owner,
-        ownership_share=req.ownership_share if req.ownership_share is not None else current.ownership_share,
-        acquisition_date=req.acquisition_date if req.acquisition_date is not None else current.acquisition_date,
-        acquisition_value=req.acquisition_value if req.acquisition_value is not None else current.acquisition_value,
+        ownership_share=req.ownership_share
+        if req.ownership_share is not None
+        else current.ownership_share,
+        acquisition_date=req.acquisition_date
+        if req.acquisition_date is not None
+        else current.acquisition_date,
+        acquisition_value=req.acquisition_value
+        if req.acquisition_value is not None
+        else current.acquisition_value,
         address_full=req.address_full if req.address_full is not None else current.address_full,
         city=req.city if req.city is not None else current.city,
         postal_code=req.postal_code if req.postal_code is not None else current.postal_code,
@@ -3223,7 +3392,9 @@ def update_asset(case_id: str, req: UpdateAssetRequest, db: Session = Depends(ge
         cadastral_ref=req.cadastral_ref if req.cadastral_ref is not None else current.cadastral_ref,
         registry_type=req.registry_type if req.registry_type is not None else current.registry_type,
         registry_ref=req.registry_ref if req.registry_ref is not None else current.registry_ref,
-        finca_registral=req.finca_registral if req.finca_registral is not None else current.finca_registral,
+        finca_registral=req.finca_registral
+        if req.finca_registral is not None
+        else current.finca_registral,
         tomo=req.tomo if req.tomo is not None else current.tomo,
         libro=req.libro if req.libro is not None else current.libro,
         folio=req.folio if req.folio is not None else current.folio,
@@ -3234,7 +3405,9 @@ def update_asset(case_id: str, req: UpdateAssetRequest, db: Session = Depends(ge
         valuation_external=req.valuation_external
         if req.valuation_external is not None
         else current.valuation_external,
-        valuation_date=req.valuation_date if req.valuation_date is not None else current.valuation_date,
+        valuation_date=req.valuation_date
+        if req.valuation_date is not None
+        else current.valuation_date,
         liens=req.liens if req.liens is not None else current.liens,
         encumbrances_full=req.encumbrances_full
         if req.encumbrances_full is not None
@@ -3243,8 +3416,12 @@ def update_asset(case_id: str, req: UpdateAssetRequest, db: Session = Depends(ge
         mortgage_outstanding=req.mortgage_outstanding
         if req.mortgage_outstanding is not None
         else current.mortgage_outstanding,
-        disposal_status=req.disposal_status if req.disposal_status is not None else current.disposal_status,
-        occupancy_status=req.occupancy_status if req.occupancy_status is not None else current.occupancy_status,
+        disposal_status=req.disposal_status
+        if req.disposal_status is not None
+        else current.disposal_status,
+        occupancy_status=req.occupancy_status
+        if req.occupancy_status is not None
+        else current.occupancy_status,
         notes=req.notes if req.notes is not None else current.notes,
     )
     db.add(record)
@@ -3315,7 +3492,9 @@ def update_asset(case_id: str, req: UpdateAssetRequest, db: Session = Depends(ge
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="ASSET", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="ASSET", record_id=record.record_id
+        ),
     )
 
 
@@ -3324,7 +3503,11 @@ def update_asset(case_id: str, req: UpdateAssetRequest, db: Session = Depends(ge
 # =========================================================
 
 
-@router.get("/public-debts", response_model=SituationListResponse, summary="Listar deudas públicas (vigentes)")
+@router.get(
+    "/public-debts",
+    response_model=SituationListResponse,
+    summary="Listar deudas públicas (vigentes)",
+)
 def list_public_debts(
     case_id: str,
     *,
@@ -3390,7 +3573,9 @@ def list_public_debts(
                     "deferred": r.deferred,
                     "notes": r.notes,
                 },
-                evidence_count=_count_evidence(db, case_id=case_id, entity="PUBLIC_DEBT", record_id=r.record_id),
+                evidence_count=_count_evidence(
+                    db, case_id=case_id, entity="PUBLIC_DEBT", record_id=r.record_id
+                ),
             )
         )
     return SituationListResponse(items=items, page=page, page_size=page_size, total=total)
@@ -3435,7 +3620,9 @@ def export_public_debts_excel(case_id: str, db: Session = Depends(get_db)) -> St
                 "enforcement_stage": r.enforcement_stage,
                 "deferred": r.deferred,
                 "notes": r.notes,
-                "evidence_count": _count_evidence(db, case_id=case_id, entity="PUBLIC_DEBT", record_id=r.record_id),
+                "evidence_count": _count_evidence(
+                    db, case_id=case_id, entity="PUBLIC_DEBT", record_id=r.record_id
+                ),
             }
         )
     return _export_rows_to_xlsx(
@@ -3548,11 +3735,17 @@ def create_public_debt(
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="PUBLIC_DEBT", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="PUBLIC_DEBT", record_id=record.record_id
+        ),
     )
 
 
-@router.post("/public-debts/update", response_model=SituationRecordSummary, summary="Actualizar deuda pública (nueva versión)")
+@router.post(
+    "/public-debts/update",
+    response_model=SituationRecordSummary,
+    summary="Actualizar deuda pública (nueva versión)",
+)
 def update_public_debt(
     case_id: str, req: UpdatePublicDebtRequest, db: Session = Depends(get_db)
 ) -> SituationRecordSummary:
@@ -3612,7 +3805,9 @@ def update_public_debt(
         created_by=req.created_by,
         authority=req.authority if req.authority is not None else current.authority,
         taxpayer_name=req.taxpayer_name if req.taxpayer_name is not None else current.taxpayer_name,
-        taxpayer_tax_id=req.taxpayer_tax_id if req.taxpayer_tax_id is not None else current.taxpayer_tax_id,
+        taxpayer_tax_id=req.taxpayer_tax_id
+        if req.taxpayer_tax_id is not None
+        else current.taxpayer_tax_id,
         concept=req.concept if req.concept is not None else current.concept,
         concept_code=req.concept_code if req.concept_code is not None else current.concept_code,
         period_start=req.period_start if req.period_start is not None else current.period_start,
@@ -3624,7 +3819,9 @@ def update_public_debt(
         aplazamiento_status=req.aplazamiento_status
         if req.aplazamiento_status is not None
         else current.aplazamiento_status,
-        resolution_date=req.resolution_date if req.resolution_date is not None else current.resolution_date,
+        resolution_date=req.resolution_date
+        if req.resolution_date is not None
+        else current.resolution_date,
         currency=req.currency if req.currency is not None else current.currency,
         principal=req.principal if req.principal is not None else current.principal,
         surcharges=req.surcharges if req.surcharges is not None else current.surcharges,
@@ -3632,7 +3829,9 @@ def update_public_debt(
         penalties=req.penalties if req.penalties is not None else current.penalties,
         amount_total=req.amount_total if req.amount_total is not None else current.amount_total,
         debt_status=req.debt_status if req.debt_status is not None else current.debt_status,
-        enforcement_stage=req.enforcement_stage if req.enforcement_stage is not None else current.enforcement_stage,
+        enforcement_stage=req.enforcement_stage
+        if req.enforcement_stage is not None
+        else current.enforcement_stage,
         deferred=req.deferred if req.deferred is not None else current.deferred,
         notes=req.notes if req.notes is not None else current.notes,
     )
@@ -3694,7 +3893,9 @@ def update_public_debt(
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="PUBLIC_DEBT", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="PUBLIC_DEBT", record_id=record.record_id
+        ),
     )
 
 
@@ -3703,7 +3904,11 @@ def update_public_debt(
 # =========================================================
 
 
-@router.get("/court-records", response_model=SituationListResponse, summary="Listar actuaciones/juzgado (vigentes)")
+@router.get(
+    "/court-records",
+    response_model=SituationListResponse,
+    summary="Listar actuaciones/juzgado (vigentes)",
+)
 def list_court_records(
     case_id: str,
     *,
@@ -3783,7 +3988,9 @@ def list_court_records(
                     "seizures_notes": r.seizures_notes,
                     "notes": r.notes,
                 },
-                evidence_count=_count_evidence(db, case_id=case_id, entity="COURT", record_id=r.record_id),
+                evidence_count=_count_evidence(
+                    db, case_id=case_id, entity="COURT", record_id=r.record_id
+                ),
             )
         )
     return SituationListResponse(items=items, page=page, page_size=page_size, total=total)
@@ -3833,7 +4040,9 @@ def export_court_records_excel(case_id: str, db: Session = Depends(get_db)) -> S
                 "enforcement_flag": r.enforcement_flag,
                 "seizures_notes": r.seizures_notes,
                 "notes": r.notes,
-                "evidence_count": _count_evidence(db, case_id=case_id, entity="COURT", record_id=r.record_id),
+                "evidence_count": _count_evidence(
+                    db, case_id=case_id, entity="COURT", record_id=r.record_id
+                ),
             }
         )
     return _export_rows_to_xlsx(
@@ -3842,7 +4051,10 @@ def export_court_records_excel(case_id: str, db: Session = Depends(get_db)) -> S
         filename=f"situation_court_records_{case_id}.xlsx",
     )
 
-@router.post("/court-records", response_model=SituationRecordSummary, summary="Crear actuación/juzgado")
+
+@router.post(
+    "/court-records", response_model=SituationRecordSummary, summary="Crear actuación/juzgado"
+)
 def create_court_record(
     case_id: str, req: CreateCourtRecordRequest, db: Session = Depends(get_db)
 ) -> SituationRecordSummary:
@@ -3946,11 +4158,17 @@ def create_court_record(
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="COURT", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="COURT", record_id=record.record_id
+        ),
     )
 
 
-@router.post("/court-records/update", response_model=SituationRecordSummary, summary="Actualizar actuación/juzgado (nueva versión)")
+@router.post(
+    "/court-records/update",
+    response_model=SituationRecordSummary,
+    summary="Actualizar actuación/juzgado (nueva versión)",
+)
 def update_court_record(
     case_id: str, req: UpdateCourtRecordRequest, db: Session = Depends(get_db)
 ) -> SituationRecordSummary:
@@ -4033,7 +4251,9 @@ def update_court_record(
         if req.party_counterparty_address is not None
         else current.party_counterparty_address,
         lawyer_name=req.lawyer_name if req.lawyer_name is not None else current.lawyer_name,
-        procurator_name=req.procurator_name if req.procurator_name is not None else current.procurator_name,
+        procurator_name=req.procurator_name
+        if req.procurator_name is not None
+        else current.procurator_name,
         action_type=req.action_type if req.action_type is not None else current.action_type,
         action_date=req.action_date if req.action_date is not None else current.action_date,
         next_hearing_date=req.next_hearing_date
@@ -4043,15 +4263,21 @@ def update_court_record(
         amount_claimed=req.amount_claimed
         if req.amount_claimed is not None
         else current.amount_claimed,
-        amount_awarded=req.amount_awarded if req.amount_awarded is not None else current.amount_awarded,
+        amount_awarded=req.amount_awarded
+        if req.amount_awarded is not None
+        else current.amount_awarded,
         amount_paid=req.amount_paid if req.amount_paid is not None else current.amount_paid,
         status=req.status if req.status is not None else current.status,
         stage=req.stage if req.stage is not None else current.stage,
-        milestones_json=req.milestones_json if req.milestones_json is not None else current.milestones_json,
+        milestones_json=req.milestones_json
+        if req.milestones_json is not None
+        else current.milestones_json,
         enforcement_flag=req.enforcement_flag
         if req.enforcement_flag is not None
         else current.enforcement_flag,
-        seizures_notes=req.seizures_notes if req.seizures_notes is not None else current.seizures_notes,
+        seizures_notes=req.seizures_notes
+        if req.seizures_notes is not None
+        else current.seizures_notes,
         notes=req.notes if req.notes is not None else current.notes,
     )
     db.add(record)
@@ -4117,6 +4343,7 @@ def update_court_record(
         created_at=record.created_at.isoformat(),
         created_by=record.created_by,
         data=after,
-        evidence_count=_count_evidence(db, case_id=case_id, entity="COURT", record_id=record.record_id),
+        evidence_count=_count_evidence(
+            db, case_id=case_id, entity="COURT", record_id=record.record_id
+        ),
     )
-

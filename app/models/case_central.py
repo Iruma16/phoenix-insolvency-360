@@ -8,12 +8,12 @@ from enum import Enum
 from typing import Optional
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -107,14 +107,19 @@ class CaseRecordEvidence(Base):
     justification: Mapped[str] = mapped_column(Text, nullable=False)
 
     document_id: Mapped[Optional[str]] = mapped_column(
-        String(36), ForeignKey("documents.document_id", ondelete="RESTRICT"), nullable=True, index=True
+        String(36),
+        ForeignKey("documents.document_id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
     chunk_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     excerpt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     added_by: Mapped[str] = mapped_column(String(100), nullable=False)
-    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
     __table_args__ = (
         # Índice lógico (consultas rápidas por record_type+record_id)
@@ -149,12 +154,16 @@ class CaseSubmission(Base):
     case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
 
     target: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True, default=SubmissionStatus.BORRADOR.value)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, index=True, default=SubmissionStatus.BORRADOR.value
+    )
 
     reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 
     created_by: Mapped[str] = mapped_column(String(100), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     presented_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -182,19 +191,29 @@ class CaseSubmissionTemplate(Base):
     link_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
 
     submission_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("case_submissions.submission_id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("case_submissions.submission_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
 
     template_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("templates.template_id", ondelete="RESTRICT"), nullable=False, index=True
+        String(36),
+        ForeignKey("templates.template_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
 
     added_by: Mapped[str] = mapped_column(String(100), nullable=False)
-    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
     __table_args__ = (
-        UniqueConstraint("submission_id", "template_id", name="uq_case_submission_templates_submission_template"),
+        UniqueConstraint(
+            "submission_id", "template_id", name="uq_case_submission_templates_submission_template"
+        ),
     )
 
 
@@ -207,7 +226,10 @@ class CaseSubmissionItem(Base):
 
     item_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     submission_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("case_submissions.submission_id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("case_submissions.submission_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     snapshot_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
@@ -222,7 +244,9 @@ class CaseSubmissionItem(Base):
 
     evidence_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class CaseGeneratedDocument(Base):
@@ -234,25 +258,35 @@ class CaseGeneratedDocument(Base):
 
     generated_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     submission_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("case_submissions.submission_id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("case_submissions.submission_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     snapshot_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
 
     template_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("templates.template_id", ondelete="RESTRICT"), nullable=False, index=True
+        String(36),
+        ForeignKey("templates.template_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     format: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
 
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
 
-    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     generator_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (
-        CheckConstraint("format IN ('DOCX','PDF','XLSX')", name="ck_case_generated_documents_format"),
+        CheckConstraint(
+            "format IN ('DOCX','PDF','XLSX')", name="ck_case_generated_documents_format"
+        ),
     )
 
 
@@ -270,7 +304,9 @@ class Template(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class TemplateField(Base):
@@ -278,11 +314,16 @@ class TemplateField(Base):
 
     field_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     template_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("templates.template_id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("templates.template_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     field_key: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     label: Mapped[str] = mapped_column(String(200), nullable=False)
-    data_type: Mapped[str] = mapped_column(String(20), nullable=False)  # string/number/date/bool/json
+    data_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # string/number/date/bool/json
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     validation_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
@@ -296,13 +337,18 @@ class FieldMapping(Base):
 
     mapping_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     template_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("templates.template_id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("templates.template_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     field_key: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
 
     source_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     source_spec_json: Mapped[dict] = mapped_column(JSON, nullable=False)
-    fallback: Mapped[str] = mapped_column(String(20), nullable=False, default=MappingFallback.MANUAL_REQUIRED.value)
+    fallback: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=MappingFallback.MANUAL_REQUIRED.value
+    )
 
     __table_args__ = (
         UniqueConstraint("template_id", "field_key", name="uq_field_mapping_template_key"),
@@ -327,22 +373,31 @@ class FormFieldValue(Base):
     value_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     template_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("templates.template_id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("templates.template_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     field_key: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
 
     value_json: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     evidence_id: Mapped[Optional[str]] = mapped_column(
-        String(36), ForeignKey("case_record_evidence.evidence_id", ondelete="SET NULL"), nullable=True
+        String(36),
+        ForeignKey("case_record_evidence.evidence_id", ondelete="SET NULL"),
+        nullable=True,
     )
     justification: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     updated_by: Mapped[str] = mapped_column(String(100), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
     __table_args__ = (
-        UniqueConstraint("case_id", "template_id", "field_key", name="uq_form_field_values_case_template_key"),
+        UniqueConstraint(
+            "case_id", "template_id", "field_key", name="uq_form_field_values_case_template_key"
+        ),
     )
 
 
@@ -389,7 +444,9 @@ class CaseRecordAudit(Base):
     before_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     after_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -401,6 +458,7 @@ class CaseRecordAudit(Base):
             name="ck_case_record_audit_action",
         ),
         # Justificación mínima (defensivo). Nota: SQLite también soporta LENGTH().
-        CheckConstraint("LENGTH(justification) >= 10", name="ck_case_record_audit_justification_minlen"),
+        CheckConstraint(
+            "LENGTH(justification) >= 10", name="ck_case_record_audit_justification_minlen"
+        ),
     )
-

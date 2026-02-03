@@ -27,7 +27,11 @@ def _bundle_for_llm(bundle: EconomicReportBundle) -> str:
     # Fallback (compatibilidad): si no existe contrato, usar payload mínimo
     fin = bundle.financial_analysis
     payload = {
-        "case": {"case_id": bundle.case_id, "case_name": bundle.case_name, "debtor_type": bundle.debtor_type},
+        "case": {
+            "case_id": bundle.case_id,
+            "case_name": bundle.case_name,
+            "debtor_type": bundle.debtor_type,
+        },
         "client_summary": bundle.client_summary.model_dump(),
         "documents": {
             "presented_count": len(bundle.documents_presented or []),
@@ -38,11 +42,17 @@ def _bundle_for_llm(bundle: EconomicReportBundle) -> str:
             "analysis_date": fin.analysis_date.isoformat(),
             "ratios": [r.model_dump() for r in (fin.ratios or [])][:10],
             "insolvency": fin.insolvency.model_dump() if fin.insolvency else None,
-            "credit_classification": [c.model_dump() for c in (fin.credit_classification or [])][:20],
+            "credit_classification": [c.model_dump() for c in (fin.credit_classification or [])][
+                :20
+            ],
             "total_debt": fin.total_debt,
         },
-        "legal_citations": {k: [c.model_dump() for c in v[:3]] for k, v in (bundle.legal_citations or {}).items()},
-        "lawyer_signature": bundle.lawyer_signature.model_dump() if bundle.lawyer_signature else None,
+        "legal_citations": {
+            k: [c.model_dump() for c in v[:3]] for k, v in (bundle.legal_citations or {}).items()
+        },
+        "lawyer_signature": bundle.lawyer_signature.model_dump()
+        if bundle.lawyer_signature
+        else None,
     }
     return json.dumps(payload, ensure_ascii=False, default=str)
 
@@ -72,10 +82,10 @@ def build_economic_report_narrative_md(db: Session, *, bundle: EconomicReportBun
         "Eres una abogada concursalista en España. Redactas un informe para un cliente no experto.\n\n"
         "REGLAS OBLIGATORIAS:\n"
         "1) Usa SOLO los hechos y artículos que aparecen en la ENTRADA. No inventes datos, fechas, importes, ni artículos.\n"
-        "2) Si falta información relevante escribe EXACTAMENTE: \"No consta en la documentación aportada\".\n"
+        '2) Si falta información relevante escribe EXACTAMENTE: "No consta en la documentación aportada".\n'
         "3) No menciones IA, RAG, LLM, modelos, embeddings, ni automatización.\n"
-        "4) Cita la base legal indicando \"TRLC art. X\" únicamente si el artículo aparece en la lista proporcionada.\n"
-        "5) No hagas acusaciones de delito. Si hay indicios, usa lenguaje condicional: \"podrían apreciarse indicios\".\n"
+        '4) Cita la base legal indicando "TRLC art. X" únicamente si el artículo aparece en la lista proporcionada.\n'
+        '5) No hagas acusaciones de delito. Si hay indicios, usa lenguaje condicional: "podrían apreciarse indicios".\n'
         "6) Cuando uses cifras, copia el valor exactamente tal como aparece en la ENTRADA (no redondees ni estimes).\n\n"
         "FORMATO:\n"
         "- Título\n"
@@ -84,7 +94,7 @@ def build_economic_report_narrative_md(db: Session, *, bundle: EconomicReportBun
         "- Situación económica y ratios (con interpretación)\n"
         "- Señales de insolvencia (solo detectadas)\n"
         "- Alertas del expediente\n"
-        "- Opciones legales y recomendación (si no se puede concluir: \"No consta...\")\n"
+        '- Opciones legales y recomendación (si no se puede concluir: "No consta...")\n'
         "- Pasos a seguir (cliente / abogada / administración concursal)\n"
         "- Firma (Nombre + Nº colegiado + fecha)\n\n"
         "ENTRADA:\n"
@@ -93,4 +103,3 @@ def build_economic_report_narrative_md(db: Session, *, bundle: EconomicReportBun
     )
 
     return build_llm_answer(question=question, context_text=context_text)
-

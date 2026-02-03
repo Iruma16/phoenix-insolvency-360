@@ -1,6 +1,6 @@
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -98,4 +98,3 @@ def test_no_consta_critical_requires_justification_and_maybe_evidence(client_wit
         },
     )
     assert r.status_code == 422
-

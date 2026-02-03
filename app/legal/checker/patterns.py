@@ -52,4 +52,3 @@ PENAL_ASSERTION_RE = re.compile(
     r"\b(es|ha\s+cometido|cometi[oó]|constituye|se\s+ha\s+cometido)\s+(?:un\s+)?(delito|fraude)\b",
     re.IGNORECASE,
 )
-

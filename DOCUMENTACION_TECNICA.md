@@ -310,7 +310,7 @@ Este paso puede ocurrir explícitamente en pipelines o implícitamente en retrie
 - `data/sample/`: dataset pequeño para demo (copiable a `data/demo_ready/` vía `make demo-data`).
 - `migrations/`: migraciones Alembic (si se usa DB persistente y esquema evoluciona).
 - `docker/`: artefactos Docker (opcional para ejecución en contenedor).
-- `legacy/`: material archivado/no oficial (si existe en tu rama; no forma parte del camino de ejecución).
+- (Archivado) `legacy/`: material no oficial. **No forma parte del camino de ejecución** y puede no existir en tu rama.
 
 ### Qué debe vivir en cada capa (regla de localización)
 

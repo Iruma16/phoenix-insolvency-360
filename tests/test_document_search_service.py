@@ -81,4 +81,3 @@ def test_search_documents_devuelve_snippet_y_pagina():
         assert item.snippet and "Agencia" in item.snippet
     finally:
         db.close()
-

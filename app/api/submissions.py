@@ -21,8 +21,8 @@ from app.core.database import get_db
 from app.models.case import Case
 from app.models.case_central import (
     AuditAction,
-    CaseRecordAudit,
     CaseGeneratedDocument,
+    CaseRecordAudit,
     CaseSubmission,
     CaseSubmissionTemplate,
     SubmissionStatus,
@@ -30,18 +30,17 @@ from app.models.case_central import (
     Template,
 )
 from app.services.submission_engine import (
-    TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ,
-    TEMPLATE_CODE_MEMORIA_ECONOMICA_JURIDICA,
     TEMPLATE_CODE_INFORME_ADMIN_CONCURSAL,
-    ensure_template_solicitud_concurso_pj,
-    ensure_template_memoria_economica_juridica,
+    TEMPLATE_CODE_MEMORIA_ECONOMICA_JURIDICA,
+    TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ,
     ensure_template_informe_admin_concursal,
+    ensure_template_memoria_economica_juridica,
+    ensure_template_solicitud_concurso_pj,
     generate_submission_output_docx,
     resolve_template_fields,
     snapshot_submission,
     validate_resolved_fields,
 )
-
 
 router = APIRouter(prefix="/cases/{case_id}/submissions", tags=["submissions"])
 
@@ -225,7 +224,9 @@ def _audit_submission(
 
 
 @router.post("", response_model=SubmissionSummary, status_code=status.HTTP_201_CREATED)
-def create_submission(case_id: str, req: CreateSubmissionRequest, db: Session = Depends(get_db)) -> SubmissionSummary:
+def create_submission(
+    case_id: str, req: CreateSubmissionRequest, db: Session = Depends(get_db)
+) -> SubmissionSummary:
     _require_case(db, case_id)
 
     if req.target not in {t.value for t in SubmissionTarget}:
@@ -357,7 +358,9 @@ def validate_submission(
     tpl = _get_template(db, req.template_code)
 
     res = resolve_template_fields(db, case_id=case_id, template_code=tpl.code)
-    out = validate_resolved_fields(db, case_id=case_id, template=tpl, resolved_fields=res.resolved_fields)
+    out = validate_resolved_fields(
+        db, case_id=case_id, template=tpl, resolved_fields=res.resolved_fields
+    )
     return ValidateResponse(ok=bool(out["ok"]), errors=list(out["errors"]))
 
 
@@ -380,7 +383,9 @@ def freeze_snapshot(
     tpl = _get_template(db, req.template_code)
 
     res = resolve_template_fields(db, case_id=case_id, template_code=tpl.code)
-    validation = validate_resolved_fields(db, case_id=case_id, template=tpl, resolved_fields=res.resolved_fields)
+    validation = validate_resolved_fields(
+        db, case_id=case_id, template=tpl, resolved_fields=res.resolved_fields
+    )
     if not validation["ok"]:
         raise HTTPException(status_code=409, detail={"errors": validation["errors"]})
 
@@ -403,7 +408,11 @@ def freeze_snapshot(
         actor=actor,
         reason=reason,
         before=None,
-        after={"template_code": tpl.code, "snapshot_id": snapshot_id, "created_items": int(created_items)},
+        after={
+            "template_code": tpl.code,
+            "snapshot_id": snapshot_id,
+            "created_items": int(created_items),
+        },
     )
     # Marcar LISTO (si está en BORRADOR)
     if sub.status == SubmissionStatus.BORRADOR.value:
@@ -463,7 +472,11 @@ def generate_output(
         actor=actor,
         reason=reason,
         before=None,
-        after={"template_code": tpl.code, "snapshot_id": snapshot_id, "created_items": int(created_items)},
+        after={
+            "template_code": tpl.code,
+            "snapshot_id": snapshot_id,
+            "created_items": int(created_items),
+        },
     )
 
     gen = generate_submission_output_docx(
@@ -528,8 +541,13 @@ def update_submission_status(
     reason = (req.reason or "").strip()
     if req.status != sub.status:
         if len(actor) < 2 or len(reason) < 10:
-            raise HTTPException(status_code=422, detail="actor y reason son obligatorios para cambiar status")
-        before = {"status": sub.status, "presented_at": sub.presented_at.isoformat() if sub.presented_at else None}
+            raise HTTPException(
+                status_code=422, detail="actor y reason son obligatorios para cambiar status"
+            )
+        before = {
+            "status": sub.status,
+            "presented_at": sub.presented_at.isoformat() if sub.presented_at else None,
+        }
         sub.status = req.status
         after = {"status": sub.status}
     else:
@@ -578,7 +596,10 @@ def list_generated_documents(
     _require_case(db, case_id)
     rows = (
         db.query(CaseGeneratedDocument)
-        .filter(CaseGeneratedDocument.case_id == case_id, CaseGeneratedDocument.submission_id == submission_id)
+        .filter(
+            CaseGeneratedDocument.case_id == case_id,
+            CaseGeneratedDocument.submission_id == submission_id,
+        )
         .order_by(CaseGeneratedDocument.generated_at.desc())
         .all()
     )
@@ -649,7 +670,9 @@ def add_submission_template(
         actor=req.actor,
         reason=req.reason,
         before=None,
-        after={"submission_template_add": {"template_code": tpl.code, "template_id": tpl.template_id}},
+        after={
+            "submission_template_add": {"template_code": tpl.code, "template_id": tpl.template_id}
+        },
     )
     db.commit()
     db.refresh(link)
@@ -679,7 +702,10 @@ def list_submission_templates(
     rows = (
         db.query(CaseSubmissionTemplate, Template.code)
         .join(Template, Template.template_id == CaseSubmissionTemplate.template_id)
-        .filter(CaseSubmissionTemplate.submission_id == submission_id, CaseSubmissionTemplate.case_id == case_id)
+        .filter(
+            CaseSubmissionTemplate.submission_id == submission_id,
+            CaseSubmissionTemplate.case_id == case_id,
+        )
         .order_by(CaseSubmissionTemplate.added_at.desc())
         .all()
     )
@@ -724,4 +750,3 @@ def download_generated_document(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=filename,
     )
-

@@ -18,4 +18,3 @@ def test_trlc_article_extraction_key_articles_smoke():
     assert get_trlc_article(441) is not None
     # Exoneración
     assert get_trlc_article(489) is not None
-

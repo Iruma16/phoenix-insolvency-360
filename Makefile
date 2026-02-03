@@ -1,4 +1,4 @@
-.PHONY: install-dev run-api run-ui init-db demo-data fmt lint typecheck test test-all check
+.PHONY: install-dev run-api run-ui init-db demo-data fmt fmt-check lint deadcode typecheck test test-all check
 
 install-dev:
 	python3 -m pip install --upgrade pip
@@ -24,8 +24,18 @@ demo-data:
 fmt:
 	python3 -m ruff format .
 
+fmt-check:
+	python3 -m ruff format --check .
+
 lint:
 	python3 -m ruff check .
+
+deadcode:
+	@echo "🔎 Vulture (reporte de código potencialmente no usado; no bloqueante por defecto)"
+	@python3 -m vulture app scripts vulture_whitelist.py \
+		--min-confidence 80 \
+		--exclude migrations,legacy,runtime,clients_data,tests \
+		|| true
 
 typecheck:
 	python3 -m mypy app || true
@@ -36,5 +46,5 @@ test:
 test-all:
 	pytest -m "not llm and not slow"
 
-check: fmt lint test
+check: fmt-check lint deadcode test
 

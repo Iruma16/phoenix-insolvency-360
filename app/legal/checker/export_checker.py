@@ -7,7 +7,6 @@ from typing import Literal, Optional
 
 from app.models.economic_report import EconomicReportBundle
 
-
 Audience = Literal["internal", "client"]
 Severity = Literal["PASS", "FAIL_BLANDO", "FAIL_DURO"]
 Action = Literal["ACCEPT", "RETRY_NARRATIVE", "DROP_NARRATIVE", "BLOCK_CLIENT_OUTPUT"]
@@ -40,7 +39,9 @@ _TECH_TERMS = re.compile(
 )
 _EPOCH = re.compile(r"\b1970-01-01\b")
 _MICROSECONDS_WEIRD = re.compile(r"\.\d{6,}\b")
-_DASHBOARD_HEADINGS = re.compile(r"\b(puntos\s+clave|qu[eé]\s+hacer\s+en\s+7\s+d[ií]as)\b", re.IGNORECASE)
+_DASHBOARD_HEADINGS = re.compile(
+    r"\b(puntos\s+clave|qu[eé]\s+hacer\s+en\s+7\s+d[ií]as)\b", re.IGNORECASE
+)
 _DASHBOARD_COUNTS = re.compile(r"\b\d+\s+(indicadores|alertas)\b", re.IGNORECASE)
 _AI_TERMS = re.compile(r"\b(ia|inteligencia\s+artificial|automatizad[oa]|llm|rag)\b", re.IGNORECASE)
 _TRLC_ART_RE = re.compile(
@@ -48,7 +49,9 @@ _TRLC_ART_RE = re.compile(
     re.IGNORECASE,
 )
 _PENAL_TERMS = re.compile(r"\b(delito|penal|fraude|culpable|criminal)\b", re.IGNORECASE)
-_CONDITIONALS = re.compile(r"\b(podr[ií]a|posible|a\s+valorar|a\s+confirmar|en\s+su\s+caso)\b", re.IGNORECASE)
+_CONDITIONALS = re.compile(
+    r"\b(podr[ií]a|posible|a\s+valorar|a\s+confirmar|en\s+su\s+caso)\b", re.IGNORECASE
+)
 _RECOMMENDATION_CUE = re.compile(
     # Importante: NO incluir "debe/debería" aquí, porque aparece en enunciados jurídicos
     # (p.ej., "esta deuda debe clasificarse...") y generaría falsos positivos.
@@ -56,8 +59,12 @@ _RECOMMENDATION_CUE = re.compile(
     re.IGNORECASE,
 )
 _WARNING_CUE = re.compile(r"\b(evitar|no\s+realizar|no\s+efectuar|no\s+proceder)\b", re.IGNORECASE)
-_TABLE_HEADERS = re.compile(r"\b(Hecho\s*\|\s*Base\s+legal|Hecho\s*/\s*Base\s+legal)\b", re.IGNORECASE)
-_TABLE_INTRO = re.compile(r"\b(a\s+continuaci[oó]n|seguidamente|con\s+car[aá]cter\s+orientativo)\b", re.IGNORECASE)
+_TABLE_HEADERS = re.compile(
+    r"\b(Hecho\s*\|\s*Base\s+legal|Hecho\s*/\s*Base\s+legal)\b", re.IGNORECASE
+)
+_TABLE_INTRO = re.compile(
+    r"\b(a\s+continuaci[oó]n|seguidamente|con\s+car[aá]cter\s+orientativo)\b", re.IGNORECASE
+)
 
 # Números visibles (euros / porcentajes) para R6-R7
 # Importes en euros:
@@ -106,7 +113,7 @@ def _allowed_recommendation_patterns(bundle: EconomicReportBundle) -> list[re.Pa
         contract = getattr(bundle, "narrative_contract", None)
         apps = list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
         for d in apps:
-            for o in (getattr(d, "legal_options", None) or []):
+            for o in getattr(d, "legal_options", None) or []:
                 oc = str(getattr(o, "option_code", "") or "").strip()
                 if oc:
                     allowed_codes.add(oc)
@@ -122,7 +129,11 @@ def _allowed_recommendation_patterns(bundle: EconomicReportBundle) -> list[re.Pa
         "secure_financing": [r"\bfinanciaci[oó]n\b", r"\bliquidez\b"],
         "challenge_claim": [r"\bimpugnar\b", r"\boposici[oó]n\b.*\bcr[eé]dito\b"],
         "verify_collateral": [r"\bverificar\b.*\bgarant[ií]a\b", r"\bhipoteca\b", r"\bprenda\b"],
-        "gather_docs": [r"\brecopilar\b.*\bdocumentaci[oó]n\b", r"\bobtener\b.*\bcertificad", r"\bcompletar\b.*\bexpediente\b"],
+        "gather_docs": [
+            r"\brecopilar\b.*\bdocumentaci[oó]n\b",
+            r"\bobtener\b.*\bcertificad",
+            r"\bcompletar\b.*\bexpediente\b",
+        ],
     }
 
     for code in sorted(allowed_codes):
@@ -184,7 +195,11 @@ def _visible_texts(bundle: EconomicReportBundle) -> list[tuple[str, str]]:
         ins = bundle.financial_analysis.insolvency
         if ins:
             texts.append(("insolvency", ins.overall_assessment))
-            for s in (ins.signals_impago or []) + (ins.signals_contables or []) + (ins.signals_exigibilidad or []):
+            for s in (
+                (ins.signals_impago or [])
+                + (ins.signals_contables or [])
+                + (ins.signals_exigibilidad or [])
+            ):
                 texts.append(("insolvency", getattr(s, "description", "") or ""))
     except Exception:
         pass
@@ -196,7 +211,7 @@ def _visible_texts(bundle: EconomicReportBundle) -> list[tuple[str, str]]:
         for d in apps:
             texts.append(("debt", str(getattr(d, "client_ready_summary", "") or "")))
             texts.append(("debt", str(getattr(d, "classification_basis", "") or "")))
-            for a in (getattr(d, "trlc_articles", None) or []):
+            for a in getattr(d, "trlc_articles", None) or []:
                 texts.append(("debt", str(getattr(a, "article_ref", "") or "")))
     except Exception:
         pass
@@ -208,7 +223,9 @@ def _visible_texts(bundle: EconomicReportBundle) -> list[tuple[str, str]]:
     # alertas (no se imprimen en client, pero pueden colarse)
     for a in bundle.alerts or []:
         texts.append(("alerts", getattr(a, "description", "") or ""))
-        atype = getattr(getattr(a, "alert_type", None), "value", None) or str(getattr(a, "alert_type", "") or "")
+        atype = getattr(getattr(a, "alert_type", None), "value", None) or str(
+            getattr(a, "alert_type", "") or ""
+        )
         texts.append(("alerts", atype))
 
     return [(sec, t) for sec, t in texts if t]
@@ -231,9 +248,15 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
         collegiate_number = _sig_field(sig, "collegiate_number")
         law_firm = _sig_field(sig, "law_firm")
         signature_date = _sig_field(sig, "signature_date")
-        if not sig or not lawyer_name or not collegiate_number or collegiate_number.strip().upper() in (
-            "PENDIENTE",
-            "NO CONFIGURADO",
+        if (
+            not sig
+            or not lawyer_name
+            or not collegiate_number
+            or collegiate_number.strip().upper()
+            in (
+                "PENDIENTE",
+                "NO CONFIGURADO",
+            )
         ):
             v.append(
                 ExportCheckViolation(
@@ -267,9 +290,15 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
     else:
         lawyer_name = _sig_field(sig, "lawyer_name")
         collegiate_number = _sig_field(sig, "collegiate_number")
-        if not sig or not lawyer_name or not collegiate_number or collegiate_number.strip().upper() in (
-            "PENDIENTE",
-            "NO CONFIGURADO",
+        if (
+            not sig
+            or not lawyer_name
+            or not collegiate_number
+            or collegiate_number.strip().upper()
+            in (
+                "PENDIENTE",
+                "NO CONFIGURADO",
+            )
         ):
             v.append(
                 ExportCheckViolation(
@@ -445,7 +474,10 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
         allowed_percent: set[float] = set()
         # money: total_debt, credit_classification amounts, debt apps amounts
         try:
-            if bundle.financial_analysis.total_debt and float(bundle.financial_analysis.total_debt) > 0:
+            if (
+                bundle.financial_analysis.total_debt
+                and float(bundle.financial_analysis.total_debt) > 0
+            ):
                 allowed_money.add(float(bundle.financial_analysis.total_debt))
         except Exception:
             pass
@@ -458,7 +490,9 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
             pass
         try:
             contract = getattr(bundle, "narrative_contract", None)
-            apps = list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
+            apps = (
+                list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
+            )
             for d in apps:
                 amt = getattr(d, "amount_eur", None)
                 if amt is not None:
@@ -472,7 +506,11 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
         try:
             ins = bundle.financial_analysis.insolvency
             if ins:
-                for s in (ins.signals_impago or []) + (ins.signals_contables or []) + (ins.signals_exigibilidad or []):
+                for s in (
+                    (ins.signals_impago or [])
+                    + (ins.signals_contables or [])
+                    + (ins.signals_exigibilidad or [])
+                ):
                     a = getattr(s, "amount", None)
                     if a is None:
                         continue
@@ -541,9 +579,11 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
         allowed_trlc: set[str] = set()
         try:
             contract = getattr(bundle, "narrative_contract", None)
-            apps = list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
+            apps = (
+                list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
+            )
             for d in apps:
-                for a in (getattr(d, "trlc_articles", None) or []):
+                for a in getattr(d, "trlc_articles", None) or []:
                     ar = str(getattr(a, "article_ref", "") or "").strip()
                     if ar:
                         n = _norm_trlc_ref(ar)
@@ -569,7 +609,11 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
                 ok_approx = False
                 try:
                     contract = getattr(bundle, "narrative_contract", None)
-                    apps = list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
+                    apps = (
+                        list(getattr(contract, "debt_legal_applications", None) or [])
+                        if contract
+                        else []
+                    )
                     ok_approx = any(getattr(d, "amount_confidence", None) == "approx" for d in apps)
                 except Exception:
                     ok_approx = False
@@ -636,8 +680,12 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
                     )
 
             # R9: “Según la Ley Concursal / TRLC” con conclusión sin artículo
-            if re.search(r"\b(seg[uú]n\s+la\s+ley\s+concursal|conforme\s+al\s+trlc)\b", t, re.IGNORECASE):
-                if not _TRLC_ART_RE.search(t) and re.search(r"\b(debe|determina|establece|condiciona)\b", t, re.IGNORECASE):
+            if re.search(
+                r"\b(seg[uú]n\s+la\s+ley\s+concursal|conforme\s+al\s+trlc)\b", t, re.IGNORECASE
+            ):
+                if not _TRLC_ART_RE.search(t) and re.search(
+                    r"\b(debe|determina|establece|condiciona)\b", t, re.IGNORECASE
+                ):
                     v.append(
                         ExportCheckViolation(
                             rule_id="R9",
@@ -653,7 +701,11 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
         try:
             ins = bundle.financial_analysis.insolvency
             if ins:
-                total = len(ins.signals_impago or []) + len(ins.signals_contables or []) + len(ins.signals_exigibilidad or [])
+                total = (
+                    len(ins.signals_impago or [])
+                    + len(ins.signals_contables or [])
+                    + len(ins.signals_exigibilidad or [])
+                )
                 if total > 18:
                     v.append(
                         ExportCheckViolation(
@@ -672,9 +724,13 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
     if audience == "client":
         try:
             contract = getattr(bundle, "narrative_contract", None)
-            apps = list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
+            apps = (
+                list(getattr(contract, "debt_legal_applications", None) or []) if contract else []
+            )
             for d in apps:
-                bucket = str(getattr(d, "proposed_trlc_bucket", "no_determinable") or "no_determinable")
+                bucket = str(
+                    getattr(d, "proposed_trlc_bucket", "no_determinable") or "no_determinable"
+                )
                 basis = str(getattr(d, "classification_basis", "") or "")
                 conf = str(getattr(d, "classification_confidence", "low") or "low")
                 if bucket != "no_determinable":
@@ -692,7 +748,16 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
                         )
                     if conf in ("low", "medium"):
                         low_basis = basis.lower()
-                        if not any(x in low_basis for x in ["a falta", "a confirmar", "puede variar", "podría", "a determinar"]):
+                        if not any(
+                            x in low_basis
+                            for x in [
+                                "a falta",
+                                "a confirmar",
+                                "puede variar",
+                                "podría",
+                                "a determinar",
+                            ]
+                        ):
                             v.append(
                                 ExportCheckViolation(
                                     rule_id="R12",
@@ -700,7 +765,9 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
                                     message="Clasificación concluyente sin cautela suficiente",
                                     action="BLOCK_CLIENT_OUTPUT",
                                     section="debt_legal_applications",
-                                    fragment=(str(getattr(d, "creditor_name", "") or "") + " — " + basis)[:160],
+                                    fragment=(
+                                        str(getattr(d, "creditor_name", "") or "") + " — " + basis
+                                    )[:160],
                                 )
                             )
         except Exception:
@@ -708,4 +775,3 @@ def check_export(bundle: EconomicReportBundle, *, audience: Audience) -> ExportC
 
     ok = not any(x.action == "BLOCK_CLIENT_OUTPUT" for x in v) if audience == "client" else True
     return ExportCheckReport(ok=ok, audience=audience, violations=v)
-

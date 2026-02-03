@@ -9,7 +9,7 @@ MVP:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -17,16 +17,21 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.case import Case
-from app.models.case_central import FieldMapping, FormFieldValue, MappingSourceKind, Template, TemplateField
-from app.services.submission_engine import (
-    TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ,
-    TEMPLATE_CODE_MEMORIA_ECONOMICA_JURIDICA,
-    TEMPLATE_CODE_INFORME_ADMIN_CONCURSAL,
-    ensure_template_solicitud_concurso_pj,
-    ensure_template_memoria_economica_juridica,
-    ensure_template_informe_admin_concursal,
+from app.models.case_central import (
+    FieldMapping,
+    FormFieldValue,
+    MappingSourceKind,
+    Template,
+    TemplateField,
 )
-
+from app.services.submission_engine import (
+    TEMPLATE_CODE_INFORME_ADMIN_CONCURSAL,
+    TEMPLATE_CODE_MEMORIA_ECONOMICA_JURIDICA,
+    TEMPLATE_CODE_SOLICITUD_CONCURSO_PJ,
+    ensure_template_informe_admin_concursal,
+    ensure_template_memoria_economica_juridica,
+    ensure_template_solicitud_concurso_pj,
+)
 
 router = APIRouter(prefix="/cases/{case_id}/templates", tags=["templates"])
 
@@ -45,7 +50,11 @@ def _get_template(db: Session, template_code: str) -> Template:
         return ensure_template_memoria_economica_juridica(db)
     if template_code == TEMPLATE_CODE_INFORME_ADMIN_CONCURSAL:
         return ensure_template_informe_admin_concursal(db)
-    tpl = db.query(Template).filter(Template.code == template_code, Template.is_active.is_(True)).first()
+    tpl = (
+        db.query(Template)
+        .filter(Template.code == template_code, Template.is_active.is_(True))
+        .first()
+    )
     if not tpl:
         raise HTTPException(status_code=404, detail=f"Plantilla no encontrada: {template_code}")
     return tpl
@@ -80,7 +89,9 @@ class TemplateFieldsResponse(BaseModel):
 
 class UpsertFieldValue(BaseModel):
     field_key: str = Field(..., min_length=2, max_length=120)
-    value_json: dict = Field(..., description="Ej: {'text':'...'} o {'value':'...'} o {'number': 123}")
+    value_json: dict = Field(
+        ..., description="Ej: {'text':'...'} o {'value':'...'} o {'number': 123}"
+    )
     evidence_id: Optional[str] = None
     justification: Optional[str] = None
     updated_by: str = Field(..., min_length=2, max_length=100)
@@ -143,7 +154,9 @@ class ListTemplateFieldsResponse(BaseModel):
 
 
 @router.get("/{template_code}/fields", response_model=TemplateFieldsResponse)
-def get_template_fields(case_id: str, template_code: str, db: Session = Depends(get_db)) -> TemplateFieldsResponse:
+def get_template_fields(
+    case_id: str, template_code: str, db: Session = Depends(get_db)
+) -> TemplateFieldsResponse:
     _require_case(db, case_id)
     tpl = _get_template(db, template_code)
     fields = db.query(TemplateField).filter(TemplateField.template_id == tpl.template_id).all()
@@ -183,11 +196,15 @@ def upsert_template_values(
     for entry in req.values:
         f = by_key.get(entry.field_key)
         if not f:
-            raise HTTPException(status_code=404, detail=f"Campo no encontrado en plantilla: {entry.field_key}")
+            raise HTTPException(
+                status_code=404, detail=f"Campo no encontrado en plantilla: {entry.field_key}"
+            )
         if isinstance(entry.value_json, dict) and _is_no_consta_value(entry.value_json):
             vcfg = f.validation_json or {}
             if vcfg.get("critical"):
-                rule = (vcfg.get("no_consta") or {}) if isinstance(vcfg.get("no_consta"), dict) else {}
+                rule = (
+                    (vcfg.get("no_consta") or {}) if isinstance(vcfg.get("no_consta"), dict) else {}
+                )
                 min_len = int(rule.get("justification_min") or 20)
                 evidence_required = bool(rule.get("evidence_required"))
                 just = (entry.justification or "").strip()
@@ -254,7 +271,9 @@ class TemplateMappingResponse(BaseModel):
 
 
 @router.get("/{template_code}/mapping", response_model=TemplateMappingResponse)
-def get_template_mapping(case_id: str, template_code: str, db: Session = Depends(get_db)) -> TemplateMappingResponse:
+def get_template_mapping(
+    case_id: str, template_code: str, db: Session = Depends(get_db)
+) -> TemplateMappingResponse:
     _require_case(db, case_id)
     tpl = _get_template(db, template_code)
     fields = db.query(TemplateField).filter(TemplateField.template_id == tpl.template_id).all()
@@ -320,12 +339,16 @@ def list_template_fields_catalog(
     qn = (q or "").strip()
     q_like = f"%{qn}%"
 
-    base = db.query(TemplateField, Template.code).join(Template, Template.template_id == TemplateField.template_id)
+    base = db.query(TemplateField, Template.code).join(
+        Template, Template.template_id == TemplateField.template_id
+    )
     if active_only:
         base = base.filter(Template.is_active.is_(True))
     if qn:
         base = base.filter(
-            (Template.code.ilike(q_like)) | (TemplateField.field_key.ilike(q_like)) | (TemplateField.label.ilike(q_like))
+            (Template.code.ilike(q_like))
+            | (TemplateField.field_key.ilike(q_like))
+            | (TemplateField.label.ilike(q_like))
         )
 
     total = int(base.count())
@@ -351,7 +374,9 @@ def list_template_fields_catalog(
 @router.get("/form-field-values", response_model=ListFormFieldValuesResponse)
 def list_form_field_values(
     case_id: str,
-    q: str = Query("", max_length=200, description="Filtro opcional (template_code/field_key/label)"),
+    q: str = Query(
+        "", max_length=200, description="Filtro opcional (template_code/field_key/label)"
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -395,7 +420,11 @@ def list_form_field_values(
 
     items: list[FormFieldValueSummary] = []
     for ffv, template_code, field_label in rows:
-        updated_at = ffv.updated_at.isoformat() if isinstance(ffv.updated_at, datetime) else str(ffv.updated_at)
+        updated_at = (
+            ffv.updated_at.isoformat()
+            if isinstance(ffv.updated_at, datetime)
+            else str(ffv.updated_at)
+        )
         items.append(
             FormFieldValueSummary(
                 value_id=ffv.value_id,
@@ -408,4 +437,3 @@ def list_form_field_values(
         )
 
     return ListFormFieldValuesResponse(items=items, page=page, page_size=page_size, total=total)
-

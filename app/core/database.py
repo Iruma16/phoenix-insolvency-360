@@ -7,8 +7,8 @@ Características:
 - Migraciones con Alembic
 - Singleton pattern para engine
 """
-from pathlib import Path
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy import create_engine, event, pool
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -93,7 +93,11 @@ def get_engine():
             if database_url.startswith("sqlite:///"):
                 sqlite_path = database_url[len("sqlite:///") :]
                 # Evitar casos especiales
-                if sqlite_path and sqlite_path != ":memory:" and not sqlite_path.startswith("file:"):
+                if (
+                    sqlite_path
+                    and sqlite_path != ":memory:"
+                    and not sqlite_path.startswith("file:")
+                ):
                     try:
                         Path(sqlite_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
                     except Exception as e:

@@ -42,6 +42,7 @@ from app.services.ingesta import ParsingResult, ingerir_archivo
 
 MIN_CHUNKABLE_TEXT_LEN = 100  # docs muy cortos: 1 chunk mínimo vs ruido
 
+
 def build_document_chunks_for_case(
     db: Session,
     *,

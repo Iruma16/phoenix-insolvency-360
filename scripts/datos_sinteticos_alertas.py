@@ -1,4 +1,4 @@
-make run-apimake run-apimm#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Dataset sintético de alertas (FASE 0) — Phoenix Legal
@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -50,14 +49,18 @@ def _find_repo_root(start: Path) -> Path:
 REPO_ROOT = _find_repo_root(Path(__file__).resolve())
 
 # Salida por defecto dentro del repo (portable).
-DEFAULT_OUT_DIR = REPO_ROOT / "data" / "synthetic" / "alerts_dataset"
+DEFAULT_OUT_DIR = REPO_ROOT / "clients_data" / "data" / "synthetic" / "alerts_dataset"
 
 # Catálogo inicial (FASE 0: solo definición; no implementa motor aquí)
 INITIAL_ALERT_CATALOG: dict[str, list[str]] = {
     "TGSS": ["deuda_por_periodos", "apremio", "falta_aplazamiento"],
     "BANCO": ["pagos_a_vinculadas", "efectivo_sin_soporte", "fraccionamientos"],
     "CONTABILIDAD": ["duplicados", "factura_mal_pagada", "descuadres_iva"],
-    "DOCUMENTACION": ["faltantes_criticos_rnt_rlc", "faltantes_conciliaciones", "faltantes_balances"],
+    "DOCUMENTACION": [
+        "faltantes_criticos_rnt_rlc",
+        "faltantes_conciliaciones",
+        "faltantes_balances",
+    ],
 }
 
 # Definition of Ready (dataset listo para diseñar sobre datos, no a ciegas)
@@ -100,7 +103,14 @@ TGSS_TOTAL = sum(v for _, v in TGSS_PERIODS)
 
 BANK_MOVEMENTS_SEP_2023 = [
     ("2023-09-04", "Transferencia", "GRUPO XYZ SL", "Servicios", -6000.00, 23850.33),
-    ("2023-09-08", "Transferencia", "PROVEEDOR ALPHA SL", "Factura FA-2023-077", -4500.00, 19350.33),
+    (
+        "2023-09-08",
+        "Transferencia",
+        "PROVEEDOR ALPHA SL",
+        "Factura FA-2023-077",
+        -4500.00,
+        19350.33,
+    ),
     ("2023-09-11", "Transferencia", "GRUPO XYZ SL", "Servicios", -6000.00, 13350.33),
     ("2023-09-14", "Retirada efectivo", "CAJERO", "Reintegro", -2000.00, 11350.33),
     ("2023-09-18", "Transferencia", "GRUPO XYZ SL", "Servicios", -6000.00, 5350.33),
@@ -208,7 +218,7 @@ def make_pdf(
     y = 265 * mm
     c.setFont("Helvetica", 10)
 
-    for (block_title, lines) in blocks:
+    for block_title, lines in blocks:
         c.setFont("Helvetica-Bold", 10)
         c.drawString(25 * mm, y, block_title)
         y -= 6 * mm
@@ -264,10 +274,18 @@ def make_pdf(
         _draw_header(c, title, subtitle)
         c.setFont("Helvetica", 10)
         c.setFillColor(colors.black)
-        c.drawString(25 * mm, 260 * mm, "ANEXO — Página adicional para pruebas de metadatos (page_start/page_end).")
+        c.drawString(
+            25 * mm,
+            260 * mm,
+            "ANEXO — Página adicional para pruebas de metadatos (page_start/page_end).",
+        )
         c.setFont("Helvetica", 9)
         c.setFillColor(colors.grey)
-        c.drawString(25 * mm, 252 * mm, "Contenido sintético. No concluye intención. Solo soporta trazabilidad.")
+        c.drawString(
+            25 * mm,
+            252 * mm,
+            "Contenido sintético. No concluye intención. Solo soporta trazabilidad.",
+        )
         c.setFillColor(colors.black)
 
     _draw_footer(c, page)
@@ -376,7 +394,7 @@ def generate_tgss(paths: Dict[str, Path]) -> Path:
 def generate_bank_extract(paths: Dict[str, Path]) -> Path:
     pdf_path = paths["banco"] / "Extracto_Bancario_Sep2023.pdf"
     table = [["Fecha", "Tipo", "Contraparte", "Importe / Saldo"]]
-    for (d, typ, counterparty, concept, amount, saldo) in BANK_MOVEMENTS_SEP_2023:
+    for d, typ, counterparty, concept, amount, saldo in BANK_MOVEMENTS_SEP_2023:
         imp = euros(abs(amount))
         sign = "-" if amount < 0 else "+"
         table.append([d, f"{typ} · {concept}", counterparty, f"{sign}{imp} · saldo {euros(saldo)}"])
@@ -569,7 +587,9 @@ def generate_invoices(paths: Dict[str, Path]) -> List[Path]:
     out: List[Path] = []
 
     inv1 = paths["facturas"] / "Factura_FB-2023-1021_PROV_BETA.pdf"
-    inv2 = paths["facturas"] / "Factura_Mantenimiento_Sep2023_Beta.pdf"  # distinto nombre, mismo binario
+    inv2 = (
+        paths["facturas"] / "Factura_Mantenimiento_Sep2023_Beta.pdf"
+    )  # distinto nombre, mismo binario
 
     generate_invoice_pdf(inv1, INVOICE_DUPLICATE, "PROVEEDOR BETA")
     # Blindaje duplicado: copia exacta de bytes (hash binario idéntico)
@@ -692,7 +712,7 @@ def main() -> None:
     parser.add_argument(
         "--out-dir",
         default=str(DEFAULT_OUT_DIR),
-        help="Directorio de salida dentro del repo (default: data/synthetic/alerts_dataset).",
+        help="Directorio de salida dentro del repo (default: clients_data/data/synthetic/alerts_dataset).",
     )
     args = parser.parse_args()
 
@@ -743,4 +763,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

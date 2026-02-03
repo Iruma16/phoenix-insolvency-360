@@ -13,7 +13,6 @@ import os
 from datetime import datetime
 from typing import Any, Optional
 
-import chromadb
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
@@ -39,8 +38,14 @@ def _get_reports_collection(case_id: str):
             "Genera embeddings antes o habilita autogeneración."
         )
     index_path = active / "index"
+
+    # Import lazy para evitar side-effects en import-time.
+    import chromadb  # type: ignore
+
     client = chromadb.PersistentClient(path=str(index_path))
-    return client.get_or_create_collection(name="reports", metadata={"case_id": case_id, "type": "reports"})
+    return client.get_or_create_collection(
+        name="reports", metadata={"case_id": case_id, "type": "reports"}
+    )
 
 
 def _embed(openai_client: OpenAI, texts: list[str]) -> list[list[float]]:
@@ -119,7 +124,10 @@ def index_economic_report_bundle(
     alerts_txt = _cap(alerts_txt, 6000)
 
     roadmap_txt = "HOJA DE RUTA:\n" + "\n".join(
-        [f"- [{r.phase}] {r.step} (prio={r.priority}, estado={r.status})" for r in (bundle.roadmap or [])[:15]]
+        [
+            f"- [{r.phase}] {r.step} (prio={r.priority}, estado={r.status})"
+            for r in (bundle.roadmap or [])[:15]
+        ]
     )
     roadmap_txt = _cap(roadmap_txt, 6000)
 
@@ -202,7 +210,9 @@ def query_reports_rag(
         return {"status": "NO_REPORTS", "context_text": "", "sources": []}
 
     qv = openai_client.embeddings.create(model=EMBEDDING_MODEL, input=[question]).data[0].embedding
-    res = collection.query(query_embeddings=[qv], n_results=top_k, include=["documents", "metadatas", "distances"])
+    res = collection.query(
+        query_embeddings=[qv], n_results=top_k, include=["documents", "metadatas", "distances"]
+    )
 
     docs_found = res.get("documents", [[]])[0]
     metas = res.get("metadatas", [[]])[0]
@@ -223,5 +233,8 @@ def query_reports_rag(
         )
         blocks.append(f"[REPORT {meta.get('report_id')} | {meta.get('section')}]\n{text}")
 
-    return {"status": "OK" if blocks else "NO_RELEVANT_CONTEXT", "context_text": "\n\n".join(blocks), "sources": sources}
-
+    return {
+        "status": "OK" if blocks else "NO_RELEVANT_CONTEXT",
+        "context_text": "\n\n".join(blocks),
+        "sources": sources,
+    }

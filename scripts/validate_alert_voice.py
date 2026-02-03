@@ -16,7 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from app.services.assistant_alert_voice import (
+from app.services.assistant_alert_voice import (  # noqa: E402
     demo_payloads_from_dataset,
     find_language_violations,
     generate_voice,
@@ -51,4 +51,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

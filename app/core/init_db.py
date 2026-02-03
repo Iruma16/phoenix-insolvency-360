@@ -5,7 +5,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 
 from app.core.config import settings
 from app.core.database import get_engine
@@ -90,11 +90,12 @@ def main():
         if "alerts" not in tables or "alert_evidences" not in tables:
             # Create from current ORM definitions (includes latest columns).
             from app.core.database import Base
+            from app.models.alert import Alert  # noqa: F401
+            from app.models.alert_evidence import AlertEvidence  # noqa: F401
+
             # Import referenced tables to satisfy ForeignKey resolution in create_all().
             from app.models.case import Case  # noqa: F401
             from app.models.document import Document  # noqa: F401
-            from app.models.alert import Alert  # noqa: F401
-            from app.models.alert_evidence import AlertEvidence  # noqa: F401
 
             Base.metadata.create_all(engine, tables=[Alert.__table__, AlertEvidence.__table__])  # type: ignore[attr-defined]
 

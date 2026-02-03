@@ -62,4 +62,3 @@ def record_type_from_entity(entity: str) -> str:
 def entity_from_record_type(record_type: str) -> str:
     rt = (record_type or "").strip().lower()
     return RECORD_TYPE_TO_ENTITY.get(rt, "OTHER")
-

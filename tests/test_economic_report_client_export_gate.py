@@ -1,7 +1,5 @@
 from datetime import datetime, timezone
 
-import pytest
-
 from app.legal.checker.export_checker import check_export
 from app.models.economic_report import ClientSummary, EconomicReportBundle
 from app.services.financial_analysis import FinancialAnalysisResult
@@ -70,4 +68,3 @@ def test_internal_allows_without_signature():
     b = _bundle_minimal(with_signature=False)
     report = check_export(b, audience="internal")
     assert report.ok is True
-

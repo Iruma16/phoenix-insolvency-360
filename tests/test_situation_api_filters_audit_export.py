@@ -1,7 +1,7 @@
 import io
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from sqlalchemy import create_engine
@@ -171,7 +171,9 @@ def test_evidence_and_audit_endpoints(client_with_db):
         json={
             "created_by": "abogado",
             "reason": "Se añade soporte adicional",
-            "evidence": [{"document_id": "doc_s2", "page": 2, "note": "Segundo soporte probatorio."}],
+            "evidence": [
+                {"document_id": "doc_s2", "page": 2, "note": "Segundo soporte probatorio."}
+            ],
         },
     )
     assert add.status_code == 200
@@ -201,9 +203,8 @@ def test_export_multi_sheet_excel(client_with_db):
 
     resp = client_with_db.get("/api/cases/case_s2/situation/export.xlsx")
     assert resp.status_code == 200
-    assert (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        in resp.headers.get("content-type", "")
+    assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in resp.headers.get(
+        "content-type", ""
     )
 
     wb = load_workbook(filename=io.BytesIO(resp.content))
@@ -212,4 +213,3 @@ def test_export_multi_sheet_excel(client_with_db):
     assert "Bienes" in wb.sheetnames
     assert "Deuda pública" in wb.sheetnames
     assert "Juzgado" in wb.sheetnames
-

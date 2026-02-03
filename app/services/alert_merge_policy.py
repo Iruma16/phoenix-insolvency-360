@@ -97,4 +97,3 @@ def merge_regenerated_alert(
         out["changed_since_last_review"] = bool(existing.get("changed_since_last_review", False))
 
     return out
-

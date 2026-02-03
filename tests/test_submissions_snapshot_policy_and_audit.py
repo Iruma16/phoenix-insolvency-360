@@ -1,6 +1,6 @@
-import pytest
 from datetime import datetime
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -9,8 +9,8 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.main import app
 from app.models.case import Case
-from app.models.document import Document
 from app.models.case_central import CaseRecordAudit, CaseRecordEvidence, FormFieldValue
+from app.models.document import Document
 from app.models.situation import SituationInvoice
 from app.services.submission_engine import ensure_template_solicitud_concurso_pj
 
@@ -130,7 +130,12 @@ def test_snapshot_creates_snapshot_id_and_audit_entries(client_with_db):
     # Crear submission (debe auditar SUBMISSION_CREATE)
     r = client_with_db.post(
         "/api/cases/case_sub1/submissions",
-        json={"target": "JUZGADO", "reference": "Autos 1/2026", "created_by": "abogado", "notes": "Alta"},
+        json={
+            "target": "JUZGADO",
+            "reference": "Autos 1/2026",
+            "created_by": "abogado",
+            "notes": "Alta",
+        },
     )
     assert r.status_code == 201, r.text
     submission_id = r.json()["submission_id"]
@@ -146,7 +151,11 @@ def test_snapshot_creates_snapshot_id_and_audit_entries(client_with_db):
     assert body["created_items"] >= 1
 
     # Auditoría: debe existir SUBMISSION_CREATE y SNAPSHOT_CREATE
-    actions = [x[0] for x in db.query(CaseRecordAudit.action).filter(CaseRecordAudit.case_id == "case_sub1").all()]
+    actions = [
+        x[0]
+        for x in db.query(CaseRecordAudit.action)
+        .filter(CaseRecordAudit.case_id == "case_sub1")
+        .all()
+    ]
     assert "SUBMISSION_CREATE" in actions
     assert "SNAPSHOT_CREATE" in actions
-

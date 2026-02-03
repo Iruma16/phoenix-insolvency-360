@@ -2,7 +2,12 @@ from datetime import datetime, timezone
 
 from app.core.database import get_session
 from app.services.economic_report_builder import build_economic_report_bundle
-from app.services.financial_analysis import CreditClassification, CreditType, Evidence, FinancialAnalysisResult
+from app.services.financial_analysis import (
+    CreditClassification,
+    CreditType,
+    Evidence,
+    FinancialAnalysisResult,
+)
 
 
 def test_debt_legal_applications_smoke():

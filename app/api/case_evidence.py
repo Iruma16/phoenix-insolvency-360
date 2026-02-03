@@ -17,10 +17,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.record_types import CANONICAL_RECORD_TYPES, ENTITY_ALLOWED, record_type_from_entity
 from app.models.case import Case
-from app.models.case_central import AuditAction, CaseRecordAudit, CaseRecordEvidence
-from app.models.case_central import TemplateField
+from app.models.case_central import AuditAction, CaseRecordAudit, CaseRecordEvidence, TemplateField
 from app.models.document import Document
-
 
 router = APIRouter(prefix="/cases/{case_id}/evidence", tags=["case_evidence"])
 
@@ -76,7 +74,9 @@ class ListEvidenceResponse(BaseModel):
 
 
 @router.post("", response_model=EvidenceSummary, status_code=status.HTTP_201_CREATED)
-def create_evidence(case_id: str, req: CreateEvidenceRequest, db: Session = Depends(get_db)) -> EvidenceSummary:
+def create_evidence(
+    case_id: str, req: CreateEvidenceRequest, db: Session = Depends(get_db)
+) -> EvidenceSummary:
     _require_case(db, case_id)
 
     allowed_source = {"DOCUMENTO", "CLIENTE", "CONTABILIDAD", "CRITERIO_PROFESIONAL"}
@@ -89,14 +89,18 @@ def create_evidence(case_id: str, req: CreateEvidenceRequest, db: Session = Depe
     else:
         rt = rt_in.lower()
     if rt not in CANONICAL_RECORD_TYPES:
-        raise HTTPException(status_code=422, detail=f"record_type inválido (canónico): {req.record_type}")
+        raise HTTPException(
+            status_code=422, detail=f"record_type inválido (canónico): {req.record_type}"
+        )
 
     st = (req.source_type or "").strip().upper()
     cl = (req.certainty_level or "").strip().upper()
     if st not in allowed_source:
         raise HTTPException(status_code=422, detail=f"source_type inválido: {req.source_type}")
     if cl not in allowed_certainty:
-        raise HTTPException(status_code=422, detail=f"certainty_level inválido: {req.certainty_level}")
+        raise HTTPException(
+            status_code=422, detail=f"certainty_level inválido: {req.certainty_level}"
+        )
 
     # Regla dura: NO_CONSTA requiere justificación más fuerte
     if cl == "NO_CONSTA" and len((req.justification or "").strip()) < 20:
@@ -115,7 +119,9 @@ def create_evidence(case_id: str, req: CreateEvidenceRequest, db: Session = Depe
 
     # Regla dura: record_id obligatorio para record_type conocido (excepto other)
     if rt != "other" and not (req.record_id or "").strip():
-        raise HTTPException(status_code=422, detail="record_id es obligatorio para este record_type")
+        raise HTTPException(
+            status_code=422, detail="record_id es obligatorio para este record_type"
+        )
 
     # Validar que record_id pertenece al caso (cuando aplica)
     if rt in {"invoice", "loan", "asset", "public_debt", "court_claim"} and req.record_id:
@@ -135,27 +141,45 @@ def create_evidence(case_id: str, req: CreateEvidenceRequest, db: Session = Depe
             "court_claim": SituationCourtRecord,
         }
         model = model_map[rt]
-        exists = db.query(model.record_id).filter(model.case_id == case_id, model.record_id == req.record_id).first()
+        exists = (
+            db.query(model.record_id)
+            .filter(model.case_id == case_id, model.record_id == req.record_id)
+            .first()
+        )
         if not exists:
-            raise HTTPException(status_code=422, detail="record_id no existe en el caso para ese record_type")
+            raise HTTPException(
+                status_code=422, detail="record_id no existe en el caso para ese record_type"
+            )
 
     if rt == "form_field" and req.record_id:
         # form_field: record_id canónico = TemplateField.field_id (no case-specific)
-        exists = db.query(TemplateField.field_id).filter(TemplateField.field_id == req.record_id).first()
+        exists = (
+            db.query(TemplateField.field_id).filter(TemplateField.field_id == req.record_id).first()
+        )
         if not exists:
-            raise HTTPException(status_code=422, detail="record_id no existe (TemplateField.field_id)")
+            raise HTTPException(
+                status_code=422, detail="record_id no existe (TemplateField.field_id)"
+            )
 
     if st == "DOCUMENTO":
         if not req.document_id:
-            raise HTTPException(status_code=400, detail="document_id obligatorio cuando source_type=DOCUMENTO")
+            raise HTTPException(
+                status_code=400, detail="document_id obligatorio cuando source_type=DOCUMENTO"
+            )
         # validar documento pertenece al caso
         doc = (
             db.query(Document.document_id)
-            .filter(Document.case_id == case_id, Document.document_id == req.document_id, Document.deleted_at.is_(None))
+            .filter(
+                Document.case_id == case_id,
+                Document.document_id == req.document_id,
+                Document.deleted_at.is_(None),
+            )
             .first()
         )
         if not doc:
-            raise HTTPException(status_code=400, detail="document_id no existe en el caso o está excluido")
+            raise HTTPException(
+                status_code=400, detail="document_id no existe en el caso o está excluido"
+            )
 
     row = CaseRecordEvidence(
         case_id=case_id,
@@ -229,7 +253,9 @@ def list_evidence(
         else:
             rt = rt_in.lower()
         if rt not in CANONICAL_RECORD_TYPES:
-            raise HTTPException(status_code=422, detail=f"record_type inválido (canónico): {record_type}")
+            raise HTTPException(
+                status_code=422, detail=f"record_type inválido (canónico): {record_type}"
+            )
         q = q.filter(CaseRecordEvidence.record_type == rt)
     if record_id:
         q = q.filter(CaseRecordEvidence.record_id == record_id)
@@ -254,4 +280,3 @@ def list_evidence(
             )
         )
     return ListEvidenceResponse(items=items)
-

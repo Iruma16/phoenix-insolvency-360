@@ -48,4 +48,3 @@ def test_debt_legal_applications_includes_timeline_enforcement():
     assert bundle.narrative_contract is not None
     apps = bundle.narrative_contract.debt_legal_applications
     assert any(a.source_section == "timeline" for a in apps)
-

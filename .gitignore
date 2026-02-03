@@ -1,7 +1,6 @@
 # --- SEGURIDAD (CRÍTICO) ---
 .env
 .env.*
-!.env.example
 *.key
 
 # --- CARPETAS GENERADAS / OUTPUTS (NO VERSIONAR) ---
@@ -12,6 +11,7 @@ logs/
 reports/
 
 # --- DATOS (NO VERSIONAR) ---
+clients_data/data/
 clients_data/**/cases/
 clients_data/**/_vectorstore/
 clients_data/**/_cache/
@@ -63,6 +63,9 @@ __pycache__/
 Thumbs.db
 temp.pdf
 *.log
+
+# --- ARTEFACTOS PESADOS (FUERA DE GIT) ---
+memoria.pdf
 
 # --- DUPLICADOS ACCIDENTALES (macOS Finder) ---
 * 2.py

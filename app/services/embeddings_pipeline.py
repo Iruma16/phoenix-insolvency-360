@@ -14,7 +14,6 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import chromadb
 from openai import OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -87,6 +86,10 @@ def get_case_collection(case_id: str, version: Optional[str] = None):
     logger.info("[EMBEDDINGS] Inicializando vectorstore (Chroma)")
     logger.info(f"[EMBEDDINGS] case_id: {case_id}")
     logger.info(f"[EMBEDDINGS] path: {index_path}")
+
+    # Import lazy para evitar side-effects al importar el módulo (p.ej. lectura de `.env` en entornos
+    # restringidos) y para reducir tiempo de arranque cuando embeddings no se usan.
+    import chromadb  # type: ignore
 
     client = chromadb.PersistentClient(path=str(index_path))
 

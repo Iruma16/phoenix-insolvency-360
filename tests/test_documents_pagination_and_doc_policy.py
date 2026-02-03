@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 
 import pytest
@@ -99,4 +98,3 @@ def test_doc_legacy_allowed_when_flag_set(tmp_path, monkeypatch):
     assert ok is True
     assert code is None
     assert "soportado" in msg.lower()
-

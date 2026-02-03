@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Iterable, Optional
+from typing import Optional
 
 from app.legal.checker.models import CheckError, CheckResult
 from app.legal.checker.patterns import (
     CONDITIONAL_MARKERS_RE,
+    DASHBOARD_COUNTS_RE,
     DATE_DMY_RE,
     DATE_ISO_RE,
-    DASHBOARD_COUNTS_RE,
     FORBIDDEN_TECH_WORDS_RE,
     INTERNAL_LABELS_RE,
     MONEY_RE,
@@ -159,7 +158,10 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
         res.severity = "BLOCKING"
         res.action = "DROP_NARRATIVE"
         res.errors.append(
-            CheckError(type="FORBIDDEN_TECH_WORD", detail="Aparecen referencias técnicas prohibidas (IA/LLM/RAG/etc.)")
+            CheckError(
+                type="FORBIDDEN_TECH_WORD",
+                detail="Aparecen referencias técnicas prohibidas (IA/LLM/RAG/etc.)",
+            )
         )
 
     # 1b) Etiquetas internas (bloqueante)
@@ -168,7 +170,10 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
         res.severity = "BLOCKING"
         res.action = "DROP_NARRATIVE"
         res.errors.append(
-            CheckError(type="INTERNAL_LABEL", detail="Aparecen etiquetas internas (alertas técnicas) en texto cliente")
+            CheckError(
+                type="INTERNAL_LABEL",
+                detail="Aparecen etiquetas internas (alertas técnicas) en texto cliente",
+            )
         )
 
     # 1c) Conteos tipo dashboard (soft: pedir re-redacción)
@@ -180,7 +185,10 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
         if res.action == "ACCEPT":
             res.action = "RETRY"
         res.errors.append(
-            CheckError(type="DASHBOARD_COUNT", detail="Aparecen conteos tipo 'X indicadores/alertas' en lenguaje de dashboard")
+            CheckError(
+                type="DASHBOARD_COUNT",
+                detail="Aparecen conteos tipo 'X indicadores/alertas' en lenguaje de dashboard",
+            )
         )
 
     # 2) Artículos TRLC (bloqueante)
@@ -195,7 +203,10 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
             res.severity = "BLOCKING"
             res.action = "DROP_NARRATIVE"
             res.errors.append(
-                CheckError(type="ILLEGAL_ARTICLE", detail=f"TRLC art. {n} no está en articulos_citados del bundle")
+                CheckError(
+                    type="ILLEGAL_ARTICLE",
+                    detail=f"TRLC art. {n} no está en articulos_citados del bundle",
+                )
             )
         else:
             # comprobar existencia en corpus local
@@ -204,7 +215,10 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
                 res.severity = "BLOCKING"
                 res.action = "DROP_NARRATIVE"
                 res.errors.append(
-                    CheckError(type="ARTICLE_NOT_IN_CORPUS", detail=f"TRLC art. {n} no existe en corpus local")
+                    CheckError(
+                        type="ARTICLE_NOT_IN_CORPUS",
+                        detail=f"TRLC art. {n} no existe en corpus local",
+                    )
                 )
 
     # 3) Fechas (bloqueante si nuevas)
@@ -219,7 +233,11 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
                 res.status = "FAIL"
                 res.severity = "BLOCKING"
                 res.action = "DROP_NARRATIVE"
-                res.errors.append(CheckError(type="BAD_DATE_RANGE", detail=f"Fecha fuera de rango razonable: {iso}"))
+                res.errors.append(
+                    CheckError(
+                        type="BAD_DATE_RANGE", detail=f"Fecha fuera de rango razonable: {iso}"
+                    )
+                )
                 continue
         except Exception:
             pass
@@ -227,7 +245,9 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
             res.status = "FAIL"
             res.severity = "BLOCKING"
             res.action = "DROP_NARRATIVE"
-            res.errors.append(CheckError(type="NEW_DATE", detail=f"Aparece fecha no permitida: {iso}"))
+            res.errors.append(
+                CheckError(type="NEW_DATE", detail=f"Aparece fecha no permitida: {iso}")
+            )
     # DD/MM/YYYY
     for m in DATE_DMY_RE.finditer(t):
         dd, mm, yyyy = m.group(1), m.group(2), m.group(3)
@@ -239,7 +259,10 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
                 res.severity = "BLOCKING"
                 res.action = "DROP_NARRATIVE"
                 res.errors.append(
-                    CheckError(type="BAD_DATE_RANGE", detail=f"Fecha fuera de rango razonable: {dd}/{mm}/{yyyy}")
+                    CheckError(
+                        type="BAD_DATE_RANGE",
+                        detail=f"Fecha fuera de rango razonable: {dd}/{mm}/{yyyy}",
+                    )
                 )
                 continue
         except Exception:
@@ -248,7 +271,9 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
             res.status = "FAIL"
             res.severity = "BLOCKING"
             res.action = "DROP_NARRATIVE"
-            res.errors.append(CheckError(type="NEW_DATE", detail=f"Aparece fecha no permitida: {dd}/{mm}/{yyyy}"))
+            res.errors.append(
+                CheckError(type="NEW_DATE", detail=f"Aparece fecha no permitida: {dd}/{mm}/{yyyy}")
+            )
 
     # 4) Penal/fraude: afirmaciones categóricas (bloqueante) y falta de prudencia (soft)
     if PENAL_ASSERTION_RE.search(t):
@@ -256,7 +281,9 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
         res.severity = "BLOCKING"
         res.action = "DROP_NARRATIVE"
         res.errors.append(
-            CheckError(type="PENAL_ASSERTION", detail="Lenguaje penal categórico (delito/fraude afirmado)")
+            CheckError(
+                type="PENAL_ASSERTION", detail="Lenguaje penal categórico (delito/fraude afirmado)"
+            )
         )
     if PENAL_TERMS_RE.search(t) and not CONDITIONAL_MARKERS_RE.search(t):
         # menciona penal/fraude sin marcadores prudentes
@@ -283,7 +310,9 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
             res.status = "FAIL"
             res.severity = "BLOCKING"
             res.action = "DROP_NARRATIVE"
-            res.errors.append(CheckError(type="NEW_AMOUNT", detail=f"Importe no permitido: {m.group(0).strip()}"))
+            res.errors.append(
+                CheckError(type="NEW_AMOUNT", detail=f"Importe no permitido: {m.group(0).strip()}")
+            )
 
     for m in PERCENT_RE.finditer(t):
         raw = m.group(1)
@@ -293,7 +322,9 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
             res.severity = "BLOCKING"
             res.action = "DROP_NARRATIVE"
             res.errors.append(
-                CheckError(type="NEW_PERCENT", detail=f"Porcentaje no permitido: {m.group(0).strip()}")
+                CheckError(
+                    type="NEW_PERCENT", detail=f"Porcentaje no permitido: {m.group(0).strip()}"
+                )
             )
 
     # Normalizar estado final
@@ -302,11 +333,22 @@ def check_narrative(text: str, *, bundle: EconomicReportBundle) -> CheckResult:
         res.action = "ACCEPT"
     else:
         # si hay blocking, priorizar DROP
-        if any(e.type in ("FORBIDDEN_TECH_WORD", "ILLEGAL_ARTICLE", "ARTICLE_NOT_IN_CORPUS", "NEW_DATE", "NEW_AMOUNT", "NEW_PERCENT", "PENAL_ASSERTION") for e in res.errors):
+        if any(
+            e.type
+            in (
+                "FORBIDDEN_TECH_WORD",
+                "ILLEGAL_ARTICLE",
+                "ARTICLE_NOT_IN_CORPUS",
+                "NEW_DATE",
+                "NEW_AMOUNT",
+                "NEW_PERCENT",
+                "PENAL_ASSERTION",
+            )
+            for e in res.errors
+        ):
             res.severity = "BLOCKING"
             res.action = "DROP_NARRATIVE"
         elif res.action == "RETRY":
             res.severity = "SOFT"
 
     return res
-

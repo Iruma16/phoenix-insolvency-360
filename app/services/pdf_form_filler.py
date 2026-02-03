@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import BooleanObject, NameObject, TextStringObject
 
 from app.models.court_pack import CourtPackState, DocumentStatus, Issue
 from app.services import court_pack_service
-
 
 TEMPLATE_PDF_PATH = Path(
     "judicial_forms/concurso_voluntario/personas_juridicas/20200521 Procedimientos concursales - Formulario para la solicitud de concurso voluntario pers. jur..pdf"
@@ -83,7 +81,9 @@ def ensure_field_map_populated_from_pdf(
         reader = PdfReader(str(template_pdf_path))
     except Exception:
         # no inventar: deja field_map_raw vacío y usa repo
-        out_path.write_text(json.dumps({"sections": []}, ensure_ascii=False, indent=2), encoding="utf-8")
+        out_path.write_text(
+            json.dumps({"sections": []}, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         return repo_field_map_path
 
     names: list[str] = []
@@ -123,7 +123,9 @@ def ensure_field_map_populated_from_pdf(
 
     # 4) Si no hay campos, no inventar nada
     if not names:
-        out_path.write_text(json.dumps({"sections": []}, ensure_ascii=False, indent=2), encoding="utf-8")
+        out_path.write_text(
+            json.dumps({"sections": []}, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         return repo_field_map_path
 
     # 5) Escribir field_map RAW por caso
@@ -167,7 +169,9 @@ def load_field_map(field_map_path: Path) -> dict[str, Any]:
     return raw
 
 
-def merge_auto_and_overrides(auto_values: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+def merge_auto_and_overrides(
+    auto_values: dict[str, Any], overrides: dict[str, Any]
+) -> dict[str, Any]:
     """
     Merge determinista: overrides pisa auto (solo por clave).
     """
@@ -185,7 +189,9 @@ def merge_auto_and_overrides(auto_values: dict[str, Any], overrides: dict[str, A
     return out
 
 
-def fill_pdf_acroform(template_pdf_path: Path, output_pdf_path: Path, pdf_field_values: dict[str, Any]) -> None:
+def fill_pdf_acroform(
+    template_pdf_path: Path, output_pdf_path: Path, pdf_field_values: dict[str, Any]
+) -> None:
     """
     Rellena campos AcroForm por nombre usando pypdf.
 
@@ -287,7 +293,7 @@ def fill_pdf_acroform(template_pdf_path: Path, output_pdf_path: Path, pdf_field_
                         if not isinstance(ap, dict):
                             ap = {}
 
-                        n = (ap.get("/N") or {})
+                        n = ap.get("/N") or {}
                         try:
                             n = n.get_object() if hasattr(n, "get_object") else n
                         except Exception:
@@ -310,26 +316,50 @@ def fill_pdf_acroform(template_pdf_path: Path, output_pdf_path: Path, pdf_field_
                             desired = token if token.startswith("/") else f"/{token}"
                             if desired in candidates:
                                 desired_name = NameObject(desired)
-                                obj.update({NameObject("/AS"): desired_name, NameObject("/V"): desired_name})
+                                obj.update(
+                                    {
+                                        NameObject("/AS"): desired_name,
+                                        NameObject("/V"): desired_name,
+                                    }
+                                )
                             elif on_name is not None:
                                 obj.update({NameObject("/AS"): on_name, NameObject("/V"): on_name})
                             else:
-                                obj.update({NameObject("/AS"): NameObject("/Yes"), NameObject("/V"): NameObject("/Yes")})
+                                obj.update(
+                                    {
+                                        NameObject("/AS"): NameObject("/Yes"),
+                                        NameObject("/V"): NameObject("/Yes"),
+                                    }
+                                )
                         else:
                             # default checkbox behavior
                             if bool(v):
                                 if on_name is not None:
-                                    obj.update({NameObject("/AS"): on_name, NameObject("/V"): on_name})
+                                    obj.update(
+                                        {NameObject("/AS"): on_name, NameObject("/V"): on_name}
+                                    )
                                 else:
-                                    obj.update({NameObject("/AS"): NameObject("/Yes"), NameObject("/V"): NameObject("/Yes")})
+                                    obj.update(
+                                        {
+                                            NameObject("/AS"): NameObject("/Yes"),
+                                            NameObject("/V"): NameObject("/Yes"),
+                                        }
+                                    )
                             else:
-                                obj.update({NameObject("/AS"): NameObject("/Off"), NameObject("/V"): NameObject("/Off")})
+                                obj.update(
+                                    {
+                                        NameObject("/AS"): NameObject("/Off"),
+                                        NameObject("/V"): NameObject("/Off"),
+                                    }
+                                )
                     except Exception:
                         pass
                 else:
                     # Text/Choice default to string
                     try:
-                        obj.update({NameObject("/V"): TextStringObject("" if v is None else str(v))})
+                        obj.update(
+                            {NameObject("/V"): TextStringObject("" if v is None else str(v))}
+                        )
                     except Exception:
                         pass
 
@@ -504,7 +534,9 @@ def build_auto_values_minimal(case_root: Path, state: CourtPackState) -> dict[st
     return auto
 
 
-def _field_map_to_pdf_values(field_map: dict[str, Any], values_by_field_id: dict[str, Any]) -> dict[str, Any]:
+def _field_map_to_pdf_values(
+    field_map: dict[str, Any], values_by_field_id: dict[str, Any]
+) -> dict[str, Any]:
     pdf_values: dict[str, Any] = {}
     for sec in field_map.get("sections") or []:
         for f in sec.get("fields") or []:
@@ -590,11 +622,15 @@ def generate_document_0(case_root: Path, state: CourtPackState, user_id: str) ->
         raise FileNotFoundError(str(FIELD_MAP_PATH))
 
     auto = build_auto_values_minimal(case_root, state)
-    paths["inputs_formulario_auto"].write_text(json.dumps(auto, ensure_ascii=False, indent=2), encoding="utf-8")
+    paths["inputs_formulario_auto"].write_text(
+        json.dumps(auto, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     overrides = _load_json_if_exists(paths["inputs_formulario_overrides"])
     final = merge_auto_and_overrides(auto, overrides)
-    paths["inputs_formulario_final"].write_text(json.dumps(final, ensure_ascii=False, indent=2), encoding="utf-8")
+    paths["inputs_formulario_final"].write_text(
+        json.dumps(final, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     # Ensure we have a RAW field map (names from PDF) available per-case if repo map is empty.
     raw_or_repo_field_map_path = ensure_field_map_populated_from_pdf(
@@ -666,7 +702,11 @@ def generate_document_0(case_root: Path, state: CourtPackState, user_id: str) ->
                 chosen_reason = (
                     "effective_ignored_low_coverage"
                     if coverage < 0.60
-                    else ("effective_ignored_missing_doc_fields" if not has_doc_fields else "effective_ignored_empty")
+                    else (
+                        "effective_ignored_missing_doc_fields"
+                        if not has_doc_fields
+                        else "effective_ignored_empty"
+                    )
                 )
         except Exception:
             chosen_map_path = raw_or_repo_field_map_path
@@ -719,11 +759,14 @@ def generate_document_0(case_root: Path, state: CourtPackState, user_id: str) ->
                 "checkbox_true": int(checkbox_true),
                 "doc_fields_in_map": int(doc_fields),
             },
-            "timestamp": int(court_pack_service.time.time() * 1000) if hasattr(court_pack_service, "time") else None,
+            "timestamp": int(court_pack_service.time.time() * 1000)
+            if hasattr(court_pack_service, "time")
+            else None,
         }
         # safer timestamp fallback
         if payload["timestamp"] is None:
             import time as _t
+
             payload["timestamp"] = int(_t.time() * 1000)
         with open(dbg_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -750,9 +793,10 @@ def generate_document_0(case_root: Path, state: CourtPackState, user_id: str) ->
         json.dumps(final, ensure_ascii=False, sort_keys=True).encode("utf-8")
     )
     rel_path = str(output_pdf_path.relative_to(case_root))
-    updated_state = _update_doc0_in_state(state, generated_file_path=rel_path, inputs_hash=final_hash, issues=issues)
+    updated_state = _update_doc0_in_state(
+        state, generated_file_path=rel_path, inputs_hash=final_hash, issues=issues
+    )
 
     # Save state (auditable via court_pack_service internal audit)
     court_pack_service.save_state(case_root, updated_state)
     return output_pdf_path
-

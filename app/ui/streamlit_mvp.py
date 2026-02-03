@@ -3,16 +3,15 @@ UI MVP para Phoenix Legal conectada con FastAPI backend.
 
 Versión refactorizada con componentes reutilizables y caché.
 """
-import os
 import inspect
 import json
-import time
+import os
 import re
+import time
+import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
-import io
-from datetime import datetime, timezone
-import traceback
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -26,6 +25,8 @@ except Exception:
     # No bloquear la UI si python-dotenv no está disponible
     pass
 
+from app.models.court_pack import CourtPackState, DebtorFlags
+from app.services import court_pack_service, pdf_form_filler
 from app.ui.api_client import (
     CaseNotFoundError,
     ParsingError,
@@ -43,66 +44,18 @@ from app.ui.components import (
     render_timeline_block_backend,  # ✅ Nueva versión escalable
 )
 from app.ui.components_modules.evidence import render_alert_evidence_list
-from app.services import court_pack_service, pdf_form_filler
-from app.models.court_pack import CourtPackState, DebtorFlags
+from app.ui.mvp.client import (
+    download_doc_url,
+    get_api_client,
+    get_financial_analysis_cached,
+)
+from app.ui.mvp.debug import log_tabs_initialized
+from app.ui.mvp.sidebar import render_sidebar
 
 # Configuración de la página
 st.set_page_config(
     page_title="Phoenix Legal - MVP", page_icon="⚖️", layout="wide", initial_sidebar_state="expanded"
 )
-
-# Bump this cuando cambie la API del cliente (evita bugs por cache viejo)
-CLIENT_API_VERSION = 5
-
-
-# Inicializar cliente API
-@st.cache_resource
-def _get_api_client_cached(base_url: str, _v: int = CLIENT_API_VERSION):
-    # IMPORTANTE: incluir base_url como parámetro para que Streamlit cachee por URL
-    # (si no, puede quedarse apuntando al puerto viejo aunque cambies PHOENIX_API_BASE_URL).
-    if not base_url:
-        raise RuntimeError(
-            "Falta PHOENIX_API_BASE_URL. Copia .env.example a .env y define PHOENIX_API_BASE_URL "
-            "(ej: http://localhost:8000)."
-        )
-    return PhoenixLegalClient(base_url=base_url)
-
-
-def get_api_client() -> PhoenixLegalClient:
-    """
-    Wrapper sin args para evitar errores en call-sites.
-    Mantiene cache por base_url (leído de env) vía _get_api_client_cached().
-    """
-    base_url = (os.getenv("PHOENIX_API_BASE_URL") or "").strip()
-    return _get_api_client_cached(base_url=base_url, _v=CLIENT_API_VERSION)
-
-
-# Caché para análisis financiero (5 minutos)
-@st.cache_data(ttl=300)
-def get_financial_analysis_cached(case_id: str):
-    """
-    Obtiene análisis financiero con caché.
-
-    Args:
-        case_id: ID del caso
-
-    Returns:
-        Dict con análisis financiero (serializable)
-    """
-    client = get_api_client()
-    analysis = client.get_financial_analysis(case_id)
-
-    # Convertir a dict para que sea cacheable
-    return {
-        "balance": analysis.balance.dict() if analysis.balance else None,
-        "profit_loss": analysis.profit_loss.dict() if analysis.profit_loss else None,
-        "credit_classification": [c.dict() for c in analysis.credit_classification],
-        "total_debt": analysis.total_debt,
-        "ratios": [r.dict() for r in analysis.ratios],
-        "insolvency": analysis.insolvency.dict() if analysis.insolvency else None,
-        "timeline": [t.dict() for t in analysis.timeline],
-    }
-
 
 base_url = os.getenv("PHOENIX_API_BASE_URL") or ""
 client = get_api_client()
@@ -113,58 +66,11 @@ if not hasattr(client, "exclude_document") or not hasattr(client, "generate_econ
 
 
 def _download_doc_url(case_id: str, document_id: str, *, disposition: str) -> str:
-    """
-    Compatibilidad: si Streamlit conserva un cliente cacheado antiguo sin parámetro `disposition`,
-    construimos la URL manualmente.
-    """
-    disp = (disposition or "attachment").strip().lower()
-    if disp not in ("attachment", "inline"):
-        disp = "attachment"
-    try:
-        sig = inspect.signature(client.download_document_url)
-        if "disposition" in sig.parameters:
-            return client.download_document_url(case_id, document_id, disposition=disp)  # type: ignore[arg-type]
-    except Exception:
-        pass
-    base = getattr(client, "base_url", None) or (os.getenv("PHOENIX_API_BASE_URL") or "http://localhost:8000")
-    return f"{str(base).rstrip('/')}/api/cases/{case_id}/documents/{document_id}/download?disposition={disp}"
+    return download_doc_url(client, case_id, document_id, disposition=disposition)
 
-# =========================================
-# SIDEBAR: HEALTH CHECK + SELECTOR DE CASOS
-# =========================================
 
-st.sidebar.title("⚖️ Phoenix Legal")
-
-# Health check
-try:
-    health = client.health_check()
-    st.sidebar.success(f"✅ API: {health['status']}")
-except Exception as e:
-    st.sidebar.error(f"❌ API no disponible: {e}")
-    st.stop()
-
-# Selector de caso
-st.sidebar.subheader("📁 Casos")
-
-# Listar casos existentes
-cases = []
-try:
-    cases = client.list_cases()
-    if cases:
-        case_options = {
-            f"{case['name']} ({case['case_id'][:8]}...)": case["case_id"] for case in cases
-        }
-        selected_label = st.sidebar.selectbox(
-            "Selecciona un caso:", options=list(case_options.keys()), key="case_selector"
-        )
-        st.session_state["selected_case_id"] = case_options[selected_label]
-    else:
-        st.sidebar.info("No hay casos creados")
-        st.session_state["selected_case_id"] = None
-except Exception as e:
-    st.sidebar.error(f"Error al cargar casos: {e}")
-    st.session_state["selected_case_id"] = None
-    cases = []
+sidebar_state = render_sidebar(client)
+cases = sidebar_state["cases"]
 
 # =========================================
 # PANTALLA PRINCIPAL
@@ -190,8 +96,6 @@ tab1, tab2, tab8, tab3, tab4, tab5, tab9, tab10, tab6, tab7 = st.tabs(
 
 # region agent log (debug-mode)
 try:
-    import time as _t
-    _dbg_path = "/Users/irumabragado/Documents/procesos/202512_phoenix-legal/.cursor/debug.log"
     _labels = [
         "🆕 Gestión de Casos",
         "📤 Documentos",
@@ -216,22 +120,7 @@ try:
         "tab9": _labels[6],
         "tab10": _labels[7],
     }
-    with open(_dbg_path, "a", encoding="utf-8") as _f:
-        _f.write(
-            __import__("json").dumps(
-                {
-                    "sessionId": "debug-session",
-                    "runId": "tab-order-post-reorder-v2",
-                    "hypothesisId": "H_TABS_ORDER",
-                    "location": "app/ui/streamlit_mvp.py:st.tabs(main)",
-                    "message": "tabs_initialized",
-                    "data": {"labels": _labels, "binding": _mapping},
-                    "timestamp": int(_t.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
+    log_tabs_initialized(_labels, _mapping, location="app/ui/streamlit_mvp.py:st.tabs(main)")
 except Exception:
     pass
 # endregion agent log (debug-mode)
@@ -395,7 +284,9 @@ with tab2:
                             )
                         _reset_pending_upload()
                         st.session_state["upload_confirmed"] = False
-                        st.success(f"✅ {len(result) if isinstance(result, list) else 0} documento(s) subido(s)")
+                        st.success(
+                            f"✅ {len(result) if isinstance(result, list) else 0} documento(s) subido(s)"
+                        )
                         st.rerun()
                     except Exception as e:
                         _reset_pending_upload()
@@ -811,9 +702,9 @@ with tab4:
                         try:
                             with st.spinner("Regenerando alertas despacho (persistidas)..."):
                                 client.generate_case_alerts_desk(case_id)
-                            st.session_state["alerts_refresh_token"] = int(
-                                st.session_state["alerts_refresh_token"]
-                            ) + 1
+                            st.session_state["alerts_refresh_token"] = (
+                                int(st.session_state["alerts_refresh_token"]) + 1
+                            )
                             st.success("✅ Alertas regeneradas")
                             st.rerun()
                         except Exception as e:
@@ -821,7 +712,8 @@ with tab4:
                 with bcol2:
                     # Export solo si hay alertas validadas
                     can_export = any(
-                        str(a.get("status") or "") in ("revisada", "para_informe") for a in (alerts or [])
+                        str(a.get("status") or "") in ("revisada", "para_informe")
+                        for a in (alerts or [])
                     )
                     if st.button("⬇️ Export", disabled=not can_export, key="alerts_desk_export"):
                         try:
@@ -830,7 +722,9 @@ with tab4:
                             dl = str(exp.get("download_url") or "")
                             if dl:
                                 st.success("✅ Export generado")
-                                st.link_button("Descargar informe (MD/PDF si aplica)", f"{client.base_url}{dl}")
+                                st.link_button(
+                                    "Descargar informe (MD/PDF si aplica)", f"{client.base_url}{dl}"
+                                )
                             else:
                                 st.info("Export generado, pero no hay URL de descarga.")
                         except Exception as e:
@@ -875,7 +769,8 @@ with tab4:
                     "Estado",
                     options=["pendiente", "revisada", "para_informe", "descartada"],
                     default=st.session_state.get(
-                        "alerts_status_filter", ["pendiente", "revisada", "para_informe", "descartada"]
+                        "alerts_status_filter",
+                        ["pendiente", "revisada", "para_informe", "descartada"],
                     ),
                     key="alerts_status_filter",
                 )
@@ -887,7 +782,9 @@ with tab4:
                 dom = str(a.get("domain") or "DOCS")
                 rel = str(a.get("relevance") or "MEDIA")
                 stt = str(a.get("status") or "pendiente")
-                blob = (str(a.get("title_human") or "") + " " + str(a.get("summary_human") or "")).lower()
+                blob = (
+                    str(a.get("title_human") or "") + " " + str(a.get("summary_human") or "")
+                ).lower()
                 if domain_filter and dom not in domain_filter:
                     continue
                 if rel_filter and rel not in rel_filter:
@@ -944,9 +841,9 @@ with tab4:
                                     alert_id,
                                     {"status": "revisada", "updated_by": "abogado"},
                                 )
-                                st.session_state["alerts_refresh_token"] = int(
-                                    st.session_state["alerts_refresh_token"]
-                                ) + 1
+                                st.session_state["alerts_refresh_token"] = (
+                                    int(st.session_state["alerts_refresh_token"]) + 1
+                                )
                                 st.session_state["alerts_focus_id"] = alert_id
                                 st.rerun()
                             except Exception as e:
@@ -958,9 +855,9 @@ with tab4:
                                     alert_id,
                                     {"para_informe": True, "updated_by": "abogado"},
                                 )
-                                st.session_state["alerts_refresh_token"] = int(
-                                    st.session_state["alerts_refresh_token"]
-                                ) + 1
+                                st.session_state["alerts_refresh_token"] = (
+                                    int(st.session_state["alerts_refresh_token"]) + 1
+                                )
                                 st.session_state["alerts_focus_id"] = alert_id
                                 st.rerun()
                             except Exception as e:
@@ -972,9 +869,9 @@ with tab4:
                                     alert_id,
                                     {"status": "descartada", "updated_by": "abogado"},
                                 )
-                                st.session_state["alerts_refresh_token"] = int(
-                                    st.session_state["alerts_refresh_token"]
-                                ) + 1
+                                st.session_state["alerts_refresh_token"] = (
+                                    int(st.session_state["alerts_refresh_token"]) + 1
+                                )
                                 st.session_state["alerts_focus_id"] = alert_id
                                 st.rerun()
                             except Exception as e:
@@ -997,9 +894,9 @@ with tab4:
                                         alert_id,
                                         {"lawyer_note": note_val, "updated_by": "abogado"},
                                     )
-                                    st.session_state["alerts_refresh_token"] = int(
-                                        st.session_state["alerts_refresh_token"]
-                                    ) + 1
+                                    st.session_state["alerts_refresh_token"] = (
+                                        int(st.session_state["alerts_refresh_token"]) + 1
+                                    )
                                     st.session_state["alerts_focus_id"] = alert_id
                                     st.rerun()
                                 except Exception as e:
@@ -1033,7 +930,11 @@ with tab4:
                                         p2 = ev.get("page_end")
                                         pages = ""
                                         if p1 is not None:
-                                            pages = f"pág. {p1}" if (p2 is None or p2 == p1) else f"pág. {p1}-{p2}"
+                                            pages = (
+                                                f"pág. {p1}"
+                                                if (p2 is None or p2 == p1)
+                                                else f"pág. {p1}-{p2}"
+                                            )
                                         st.markdown(f"- **{fn}** {pages}")
                                         snip = str(ev.get("snippet") or "").strip()
                                         if snip:
@@ -1048,16 +949,24 @@ with tab4:
                                                 key=f"desk_open_doc_{alert_id}_{idx}",
                                             ):
                                                 try:
-                                                    integ = client.get_document_integrity(case_id, str(doc_id))
-                                                    if integ.get("file_exists") and integ.get("storage_path"):
+                                                    integ = client.get_document_integrity(
+                                                        case_id, str(doc_id)
+                                                    )
+                                                    if integ.get("file_exists") and integ.get(
+                                                        "storage_path"
+                                                    ):
                                                         st.link_button(
                                                             "Abrir archivo local",
                                                             f"file://{integ['storage_path']}",
                                                         )
                                                     else:
-                                                        st.info("Archivo no disponible en disco (según integridad).")
+                                                        st.info(
+                                                            "Archivo no disponible en disco (según integridad)."
+                                                        )
                                                 except Exception as e:
-                                                    st.error(f"No se pudo resolver ruta del archivo: {e}")
+                                                    st.error(
+                                                        f"No se pudo resolver ruta del archivo: {e}"
+                                                    )
 
                                 st.markdown("")
                                 st.markdown("**📌 Cosas que conviene aclarar**")
@@ -1104,15 +1013,17 @@ with tab4:
                                     label_visibility="collapsed",
                                     placeholder="Añade una nota breve (por qué importa, a quién pedirlo, etc.)",
                                 )
-                                if st.button("💾 Guardar nota", key=f"desk_note_area_save_{alert_id}"):
+                                if st.button(
+                                    "💾 Guardar nota", key=f"desk_note_area_save_{alert_id}"
+                                ):
                                     try:
                                         client.update_alert_desk(
                                             alert_id,
                                             {"lawyer_note": note_val2, "updated_by": "abogado"},
                                         )
-                                        st.session_state["alerts_refresh_token"] = int(
-                                            st.session_state["alerts_refresh_token"]
-                                        ) + 1
+                                        st.session_state["alerts_refresh_token"] = (
+                                            int(st.session_state["alerts_refresh_token"]) + 1
+                                        )
                                         st.session_state["alerts_focus_id"] = alert_id
                                         st.rerun()
                                     except Exception as e:
@@ -1134,7 +1045,7 @@ with tab4:
 
                     # Agrupar por tipo (contrato real del backend: alert_type/description/evidence)
                     by_type = {}
-                    for a in (alerts or []):
+                    for a in alerts or []:
                         t = a.get("alert_type", "UNKNOWN")
                         by_type.setdefault(t, []).append(a)
 
@@ -1165,7 +1076,9 @@ with tab4:
                                     loc = ev.get("location") or {}
                                     pages = ""
                                     if loc.get("page_start") is not None:
-                                        pages = f" pág. {loc.get('page_start')}-{loc.get('page_end')}"
+                                        pages = (
+                                            f" pág. {loc.get('page_start')}-{loc.get('page_end')}"
+                                        )
                                     st.write(
                                         f"- **{ev.get('filename','?')}**{pages} "
                                         f"(doc_id: {str(ev.get('document_id',''))[:8]}..., "
@@ -1219,7 +1132,11 @@ with tab5:
             status_data = client.get_economic_report_status(case_id)
         except Exception as e:
             st.error(f"Error al cargar estado del informe: {e}")
-            status_data = {"has_generated": False, "validation": {"status": "UNKNOWN"}, "mode": "BORRADOR"}
+            status_data = {
+                "has_generated": False,
+                "validation": {"status": "UNKNOWN"},
+                "mode": "BORRADOR",
+            }
 
         case_name = status_data.get("case_name") or "—"
         has_generated = bool(status_data.get("has_generated"))
@@ -1231,7 +1148,11 @@ with tab5:
         dirty = bool(status_data.get("dirty_since_last_validation"))
         lawyer_sig = status_data.get("lawyer_signature") or {}
 
-        export_badge = "PASS ✅" if validation_status == "PASS" else ("BLOQUEADO ⛔" if validation_status == "FAIL" else "PENDIENTE")
+        export_badge = (
+            "PASS ✅"
+            if validation_status == "PASS"
+            else ("BLOQUEADO ⛔" if validation_status == "FAIL" else "PENDIENTE")
+        )
         mode_badge = "PUBLICABLE" if mode == "PUBLICABLE" else "BORRADOR"
 
         c1, c2, c3, c4 = st.columns(4)
@@ -1292,7 +1213,9 @@ with tab5:
                 else:
                     try:
                         with st.spinner("Preparando descarga..."):
-                            pdf_content = client.download_economic_report_pdf(case_id, audience="client")
+                            pdf_content = client.download_economic_report_pdf(
+                                case_id, audience="client"
+                            )
                         st.download_button(
                             label="📥 Descargar PDF económico (cliente)",
                             data=pdf_content,
@@ -1332,7 +1255,9 @@ with tab5:
         # -------------------------
         # Subtabs internas
         # -------------------------
-        tprev, tedit, tstruct = st.tabs(["👁️ Vista previa", "✍️ Edición del abogado (Adenda)", "🧩 Correcciones estructuradas"])
+        tprev, tedit, tstruct = st.tabs(
+            ["👁️ Vista previa", "✍️ Edición del abogado (Adenda)", "🧩 Correcciones estructuradas"]
+        )
 
         # Panel derecho común
         def _render_right_panel(*, panel_key: str):
@@ -1351,17 +1276,29 @@ with tab5:
                     st.write("—")
                 else:
                     for r in reasons[:20]:
-                        st.write(f"- **{r.get('rule_id','R?')}** ({r.get('section','?')}): {r.get('message','')}")
+                        st.write(
+                            f"- **{r.get('rule_id','R?')}** ({r.get('section','?')}): {r.get('message','')}"
+                        )
 
             with st.expander("Firma del abogado (obligatoria para PDF cliente)", expanded=True):
                 # Streamlit constraint: form keys must be unique across the whole page render.
                 # This right panel is rendered in multiple subtabs, so suffix by panel_key.
                 with st.form(f"econ_signature_form_{panel_key}"):
-                    sig_name = st.text_input("Nombre y apellidos", value=str(lawyer_sig.get("lawyer_name") or ""))
-                    sig_col = st.text_input("Nº colegiado", value=str(lawyer_sig.get("collegiate_number") or ""))
-                    sig_bar = st.text_input("Colegio", value=str(lawyer_sig.get("bar_association") or ""))
-                    sig_firm = st.text_input("Despacho *", value=str(lawyer_sig.get("law_firm") or ""))
-                    sig_city = st.text_input("Ciudad", value=str(lawyer_sig.get("office_city") or ""))
+                    sig_name = st.text_input(
+                        "Nombre y apellidos", value=str(lawyer_sig.get("lawyer_name") or "")
+                    )
+                    sig_col = st.text_input(
+                        "Nº colegiado", value=str(lawyer_sig.get("collegiate_number") or "")
+                    )
+                    sig_bar = st.text_input(
+                        "Colegio", value=str(lawyer_sig.get("bar_association") or "")
+                    )
+                    sig_firm = st.text_input(
+                        "Despacho *", value=str(lawyer_sig.get("law_firm") or "")
+                    )
+                    sig_city = st.text_input(
+                        "Ciudad", value=str(lawyer_sig.get("office_city") or "")
+                    )
                     sig_date = st.text_input(
                         "Fecha (YYYY-MM-DD) *",
                         value=str(lawyer_sig.get("signature_date") or ""),
@@ -1392,7 +1329,9 @@ with tab5:
                     st.write("—")
                 else:
                     for h in reversed(hist[-30:]):
-                        st.write(f"- {h.get('at','')} — **{h.get('action','')}**: {h.get('detail','')}")
+                        st.write(
+                            f"- {h.get('at','')} — **{h.get('action','')}**: {h.get('detail','')}"
+                        )
 
         with tprev:
             col_main, col_side = st.columns([3.3, 1.2])
@@ -1404,7 +1343,9 @@ with tab5:
                     # Si está PUBLICABLE, mostrar el PDF cliente validado (vista exacta)
                     if can_export:
                         try:
-                            pdf_client = client.download_economic_report_pdf(case_id, audience="client")
+                            pdf_client = client.download_economic_report_pdf(
+                                case_id, audience="client"
+                            )
                             st.download_button(
                                 "📥 Descargar PDF cliente validado",
                                 data=pdf_client,
@@ -1415,7 +1356,9 @@ with tab5:
                         except Exception:
                             pass
                     else:
-                        st.info("El PDF cliente solo se habilita tras validación PASS (modo PUBLICABLE).")
+                        st.info(
+                            "El PDF cliente solo se habilita tras validación PASS (modo PUBLICABLE)."
+                        )
                     try:
                         preview = client.get_economic_report_sections(case_id)
                         for sec in preview.get("sections") or []:
@@ -1437,11 +1380,15 @@ with tab5:
                 default_include = bool(add.get("include_in_pdf", True))
                 default_place = add.get("placement") or "before_signature"
 
-                include_in_pdf = st.checkbox("Incluir en PDF cliente", value=default_include, key="econ_add_include")
+                include_in_pdf = st.checkbox(
+                    "Incluir en PDF cliente", value=default_include, key="econ_add_include"
+                )
                 placement = st.selectbox(
                     "Ubicación",
                     options=["before_signature", "after_block_8"],
-                    format_func=lambda x: "Antes de firma (default)" if x == "before_signature" else "Tras bloque 8",
+                    format_func=lambda x: "Antes de firma (default)"
+                    if x == "before_signature"
+                    else "Tras bloque 8",
                     index=0 if default_place == "before_signature" else 1,
                     key="econ_add_place",
                 )
@@ -1467,7 +1414,9 @@ with tab5:
                     except Exception as e:
                         st.error(f"Error guardando adenda: {e}")
 
-                st.caption("Después de guardar, ejecuta “Generar con cambios (versión cliente)” para pasar a PUBLICABLE.")
+                st.caption(
+                    "Después de guardar, ejecuta “Generar con cambios (versión cliente)” para pasar a PUBLICABLE."
+                )
             with col_side:
                 _render_right_panel(panel_key="edit")
 
@@ -1512,12 +1461,26 @@ with tab5:
                                 ],
                             )
 
-                        edited_by = st.text_input("Editado por", value="abogado", key="econ_overrides_by")
+                        edited_by = st.text_input(
+                            "Editado por", value="abogado", key="econ_overrides_by"
+                        )
 
-                        if st.button("✅ Aplicar cambios al borrador", key="econ_overrides_apply", type="primary"):
+                        if st.button(
+                            "✅ Aplicar cambios al borrador",
+                            key="econ_overrides_apply",
+                            type="primary",
+                        ):
                             # Filtrar: solo filas con evidencia no vacía
-                            debt_overrides = [r for r in (edited_debts or []) if str((r or {}).get("evidence") or "").strip()]
-                            timeline_overrides = [r for r in (edited_tl or []) if str((r or {}).get("evidence") or "").strip()]
+                            debt_overrides = [
+                                r
+                                for r in (edited_debts or [])
+                                if str((r or {}).get("evidence") or "").strip()
+                            ]
+                            timeline_overrides = [
+                                r
+                                for r in (edited_tl or [])
+                                if str((r or {}).get("evidence") or "").strip()
+                            ]
                             try:
                                 client.apply_economic_report_overrides(
                                     case_id,
@@ -1526,7 +1489,9 @@ with tab5:
                                     debt_overrides=debt_overrides,
                                     timeline_overrides=timeline_overrides,
                                 )
-                                st.success("✅ Correcciones aplicadas (BORRADOR). Regenera/valida antes de exportar.")
+                                st.success(
+                                    "✅ Correcciones aplicadas (BORRADOR). Regenera/valida antes de exportar."
+                                )
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error aplicando correcciones: {e}")
@@ -1754,8 +1719,7 @@ with tab6:
                                         else:
                                             st.error(f"Error: {e}")
 
-
-# Cierre del try principal del TAB 6 (Duplicados)
+        # Cierre del try principal del TAB 6 (Duplicados)
         except Exception as e:
             st.error(f"Error al cargar duplicados: {e}")
 
@@ -1764,7 +1728,6 @@ with tab6:
 # TAB 9: JUZGADO (filesystem-only; NO API)
 # =========================================
 with tab9:
-    import zipfile
     # (sin instrumentación debug)
 
     st.header("🏛️ Juzgado")
@@ -1809,7 +1772,9 @@ with tab9:
             {
                 "case_id": str(case_id),
                 "case_root": str(case_root),
-                "submissions_dir": str(paths.get("submissions_dir")) if isinstance(paths, dict) else None,
+                "submissions_dir": str(paths.get("submissions_dir"))
+                if isinstance(paths, dict)
+                else None,
             },
         )
 
@@ -1830,7 +1795,7 @@ with tab9:
                     f"`{paths['inputs_formulario_overrides']}` con este formato:"
                 )
                 st.code(
-                    '{\n'
+                    "{\n"
                     '  "debtor_flags": {\n'
                     '    "debtor_type": "juridica",\n'
                     '    "has_workers": false,\n'
@@ -1846,7 +1811,9 @@ with tab9:
         # Overrides (UI-only)
         overrides = {}
         try:
-            overrides = json.loads(paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}")
+            overrides = json.loads(
+                paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}"
+            )
             if not isinstance(overrides, dict):
                 overrides = {}
         except Exception as e:
@@ -1855,7 +1822,9 @@ with tab9:
 
         has_overrides = bool(overrides)
         pack_status = getattr(getattr(state, "pack_status", None), "value", None) if state else None
-        manual_overrides_count = int(getattr(state, "manual_overrides_count", 0) if state else len(overrides))
+        manual_overrides_count = int(
+            getattr(state, "manual_overrides_count", 0) if state else len(overrides)
+        )
 
         # -------------------------------------------------
         # Wizard + mapeo manual PDF (persistidos por caso)
@@ -1868,14 +1837,21 @@ with tab9:
             wizard_def = {}
 
         try:
-            wizard_answers = json.loads(paths.get("inputs_wizard_answers", paths["inputs_dir"] / "wizard_answers.json").read_text(encoding="utf-8") or "{}")
+            wizard_answers = json.loads(
+                paths.get(
+                    "inputs_wizard_answers", paths["inputs_dir"] / "wizard_answers.json"
+                ).read_text(encoding="utf-8")
+                or "{}"
+            )
             if not isinstance(wizard_answers, dict):
                 wizard_answers = {}
         except Exception:
             wizard_answers = {}
 
         try:
-            fm_effective = json.loads(paths["inputs_field_map_effective"].read_text(encoding="utf-8") or "{}")
+            fm_effective = json.loads(
+                paths["inputs_field_map_effective"].read_text(encoding="utf-8") or "{}"
+            )
             if not isinstance(fm_effective, dict):
                 fm_effective = {}
         except Exception:
@@ -1930,20 +1906,63 @@ with tab9:
                                 "label": "¿Ha cesado su actividad?",
                                 "type": "radio",
                                 "required": True,
-                                "options": [{"value": "si", "label": "Sí"}, {"value": "no", "label": "No"}],
+                                "options": [
+                                    {"value": "si", "label": "Sí"},
+                                    {"value": "no", "label": "No"},
+                                ],
                             },
-                            {"id": "C4_workers_count", "label": "Número de trabajadores", "type": "number", "required": True, "min": 0},
-                            {"id": "C5_asset_value_eur", "label": "Valoración del activo (euros)", "type": "number", "required": True, "min": 0},
-                            {"id": "C6_cash_eur", "label": "Tesorería (euros)", "type": "number", "required": True, "min": 0},
-                            {"id": "C7_passive_amount_eur", "label": "Cuantía del pasivo (euros)", "type": "number", "required": True, "min": 0},
-                            {"id": "C8_creditors_count", "label": "Número de acreedores", "type": "number", "required": True, "min": 0},
+                            {
+                                "id": "C4_workers_count",
+                                "label": "Número de trabajadores",
+                                "type": "number",
+                                "required": True,
+                                "min": 0,
+                            },
+                            {
+                                "id": "C5_asset_value_eur",
+                                "label": "Valoración del activo (euros)",
+                                "type": "number",
+                                "required": True,
+                                "min": 0,
+                            },
+                            {
+                                "id": "C6_cash_eur",
+                                "label": "Tesorería (euros)",
+                                "type": "number",
+                                "required": True,
+                                "min": 0,
+                            },
+                            {
+                                "id": "C7_passive_amount_eur",
+                                "label": "Cuantía del pasivo (euros)",
+                                "type": "number",
+                                "required": True,
+                                "min": 0,
+                            },
+                            {
+                                "id": "C8_creditors_count",
+                                "label": "Número de acreedores",
+                                "type": "number",
+                                "required": True,
+                                "min": 0,
+                            },
                             {
                                 "id": "C9_fees",
                                 "label": "Honorarios recibidos / Provisión de fondos",
                                 "type": "group",
                                 "fields": [
-                                    {"id": "C9_fee_abogado_eur", "label": "Abogado/a (euros)", "type": "number", "min": 0},
-                                    {"id": "C9_fee_procurador_eur", "label": "Procurador/a (euros)", "type": "number", "min": 0},
+                                    {
+                                        "id": "C9_fee_abogado_eur",
+                                        "label": "Abogado/a (euros)",
+                                        "type": "number",
+                                        "min": 0,
+                                    },
+                                    {
+                                        "id": "C9_fee_procurador_eur",
+                                        "label": "Procurador/a (euros)",
+                                        "type": "number",
+                                        "min": 0,
+                                    },
                                 ],
                             },
                         ],
@@ -1954,7 +1973,10 @@ with tab9:
                         "type": "radio",
                         "required": True,
                         "options": [
-                            {"value": "propuesta_anticipada_convenio", "label": "Propuesta anticipada de convenio"},
+                            {
+                                "value": "propuesta_anticipada_convenio",
+                                "label": "Propuesta anticipada de convenio",
+                            },
                             {"value": "convenio", "label": "Convenio"},
                             {"value": "liquidacion", "label": "Liquidación"},
                             {
@@ -1972,7 +1994,10 @@ with tab9:
                                 "label": "¿Se solicita insuficiencia de masa activa?",
                                 "type": "radio",
                                 "required": True,
-                                "options": [{"value": "si", "label": "Sí"}, {"value": "no", "label": "No"}],
+                                "options": [
+                                    {"value": "si", "label": "Sí"},
+                                    {"value": "no", "label": "No"},
+                                ],
                             },
                             {
                                 "id": "E2_insufficiency_justification_text",
@@ -1990,17 +2015,46 @@ with tab9:
                         "type": "checkbox_group",
                         "items": [
                             {"id": "doc1_poder_especial", "label": "Poder especial"},
-                            {"id": "doc2_memoria_economica_y_juridica", "label": "Memoria económica y jurídica"},
-                            {"id": "doc3_inventario_bienes_y_derechos", "label": "Inventario de bienes y derechos"},
-                            {"id": "doc4_relacion_de_acreedores", "label": "Relación de acreedores"},
-                            {"id": "doc5_plantilla_de_trabajadores", "label": "Plantilla de trabajadores"},
-                            {"id": "doc61_cuentas_anuales_individuales", "label": "Cuentas anuales individuales", "years": ["year_1", "year_2", "year_3"]},
-                            {"id": "doc62_cuentas_anuales_consolidadas", "label": "Cuentas anuales consolidadas", "years": ["year_1", "year_2", "year_3"]},
+                            {
+                                "id": "doc2_memoria_economica_y_juridica",
+                                "label": "Memoria económica y jurídica",
+                            },
+                            {
+                                "id": "doc3_inventario_bienes_y_derechos",
+                                "label": "Inventario de bienes y derechos",
+                            },
+                            {
+                                "id": "doc4_relacion_de_acreedores",
+                                "label": "Relación de acreedores",
+                            },
+                            {
+                                "id": "doc5_plantilla_de_trabajadores",
+                                "label": "Plantilla de trabajadores",
+                            },
+                            {
+                                "id": "doc61_cuentas_anuales_individuales",
+                                "label": "Cuentas anuales individuales",
+                                "years": ["year_1", "year_2", "year_3"],
+                            },
+                            {
+                                "id": "doc62_cuentas_anuales_consolidadas",
+                                "label": "Cuentas anuales consolidadas",
+                                "years": ["year_1", "year_2", "year_3"],
+                            },
                             {"id": "doc7_estados_financieros", "label": "Estados financieros"},
                             {"id": "doc8_balance_de_situacion", "label": "Balance de situación"},
-                            {"id": "doc9_memoria_cambios_significativos", "label": "Memoria de cambios significativos"},
-                            {"id": "doc10_memoria_operaciones_extraordinarias", "label": "Memoria de operaciones extraordinarias"},
-                            {"id": "doc11_propuesta_anticipada_de_convenio", "label": "Propuesta anticipada de convenio"},
+                            {
+                                "id": "doc9_memoria_cambios_significativos",
+                                "label": "Memoria de cambios significativos",
+                            },
+                            {
+                                "id": "doc10_memoria_operaciones_extraordinarias",
+                                "label": "Memoria de operaciones extraordinarias",
+                            },
+                            {
+                                "id": "doc11_propuesta_anticipada_de_convenio",
+                                "label": "Propuesta anticipada de convenio",
+                            },
                             {"id": "doc12_adhesiones", "label": "Adhesiones"},
                             {"id": "doc13_plan_de_liquidacion", "label": "Plan de liquidación"},
                         ],
@@ -2015,16 +2069,18 @@ with tab9:
                     },
                 ],
             }
-            paths["inputs_wizard"].write_text(json.dumps(wizard_def, ensure_ascii=False, indent=2), encoding="utf-8")
+            paths["inputs_wizard"].write_text(
+                json.dumps(wizard_def, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
         if not fm_effective:
             fm_effective = {
                 "template_id": "concurso_voluntario_pj_20200521",
-                "sections": [
-                    
-                ],
+                "sections": [],
             }
-            paths["inputs_field_map_effective"].write_text(json.dumps(fm_effective, ensure_ascii=False, indent=2), encoding="utf-8")
+            paths["inputs_field_map_effective"].write_text(
+                json.dumps(fm_effective, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
         # A) Header
         h1, h2, h3 = st.columns([1.2, 1, 1])
@@ -2046,7 +2102,9 @@ with tab9:
             st.session_state.setdefault("juzgado_attach_panel", False)
             do_toggle_attach = st.button("📦 Preparar expediente", width="stretch")
             if do_toggle_attach:
-                st.session_state["juzgado_attach_panel"] = not st.session_state.get("juzgado_attach_panel", False)
+                st.session_state["juzgado_attach_panel"] = not st.session_state.get(
+                    "juzgado_attach_panel", False
+                )
         with b3:
             doc0_path = paths["generated_doc0"]
             if doc0_path.exists():
@@ -2084,8 +2142,14 @@ with tab9:
                 if not raw:
                     return ""
                 txt = str(raw)
-                if "\n\n================================================================================" in txt:
-                    txt = txt.split("\n\n================================================================================", 1)[0]
+                if (
+                    "\n\n================================================================================"
+                    in txt
+                ):
+                    txt = txt.split(
+                        "\n\n================================================================================",
+                        1,
+                    )[0]
                 # Quitar cabeceras de “wrap_response_with_evidence_notice”
                 for prefix in (
                     "⚠️⚠️ Respuesta con nivel de confianza BAJO",
@@ -2119,7 +2183,9 @@ with tab9:
             try:
                 # Si ya hay insolvency.facts en overrides, no tocar.
                 try:
-                    _overrides_now = json.loads(paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}")
+                    _overrides_now = json.loads(
+                        paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}"
+                    )
                     if not isinstance(_overrides_now, dict):
                         _overrides_now = {}
                 except Exception:
@@ -2142,11 +2208,17 @@ with tab9:
                 except Exception:
                     kpis = {}
                 try:
-                    editables = client.get_economic_report_editables(str(case_id)) if (not _is_abs_case) else {}
+                    editables = (
+                        client.get_economic_report_editables(str(case_id))
+                        if (not _is_abs_case)
+                        else {}
+                    )
                 except Exception:
                     editables = {}
                 try:
-                    raw_auto = json.loads(paths["inputs_formulario_auto"].read_text(encoding="utf-8") or "{}")
+                    raw_auto = json.loads(
+                        paths["inputs_formulario_auto"].read_text(encoding="utf-8") or "{}"
+                    )
                 except Exception:
                     raw_auto = {}
                 try:
@@ -2193,7 +2265,9 @@ with tab9:
                     # 1) Intentar desde economic-report/editables (si algún día lo trae)
                     maybe_workers = None
                     try:
-                        maybe_workers = (editables or {}).get("workers_count") or (editables or {}).get("employees_count")
+                        maybe_workers = (editables or {}).get("workers_count") or (
+                            editables or {}
+                        ).get("employees_count")
                     except Exception:
                         maybe_workers = None
                     if isinstance(maybe_workers, (int, float)):
@@ -2215,10 +2289,18 @@ with tab9:
                                 "H_CX_GEN",
                                 "app/ui/streamlit_mvp.py:do_generate",
                                 "workers_rag_probe",
-                                {"case_id": str(case_id), "response_type": rt, "answer_len": len(ans), "parsed": n is not None},
+                                {
+                                    "case_id": str(case_id),
+                                    "response_type": rt,
+                                    "answer_len": len(ans),
+                                    "parsed": n is not None,
+                                },
                             )
                             # #endregion
-                            if rt in ("RESPUESTA_CON_EVIDENCIA", "INFORMACION_PARCIAL_NO_CONCLUYENTE") and isinstance(n, (int, float)):
+                            if rt in (
+                                "RESPUESTA_CON_EVIDENCIA",
+                                "INFORMACION_PARCIAL_NO_CONCLUYENTE",
+                            ) and isinstance(n, (int, float)):
                                 _overrides_now["workers.count"] = int(max(0, round(float(n))))
                         except Exception:
                             pass
@@ -2228,31 +2310,45 @@ with tab9:
 
                 # Totales: preferir Balance (financial-analysis) para activo/pasivo; complementar con KPIs/editables.
                 bal = getattr(fin, "balance", None) if fin is not None else None
-                activo_total = _get_val(getattr(bal, "activo_total", None)) if bal is not None else None
-                pasivo_total = _get_val(getattr(bal, "pasivo_total", None)) if bal is not None else None
+                activo_total = (
+                    _get_val(getattr(bal, "activo_total", None)) if bal is not None else None
+                )
+                pasivo_total = (
+                    _get_val(getattr(bal, "pasivo_total", None)) if bal is not None else None
+                )
 
                 # C7 pasivo (EUR): usar pasivo_total si existe; si no, KPIs.
                 cur_pasivo = _overrides_now.get("totals.passive_amount")
                 if isinstance(pasivo_total, (int, float)):
                     try:
-                        cur_num = float(cur_pasivo) if isinstance(cur_pasivo, (int, float)) else None
+                        cur_num = (
+                            float(cur_pasivo) if isinstance(cur_pasivo, (int, float)) else None
+                        )
                     except Exception:
                         cur_num = None
                     # si estaba vacío o era un "pasivo parcial" (muy inferior), preferir balance
-                    if cur_num is None or cur_num <= 0 or (cur_num > 0 and cur_num < float(pasivo_total) * 0.5):
+                    if (
+                        cur_num is None
+                        or cur_num <= 0
+                        or (cur_num > 0 and cur_num < float(pasivo_total) * 0.5)
+                    ):
                         _overrides_now["totals.passive_amount"] = float(pasivo_total)
                 elif _is_blank(cur_pasivo) and isinstance(kpis.get("total_pasivo"), (int, float)):
                     _overrides_now["totals.passive_amount"] = float(kpis["total_pasivo"])
 
                 # C5 activo (EUR): usar activo_total si existe; si no, intentar activos del cuadro de situación.
-                if _is_blank(_overrides_now.get("totals.asset_value")) and isinstance(activo_total, (int, float)):
+                if _is_blank(_overrides_now.get("totals.asset_value")) and isinstance(
+                    activo_total, (int, float)
+                ):
                     _overrides_now["totals.asset_value"] = float(activo_total)
 
                 # Tesorería y activo: si no existe, intentar derivar de editables (si el reporte lo trae) o dejar vacío.
                 # (No inventamos: si no hay, no hay.)
                 if _is_blank(_overrides_now.get("totals.cash")):
                     try:
-                        maybe_cash = (editables or {}).get("cash_total") or (editables or {}).get("totals", {}).get("cash")
+                        maybe_cash = (editables or {}).get("cash_total") or (editables or {}).get(
+                            "totals", {}
+                        ).get("cash")
                     except Exception:
                         maybe_cash = None
                     if isinstance(maybe_cash, (int, float)):
@@ -2274,17 +2370,27 @@ with tab9:
                                 "H_CX_GEN",
                                 "app/ui/streamlit_mvp.py:do_generate",
                                 "cash_rag_probe",
-                                {"case_id": str(case_id), "response_type": rt, "answer_len": len(ans), "parsed": n is not None},
+                                {
+                                    "case_id": str(case_id),
+                                    "response_type": rt,
+                                    "answer_len": len(ans),
+                                    "parsed": n is not None,
+                                },
                             )
                             # #endregion
-                            if rt in ("RESPUESTA_CON_EVIDENCIA", "INFORMACION_PARCIAL_NO_CONCLUYENTE") and isinstance(n, (int, float)):
+                            if rt in (
+                                "RESPUESTA_CON_EVIDENCIA",
+                                "INFORMACION_PARCIAL_NO_CONCLUYENTE",
+                            ) and isinstance(n, (int, float)):
                                 _overrides_now["totals.cash"] = float(max(0.0, float(n)))
                         except Exception:
                             pass
 
                 if _is_blank(_overrides_now.get("totals.asset_value")):
                     try:
-                        maybe_asset = (editables or {}).get("asset_total") or (editables or {}).get("totals", {}).get("asset_value")
+                        maybe_asset = (editables or {}).get("asset_total") or (editables or {}).get(
+                            "totals", {}
+                        ).get("asset_value")
                     except Exception:
                         maybe_asset = None
                     if isinstance(maybe_asset, (int, float)):
@@ -2305,7 +2411,13 @@ with tab9:
                                 continue
                             data = it.get("data") or {}
                             # tolerar distintos nombres de clave
-                            for key in ("value_ext", "value_eur", "valuation_eur", "amount_eur", "value"):
+                            for key in (
+                                "value_ext",
+                                "value_eur",
+                                "valuation_eur",
+                                "amount_eur",
+                                "value",
+                            ):
                                 v = data.get(key)
                                 if isinstance(v, (int, float)) and float(v) >= 0:
                                     total_assets += float(v)
@@ -2317,7 +2429,12 @@ with tab9:
                             "H_CX_GEN",
                             "app/ui/streamlit_mvp.py:do_generate",
                             "assets_sum_probe",
-                            {"case_id": str(case_id), "assets_items": len(items), "used": used, "sum": total_assets},
+                            {
+                                "case_id": str(case_id),
+                                "assets_items": len(items),
+                                "used": used,
+                                "sum": total_assets,
+                            },
                         )
 
                 # C8 nº acreedores: derivar desde economic-report/editables (debts) y, si hace falta, formulario_auto.
@@ -2335,7 +2452,9 @@ with tab9:
                             uniq_creditors.add(name)
                 derived_creditors = len(uniq_creditors)
                 kpi_creditors = kpis.get("num_acreedores") if isinstance(kpis, dict) else None
-                auto_creditors = raw_auto.get("creditors.count") if isinstance(raw_auto, dict) else None
+                auto_creditors = (
+                    raw_auto.get("creditors.count") if isinstance(raw_auto, dict) else None
+                )
                 cur_creditors = _overrides_now.get("totals.creditors_count")
                 cur_c = None
                 try:
@@ -2376,10 +2495,18 @@ with tab9:
                     "structured_fill_snapshot",
                     {
                         "case_id": str(case_id),
-                        "kpis_keys": sorted(list(kpis.keys()))[:25] if isinstance(kpis, dict) else [],
-                        "has_total_pasivo": isinstance(kpis.get("total_pasivo"), (int, float)) if isinstance(kpis, dict) else False,
-                        "has_num_acreedores": isinstance(kpis.get("num_acreedores"), int) if isinstance(kpis, dict) else False,
-                        "auto_creditors_count": raw_auto.get("creditors.count") if isinstance(raw_auto, dict) else None,
+                        "kpis_keys": sorted(list(kpis.keys()))[:25]
+                        if isinstance(kpis, dict)
+                        else [],
+                        "has_total_pasivo": isinstance(kpis.get("total_pasivo"), (int, float))
+                        if isinstance(kpis, dict)
+                        else False,
+                        "has_num_acreedores": isinstance(kpis.get("num_acreedores"), int)
+                        if isinstance(kpis, dict)
+                        else False,
+                        "auto_creditors_count": raw_auto.get("creditors.count")
+                        if isinstance(raw_auto, dict)
+                        else None,
                         "fa_has_balance": bool(bal is not None),
                         "fa_activo_total": activo_total,
                         "fa_pasivo_total": pasivo_total,
@@ -2434,7 +2561,11 @@ with tab9:
                             "H_C2_GEN",
                             "app/ui/streamlit_mvp.py:do_generate",
                             "c2_rag_result",
-                            {"case_id": str(case_id), "response_type": rt, "answer_len": len(ans_raw)},
+                            {
+                                "case_id": str(case_id),
+                                "response_type": rt,
+                                "answer_len": len(ans_raw),
+                            },
                         )
 
                         c2_txt = ""
@@ -2446,12 +2577,17 @@ with tab9:
                             parts: list[str] = []
                             # Preferir balance (financial-analysis) si existe; si no, KPIs.
                             try:
-                                if isinstance(activo_total, (int, float)) and isinstance(pasivo_total, (int, float)):
+                                if isinstance(activo_total, (int, float)) and isinstance(
+                                    pasivo_total, (int, float)
+                                ):
                                     parts.append(
                                         f"Del balance analizado se desprende un activo total aprox. {float(activo_total):.2f} EUR "
                                         f"y un pasivo total aprox. {float(pasivo_total):.2f} EUR."
                                     )
-                                    if float(pasivo_total) > float(activo_total) and float(activo_total) > 0:
+                                    if (
+                                        float(pasivo_total) > float(activo_total)
+                                        and float(activo_total) > 0
+                                    ):
                                         parts.append("El pasivo total supera al activo total.")
                             except Exception:
                                 pass
@@ -2459,7 +2595,9 @@ with tab9:
                             # Acreedores / deudas (economic-report/editables)
                             try:
                                 if isinstance(derived_creditors, int) and derived_creditors > 0:
-                                    parts.append(f"Consta relación de deudas con {int(derived_creditors)} acreedor(es).")
+                                    parts.append(
+                                        f"Consta relación de deudas con {int(derived_creditors)} acreedor(es)."
+                                    )
                             except Exception:
                                 pass
                             try:
@@ -2471,15 +2609,21 @@ with tab9:
                                     if isinstance(amt, (int, float)) and float(amt) > 0:
                                         total_debts += float(amt)
                                 if total_debts > 0:
-                                    parts.append(f"Importe total de deudas inventariadas aprox. {float(total_debts):.2f} EUR.")
+                                    parts.append(
+                                        f"Importe total de deudas inventariadas aprox. {float(total_debts):.2f} EUR."
+                                    )
                             except Exception:
                                 pass
 
                             # Facturas pendientes (KPIs)
                             try:
-                                num_facturas = kpis.get("num_facturas") if isinstance(kpis, dict) else None
+                                num_facturas = (
+                                    kpis.get("num_facturas") if isinstance(kpis, dict) else None
+                                )
                                 if isinstance(num_facturas, int) and num_facturas > 0:
-                                    parts.append(f"Constan {int(num_facturas)} factura(s) pendiente(s) de pago.")
+                                    parts.append(
+                                        f"Constan {int(num_facturas)} factura(s) pendiente(s) de pago."
+                                    )
                             except Exception:
                                 pass
 
@@ -2498,8 +2642,14 @@ with tab9:
                                         or data0.get("total_eur")
                                         or data0.get("total")
                                     )
-                                    if supplier and isinstance(amt, (int, float)) and float(amt) > 0:
-                                        parts.append(f"Ej.: factura pendiente con {supplier} por {float(amt):.2f} EUR.")
+                                    if (
+                                        supplier
+                                        and isinstance(amt, (int, float))
+                                        and float(amt) > 0
+                                    ):
+                                        parts.append(
+                                            f"Ej.: factura pendiente con {supplier} por {float(amt):.2f} EUR."
+                                        )
                             except Exception:
                                 pass
 
@@ -2536,7 +2686,9 @@ with tab9:
                             )
                             # Reflejar también en UI (wizard_state + widget key) para que se vea tras el rerun.
                             try:
-                                _ws = st.session_state.setdefault(f"juzgado_wizard_state__{case_id}", {})
+                                _ws = st.session_state.setdefault(
+                                    f"juzgado_wizard_state__{case_id}", {}
+                                )
                                 if isinstance(_ws, dict):
                                     _ws["C2"] = c2_txt
                             except Exception:
@@ -2566,16 +2718,24 @@ with tab9:
                 # Autorrelleno E2 (insufficiency.justification) al generar
                 # -------------------------------------------------
                 try:
-                    _e1_req = str(_overrides_now.get("insufficiency.requested") or "").strip().lower()
+                    _e1_req = (
+                        str(_overrides_now.get("insufficiency.requested") or "").strip().lower()
+                    )
                 except Exception:
                     _e1_req = ""
                 if not _e1_req:
                     try:
-                        _e1_req = str((wizard_answers.get("answers") or {}).get("E1") or "").strip().lower()
+                        _e1_req = (
+                            str((wizard_answers.get("answers") or {}).get("E1") or "")
+                            .strip()
+                            .lower()
+                        )
                     except Exception:
                         _e1_req = ""
                 try:
-                    _e2_existing = str(_overrides_now.get("insufficiency.justification") or "").strip()
+                    _e2_existing = str(
+                        _overrides_now.get("insufficiency.justification") or ""
+                    ).strip()
                 except Exception:
                     _e2_existing = ""
 
@@ -2583,7 +2743,11 @@ with tab9:
                     "H_E2_GEN",
                     "app/ui/streamlit_mvp.py:do_generate",
                     "e2_before",
-                    {"case_id": str(case_id), "requested": _e1_req, "e2_existing_len": len(_e2_existing)},
+                    {
+                        "case_id": str(case_id),
+                        "requested": _e1_req,
+                        "e2_existing_len": len(_e2_existing),
+                    },
                 )
 
                 if (_e1_req == "si") and (not _e2_existing) and (not _is_abs_case):
@@ -2601,7 +2765,11 @@ with tab9:
                             "H_E2_GEN",
                             "app/ui/streamlit_mvp.py:do_generate",
                             "e2_rag_result",
-                            {"case_id": str(case_id), "response_type": rt, "answer_len": len(ans_raw)},
+                            {
+                                "case_id": str(case_id),
+                                "response_type": rt,
+                                "answer_len": len(ans_raw),
+                            },
                         )
 
                         e2_txt = ""
@@ -2620,17 +2788,26 @@ with tab9:
                             parts: list[str] = []
                             try:
                                 if isinstance(num_bienes, int) and num_bienes == 0:
-                                    parts.append("No constan bienes/derechos identificados en el expediente (cuadro de situación).")
+                                    parts.append(
+                                        "No constan bienes/derechos identificados en el expediente (cuadro de situación)."
+                                    )
                             except Exception:
                                 pass
                             try:
                                 if isinstance(num_facturas, int) and num_facturas > 0:
-                                    parts.append(f"Constan {int(num_facturas)} factura(s) pendiente(s) de pago.")
+                                    parts.append(
+                                        f"Constan {int(num_facturas)} factura(s) pendiente(s) de pago."
+                                    )
                             except Exception:
                                 pass
                             try:
-                                if isinstance(total_pasivo, (int, float)) and float(total_pasivo) > 0:
-                                    parts.append(f"Consta pasivo exigible aproximado de {float(total_pasivo):.2f} EUR.")
+                                if (
+                                    isinstance(total_pasivo, (int, float))
+                                    and float(total_pasivo) > 0
+                                ):
+                                    parts.append(
+                                        f"Consta pasivo exigible aproximado de {float(total_pasivo):.2f} EUR."
+                                    )
                             except Exception:
                                 pass
                             if parts:
@@ -2639,12 +2816,21 @@ with tab9:
                                     "H_E2_GEN",
                                     "app/ui/streamlit_mvp.py:do_generate",
                                     "e2_structured_built",
-                                    {"case_id": str(case_id), "parts": len(parts), "text_len": len(e2_txt)},
+                                    {
+                                        "case_id": str(case_id),
+                                        "parts": len(parts),
+                                        "text_len": len(e2_txt),
+                                    },
                                 )
 
                         if e2_txt:
                             # Asegurar que E1 queda persistido si venía del wizard
-                            if _e1_req in ("si", "no") and not str(_overrides_now.get("insufficiency.requested") or "").strip():
+                            if (
+                                _e1_req in ("si", "no")
+                                and not str(
+                                    _overrides_now.get("insufficiency.requested") or ""
+                                ).strip()
+                            ):
                                 _overrides_now["insufficiency.requested"] = _e1_req
                             _overrides_now["insufficiency.justification"] = e2_txt
                             paths["inputs_formulario_overrides"].write_text(
@@ -2652,7 +2838,9 @@ with tab9:
                                 encoding="utf-8",
                             )
                             try:
-                                _ws = st.session_state.setdefault(f"juzgado_wizard_state__{case_id}", {})
+                                _ws = st.session_state.setdefault(
+                                    f"juzgado_wizard_state__{case_id}", {}
+                                )
                                 if isinstance(_ws, dict):
                                     _ws["E2"] = e2_txt
                             except Exception:
@@ -2692,15 +2880,21 @@ with tab9:
             # Intentar inicializar state desde inputs si aún no existe (sin inventar debtor_flags).
             if state is None:
                 try:
-                    raw_final = json.loads(paths["inputs_formulario_final"].read_text(encoding="utf-8") or "{}")
+                    raw_final = json.loads(
+                        paths["inputs_formulario_final"].read_text(encoding="utf-8") or "{}"
+                    )
                 except Exception:
                     raw_final = {}
                 try:
-                    raw_over = json.loads(paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}")
+                    raw_over = json.loads(
+                        paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}"
+                    )
                 except Exception:
                     raw_over = {}
                 try:
-                    raw_auto = json.loads(paths["inputs_formulario_auto"].read_text(encoding="utf-8") or "{}")
+                    raw_auto = json.loads(
+                        paths["inputs_formulario_auto"].read_text(encoding="utf-8") or "{}"
+                    )
                 except Exception:
                     raw_auto = {}
 
@@ -2714,7 +2908,7 @@ with tab9:
                         flags = DebtorFlags.model_validate(flags_obj)
                         state = court_pack_service.init_state(case_root, str(case_id), flags)
                         court_pack_service.save_state(case_root, state)
-                    except Exception as e:
+                    except Exception:
                         state = None
 
             if state is None:
@@ -2778,7 +2972,9 @@ with tab9:
                 elif case_raw.exists():
                     fm_path = case_raw
                 else:
-                    fm_path = Path("judicial_forms/concurso_voluntario/personas_juridicas/field_map.json")
+                    fm_path = Path(
+                        "judicial_forms/concurso_voluntario/personas_juridicas/field_map.json"
+                    )
                 fm = pdf_form_filler.load_field_map(fm_path)
                 sections = fm.get("sections") or []
             except Exception as e:
@@ -2795,14 +2991,18 @@ with tab9:
 
             # Leer final (base) y overrides (editable)
             try:
-                final_vals = json.loads(paths["inputs_formulario_final"].read_text(encoding="utf-8") or "{}")
+                final_vals = json.loads(
+                    paths["inputs_formulario_final"].read_text(encoding="utf-8") or "{}"
+                )
                 if not isinstance(final_vals, dict):
                     final_vals = {}
             except Exception:
                 final_vals = {}
 
             try:
-                current_overrides = json.loads(paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}")
+                current_overrides = json.loads(
+                    paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}"
+                )
                 if not isinstance(current_overrides, dict):
                     current_overrides = {}
             except Exception:
@@ -2814,7 +3014,9 @@ with tab9:
             st.markdown("---")
             st.caption("Responde en orden. Debajo verás una recomendación(en rojo).")
 
-            wizard_state: dict[str, Any] = st.session_state.setdefault(f"juzgado_wizard_state__{case_id}", {})
+            wizard_state: dict[str, Any] = st.session_state.setdefault(
+                f"juzgado_wizard_state__{case_id}", {}
+            )
             if not wizard_state and isinstance(wizard_answers.get("answers"), dict):
                 wizard_state.update(wizard_answers.get("answers"))
 
@@ -2825,12 +3027,16 @@ with tab9:
             except Exception:
                 _seed_c2 = ""
             try:
-                _seed_e2 = str((current_overrides or {}).get("insufficiency.justification") or "").strip()
+                _seed_e2 = str(
+                    (current_overrides or {}).get("insufficiency.justification") or ""
+                ).strip()
             except Exception:
                 _seed_e2 = ""
             # Seed C3–C8 desde BD/overrides (valores estructurados)
             try:
-                _seed_c3 = str((current_overrides or {}).get("company.ceased_activity") or "").strip()
+                _seed_c3 = str(
+                    (current_overrides or {}).get("company.ceased_activity") or ""
+                ).strip()
             except Exception:
                 _seed_c3 = ""
             try:
@@ -2930,7 +3136,9 @@ with tab9:
                 _client = None
 
             # region agent log (debug-mode)
-            def _dbg_log_wizard(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+            def _dbg_log_wizard(
+                hypothesis_id: str, location: str, message: str, data: dict
+            ) -> None:
                 try:
                     _path = "/Users/irumabragado/Documents/procesos/202512_phoenix-legal/.cursor/debug.log"
                     payload = {
@@ -2998,15 +3206,21 @@ with tab9:
                         },
                     )
                     return raw_answer
-                except Exception as e:
+                except Exception:
                     st.session_state[cache_key] = None
                     # UX: no mostrar el error crudo al usuario final (se registra en logs si aplica).
                     return "(RAG no disponible)"
 
             def _save_wizard_fs() -> None:
                 try:
-                    paths.get("inputs_wizard_answers", paths["inputs_dir"] / "wizard_answers.json").write_text(
-                        json.dumps({"wizard_id": wizard_def.get("wizard_id"), "answers": wizard_state}, ensure_ascii=False, indent=2),
+                    paths.get(
+                        "inputs_wizard_answers", paths["inputs_dir"] / "wizard_answers.json"
+                    ).write_text(
+                        json.dumps(
+                            {"wizard_id": wizard_def.get("wizard_id"), "answers": wizard_state},
+                            ensure_ascii=False,
+                            indent=2,
+                        ),
                         encoding="utf-8",
                     )
                 except Exception as e:
@@ -3058,7 +3272,9 @@ with tab9:
             a7 = st.radio(
                 "A7",
                 options=["si", "no"],
-                index=(0 if wizard_state.get("A7") == "si" else 1) if wizard_state.get("A7") in ("si", "no") else 1,
+                index=(0 if wizard_state.get("A7") == "si" else 1)
+                if wizard_state.get("A7") in ("si", "no")
+                else 1,
                 key=f"wiz_A7__{case_id}",
                 horizontal=True,
                 label_visibility="collapsed",
@@ -3087,7 +3303,11 @@ with tab9:
             b = st.radio(
                 "B",
                 options=["previamente_otorgado", "apud_acta"],
-                index=0 if wizard_state.get("B") == "previamente_otorgado" else 1 if wizard_state.get("B") == "apud_acta" else 0,
+                index=0
+                if wizard_state.get("B") == "previamente_otorgado"
+                else 1
+                if wizard_state.get("B") == "apud_acta"
+                else 0,
                 key=f"wiz_B__{case_id}",
                 horizontal=True,
                 label_visibility="collapsed",
@@ -3115,7 +3335,11 @@ with tab9:
             c1 = st.radio(
                 "C1",
                 options=["actual", "inminente"],
-                index=0 if wizard_state.get("C1") == "actual" else 1 if wizard_state.get("C1") == "inminente" else 0,
+                index=0
+                if wizard_state.get("C1") == "actual"
+                else 1
+                if wizard_state.get("C1") == "inminente"
+                else 0,
                 key=f"wiz_C1__{case_id}",
                 horizontal=True,
                 label_visibility="collapsed",
@@ -3169,7 +3393,11 @@ with tab9:
                     "H_UI_WIZ_C2",
                     "app/ui/streamlit_mvp.py:wizard_C2",
                     "c2_widget_key_exists",
-                    {"case_id": str(case_id), "key": _c2_widget_key, "default_len": len(_c2_default)},
+                    {
+                        "case_id": str(case_id),
+                        "key": _c2_widget_key,
+                        "default_len": len(_c2_default),
+                    },
                 )
                 c2 = st.text_area(
                     "C2",
@@ -3182,7 +3410,11 @@ with tab9:
                     "H_UI_WIZ_C2",
                     "app/ui/streamlit_mvp.py:wizard_C2",
                     "c2_widget_key_missing",
-                    {"case_id": str(case_id), "key": _c2_widget_key, "default_len": len(_c2_default)},
+                    {
+                        "case_id": str(case_id),
+                        "key": _c2_widget_key,
+                        "default_len": len(_c2_default),
+                    },
                 )
                 c2 = st.text_area(
                     "C2",
@@ -3231,7 +3463,11 @@ with tab9:
             c3 = st.radio(
                 "C3",
                 options=["si", "no"],
-                index=0 if wizard_state.get("C3") == "si" else 1 if wizard_state.get("C3") == "no" else 1,
+                index=0
+                if wizard_state.get("C3") == "si"
+                else 1
+                if wizard_state.get("C3") == "no"
+                else 1,
                 key=f"wiz_C3__{case_id}",
                 horizontal=True,
                 label_visibility="collapsed",
@@ -3330,7 +3566,11 @@ with tab9:
             e1 = st.radio(
                 "E1",
                 options=["si", "no"],
-                index=0 if wizard_state.get("E1") == "si" else 1 if wizard_state.get("E1") == "no" else 1,
+                index=0
+                if wizard_state.get("E1") == "si"
+                else 1
+                if wizard_state.get("E1") == "no"
+                else 1,
                 key=f"wiz_E1__{case_id}",
                 horizontal=True,
                 label_visibility="collapsed",
@@ -3368,8 +3608,14 @@ with tab9:
 
             # F (checkbox group)
             _wiz_title("F) Documentación (marca lo que acompañará a la solicitud)")
-            st.caption("Al pulsar **💾 Guardar y generar documentos** se crearán los ficheros de los ítems marcados y aparecerán abajo en **Documentación Solicitada**.")
-            f_items = wizard_def.get("sections", [])[-2].get("items", []) if isinstance(wizard_def.get("sections"), list) else []
+            st.caption(
+                "Al pulsar **💾 Guardar y generar documentos** se crearán los ficheros de los ítems marcados y aparecerán abajo en **Documentación Solicitada**."
+            )
+            f_items = (
+                wizard_def.get("sections", [])[-2].get("items", [])
+                if isinstance(wizard_def.get("sections"), list)
+                else []
+            )
             selected_f: list[str] = []
             for it in f_items:
                 if not isinstance(it, dict):
@@ -3391,7 +3637,11 @@ with tab9:
                         "H_WIZ_SAVE",
                         "app/ui/streamlit_mvp.py:wiz_save",
                         "clicked",
-                        {"case_id": str(case_id), "selected_f": list(selected_f), "count": len(selected_f)},
+                        {
+                            "case_id": str(case_id),
+                            "selected_f": list(selected_f),
+                            "count": len(selected_f),
+                        },
                     )
                 except Exception:
                     pass
@@ -3401,7 +3651,11 @@ with tab9:
                     # Persistir selección F (doc*) en overrides para que el PDF marque los checkboxes
                     try:
                         # Normalizar: poner True a los marcados; poner False a los no marcados (solo para los que existan en wizard_def)
-                        all_doc_ids = [str(it.get("id")) for it in (f_items or []) if isinstance(it, dict) and it.get("id")]
+                        all_doc_ids = [
+                            str(it.get("id"))
+                            for it in (f_items or [])
+                            if isinstance(it, dict) and it.get("id")
+                        ]
                         selected_set = set(selected_f or [])
                         for did in all_doc_ids:
                             merged[did] = bool(did in selected_set)
@@ -3430,7 +3684,11 @@ with tab9:
                         "H_F_DOCS",
                         "app/ui/streamlit_mvp.py:wiz_save",
                         "wizard_f_selected",
-                        {"case_id": str(case_id), "selected_f": list(selected_f), "count": len(selected_f)},
+                        {
+                            "case_id": str(case_id),
+                            "selected_f": list(selected_f),
+                            "count": len(selected_f),
+                        },
                     )
                 except Exception:
                     pass
@@ -3446,7 +3704,9 @@ with tab9:
                     except Exception:
                         pass
 
-                def _add_attachment_generated(*, doc_key: str, filename: str, content: bytes, kind: str = "otro") -> None:
+                def _add_attachment_generated(
+                    *, doc_key: str, filename: str, content: bytes, kind: str = "otro"
+                ) -> None:
                     _remove_existing_by_doc_key(doc_key)
                     try:
                         _ = court_pack_service.add_attachment(
@@ -3487,9 +3747,13 @@ with tab9:
                             if doc_id == "doc2_memoria_economica_y_juridica":
                                 pdf_bytes = b""
                                 try:
-                                    pdf_bytes = api.download_economic_report_pdf(str(case_id), audience="client")
+                                    pdf_bytes = api.download_economic_report_pdf(
+                                        str(case_id), audience="client"
+                                    )
                                 except Exception:
-                                    pdf_bytes = api.download_economic_report_pdf(str(case_id), audience="internal")
+                                    pdf_bytes = api.download_economic_report_pdf(
+                                        str(case_id), audience="internal"
+                                    )
                                 if pdf_bytes:
                                     _add_attachment_generated(
                                         doc_key="memoria",
@@ -3497,9 +3761,13 @@ with tab9:
                                         content=pdf_bytes,
                                         kind="otro",
                                     )
-                                    results.append({"doc_id": doc_id, "ok": True, "bytes": len(pdf_bytes)})
+                                    results.append(
+                                        {"doc_id": doc_id, "ok": True, "bytes": len(pdf_bytes)}
+                                    )
                                 else:
-                                    results.append({"doc_id": doc_id, "ok": False, "err": "empty_pdf"})
+                                    results.append(
+                                        {"doc_id": doc_id, "ok": False, "err": "empty_pdf"}
+                                    )
                                 continue
 
                             # Inventario bienes y derechos → Excel (bienes)
@@ -3512,9 +3780,13 @@ with tab9:
                                         content=xls,
                                         kind="otro",
                                     )
-                                    results.append({"doc_id": doc_id, "ok": True, "bytes": len(xls)})
+                                    results.append(
+                                        {"doc_id": doc_id, "ok": True, "bytes": len(xls)}
+                                    )
                                 else:
-                                    results.append({"doc_id": doc_id, "ok": False, "err": "empty_xlsx"})
+                                    results.append(
+                                        {"doc_id": doc_id, "ok": False, "err": "empty_xlsx"}
+                                    )
                                 continue
 
                             # Relación de acreedores → CSV (desde editables.debts; fallback a Excel export)
@@ -3524,16 +3796,32 @@ with tab9:
                                 except Exception:
                                     edit = {}
                                 debts = (edit or {}).get("debts") or []
-                                rows: list[str] = ["creditor_name,creditor_type,amount_eur,trlc_bucket"]
+                                rows: list[str] = [
+                                    "creditor_name,creditor_type,amount_eur,trlc_bucket"
+                                ]
                                 if isinstance(debts, list):
                                     for d in debts:
                                         if not isinstance(d, dict):
                                             continue
-                                        name = str(d.get("creditor_name") or "").replace(",", " ").strip()
-                                        ctype = str(d.get("creditor_type") or "").replace(",", " ").strip()
+                                        name = (
+                                            str(d.get("creditor_name") or "")
+                                            .replace(",", " ")
+                                            .strip()
+                                        )
+                                        ctype = (
+                                            str(d.get("creditor_type") or "")
+                                            .replace(",", " ")
+                                            .strip()
+                                        )
                                         amt = d.get("amount_eur")
-                                        bucket = str(d.get("proposed_trlc_bucket") or "").replace(",", " ").strip()
-                                        rows.append(f"{name},{ctype},{amt if isinstance(amt,(int,float)) else ''},{bucket}")
+                                        bucket = (
+                                            str(d.get("proposed_trlc_bucket") or "")
+                                            .replace(",", " ")
+                                            .strip()
+                                        )
+                                        rows.append(
+                                            f"{name},{ctype},{amt if isinstance(amt,(int,float)) else ''},{bucket}"
+                                        )
                                 csv_bytes = ("\n".join(rows) + "\n").encode("utf-8")
                                 _add_attachment_generated(
                                     doc_key="acreedores",
@@ -3541,13 +3829,25 @@ with tab9:
                                     content=csv_bytes,
                                     kind="otro",
                                 )
-                                results.append({"doc_id": doc_id, "ok": True, "bytes": len(csv_bytes), "rows": len(rows) - 1})
+                                results.append(
+                                    {
+                                        "doc_id": doc_id,
+                                        "ok": True,
+                                        "bytes": len(csv_bytes),
+                                        "rows": len(rows) - 1,
+                                    }
+                                )
                                 continue
 
                             # Plantilla trabajadores → TXT (desde overrides/workers.count)
                             if doc_id == "doc5_plantilla_de_trabajadores":
                                 try:
-                                    over = json.loads(paths["inputs_formulario_overrides"].read_text(encoding="utf-8") or "{}")
+                                    over = json.loads(
+                                        paths["inputs_formulario_overrides"].read_text(
+                                            encoding="utf-8"
+                                        )
+                                        or "{}"
+                                    )
                                 except Exception:
                                     over = {}
                                 wc = over.get("workers.count")
@@ -3562,7 +3862,10 @@ with tab9:
                                 continue
 
                             # Cuentas anuales → Excel export (todo)
-                            if doc_id in ("doc61_cuentas_anuales_individuales", "doc62_cuentas_anuales_consolidadas"):
+                            if doc_id in (
+                                "doc61_cuentas_anuales_individuales",
+                                "doc62_cuentas_anuales_consolidadas",
+                            ):
                                 xls = api.download_situation_export_excel(str(case_id))
                                 if xls:
                                     _add_attachment_generated(
@@ -3571,27 +3874,39 @@ with tab9:
                                         content=xls,
                                         kind="cuentas_anuales",
                                     )
-                                    results.append({"doc_id": doc_id, "ok": True, "bytes": len(xls)})
+                                    results.append(
+                                        {"doc_id": doc_id, "ok": True, "bytes": len(xls)}
+                                    )
                                 else:
-                                    results.append({"doc_id": doc_id, "ok": False, "err": "empty_xlsx"})
+                                    results.append(
+                                        {"doc_id": doc_id, "ok": False, "err": "empty_xlsx"}
+                                    )
                                 continue
 
                             # Poder especial → placeholder (no sabemos cuál; queda para adjuntar manual)
                             if doc_id == "doc1_poder_especial":
-                                results.append({"doc_id": doc_id, "ok": False, "err": "manual_required"})
+                                results.append(
+                                    {"doc_id": doc_id, "ok": False, "err": "manual_required"}
+                                )
                                 continue
 
                             # Default: no-op (queda para adjuntar manual / borrador)
                             results.append({"doc_id": doc_id, "ok": False, "err": "not_mapped"})
                         except Exception as e:
-                            results.append({"doc_id": doc_id, "ok": False, "err": str(type(e).__name__)})
+                            results.append(
+                                {"doc_id": doc_id, "ok": False, "err": str(type(e).__name__)}
+                            )
 
                     try:
                         _dbg_log_tab9(
                             "H_F_DOCS",
                             "app/ui/streamlit_mvp.py:wiz_save",
                             "wizard_f_autogen_results",
-                            {"case_id": str(case_id), "results": results[:30], "count": len(results)},
+                            {
+                                "case_id": str(case_id),
+                                "results": results[:30],
+                                "count": len(results),
+                            },
                         )
                     except Exception:
                         pass
@@ -3639,7 +3954,9 @@ with tab9:
                 except Exception:
                     continue
             if docs_dir is None:
-                st.warning("No existe carpeta `documents/` (ni `documentos/`) en este caso. No se puede buscar/adjuntar automáticamente.")
+                st.warning(
+                    "No existe carpeta `documents/` (ni `documentos/`) en este caso. No se puede buscar/adjuntar automáticamente."
+                )
                 # En modo case_id (API), podemos crearla e importar los originales desde la BD.
                 try:
                     raw_sel = str(st.session_state.get("selected_case_id") or "")
@@ -3647,7 +3964,10 @@ with tab9:
                 except Exception:
                     is_abs = False
                 if not is_abs:
-                    if st.button("📥 Importar documentos del caso (API → documents/)", key=f"juzgado_import_docs__{case_id}"):
+                    if st.button(
+                        "📥 Importar documentos del caso (API → documents/)",
+                        key=f"juzgado_import_docs__{case_id}",
+                    ):
                         try:
                             client = get_api_client()
                             docs_dir = case_root / "documents"
@@ -3660,11 +3980,13 @@ with tab9:
                                 if not doc_id:
                                     continue
                                 try:
-                                    b = client.download_document_original_bytes(str(case_id), str(doc_id))
+                                    b = client.download_document_original_bytes(
+                                        str(case_id), str(doc_id)
+                                    )
                                     out = docs_dir / str(fn)
                                     out.write_bytes(b)
                                     imported += 1
-                                except Exception as e:
+                                except Exception:
                                     continue
                             st.success(f"✅ Importados {imported} documentos en `{docs_dir}`")
                             st.rerun()
@@ -3696,7 +4018,9 @@ with tab9:
 
             def _attach_from_path(doc_key: str, src: Path) -> None:
                 # replace previous (best-effort, filesystem-only)
-                for old in list(attach_dir.glob(f"{doc_key}_*")) + list(attach_dir.glob(f"*__{doc_key}__*")):
+                for old in list(attach_dir.glob(f"{doc_key}_*")) + list(
+                    attach_dir.glob(f"*__{doc_key}__*")
+                ):
                     try:
                         old.unlink()
                     except Exception:
@@ -3764,7 +4088,9 @@ with tab9:
                 except Exception:
                     return ""
 
-            def _llm_draft(*, title: str, context_text: str, instructions: str, max_chars: int = 4000) -> str:
+            def _llm_draft(
+                *, title: str, context_text: str, instructions: str, max_chars: int = 4000
+            ) -> str:
                 try:
                     from app.services.llm_executor import execute_llm
                 except Exception:
@@ -3791,7 +4117,9 @@ with tab9:
                 )
                 txt = res.output_text or ""
                 if not txt.strip():
-                    return f"# {title}\n\n[PENDIENTE] No se pudo generar borrador automáticamente.\n"
+                    return (
+                        f"# {title}\n\n[PENDIENTE] No se pudo generar borrador automáticamente.\n"
+                    )
                 return txt.strip()[:max_chars]
 
             def _rag_draft(*, question: str) -> Optional[str]:
@@ -3820,7 +4148,9 @@ with tab9:
                 # Priority: RAG → client report pdf (only for creditors) → DB/wizard via direct LLM
                 wiz_json = ""
                 try:
-                    wiz_json = paths.get("inputs_wizard_answers", paths["inputs_dir"] / "wizard_answers.json").read_text(encoding="utf-8")[:10000]
+                    wiz_json = paths.get(
+                        "inputs_wizard_answers", paths["inputs_dir"] / "wizard_answers.json"
+                    ).read_text(encoding="utf-8")[:10000]
                 except Exception:
                     wiz_json = ""
                 profile_txt = _load_case_profile_text()
@@ -3868,16 +4198,34 @@ with tab9:
 
             # Base docs (siempre listados)
             base_docs = [
-                {"doc_key": "memoria", "title": "📄 Memoria económica y jurídica", "keywords": ["memoria"]},
-                {"doc_key": "inventario", "title": "📄 Inventario de bienes y derechos", "keywords": ["inventario"]},
-                {"doc_key": "acreedores", "title": "📄 Relación de acreedores", "keywords": ["acreedor"]},
+                {
+                    "doc_key": "memoria",
+                    "title": "📄 Memoria económica y jurídica",
+                    "keywords": ["memoria"],
+                },
+                {
+                    "doc_key": "inventario",
+                    "title": "📄 Inventario de bienes y derechos",
+                    "keywords": ["inventario"],
+                },
+                {
+                    "doc_key": "acreedores",
+                    "title": "📄 Relación de acreedores",
+                    "keywords": ["acreedor"],
+                },
                 {"doc_key": "cuentas", "title": "📄 Cuentas anuales", "keywords": ["cuentas"]},
-                {"doc_key": "trabajadores", "title": "📄 Plantilla de trabajadores", "keywords": ["trabajador"]},
+                {
+                    "doc_key": "trabajadores",
+                    "title": "📄 Plantilla de trabajadores",
+                    "keywords": ["trabajador"],
+                },
             ]
 
             # Extras: los marcados por el abogado en F (wizard)
             wiz_state = st.session_state.get(f"juzgado_wizard_state__{case_id}", {}) or {}
-            extras_ids = [k.split("F::", 1)[1] for k, v in wiz_state.items() if k.startswith("F::") and v]
+            extras_ids = [
+                k.split("F::", 1)[1] for k, v in wiz_state.items() if k.startswith("F::") and v
+            ]
             # Build extras dynamically from wizard definition (id+label)
             extra_docs = []
             try:
@@ -3887,17 +4235,27 @@ with tab9:
             f_items = []
             if isinstance(wdef, dict):
                 for sec in wdef.get("sections") or []:
-                    if isinstance(sec, dict) and sec.get("id") == "F" and isinstance(sec.get("items"), list):
+                    if (
+                        isinstance(sec, dict)
+                        and sec.get("id") == "F"
+                        and isinstance(sec.get("items"), list)
+                    ):
                         f_items = sec.get("items") or []
                         break
             label_by_id = {it.get("id"): it.get("label") for it in f_items if isinstance(it, dict)}
             for eid in extras_ids:
                 lbl = label_by_id.get(eid) or eid
                 # keywords from label words (rough but deterministic)
-                kws = [w.lower() for w in str(lbl).replace("·", " ").replace("/", " ").split() if len(w) >= 4][:6]
+                kws = [
+                    w.lower()
+                    for w in str(lbl).replace("·", " ").replace("/", " ").split()
+                    if len(w) >= 4
+                ][:6]
                 if not kws:
                     kws = [eid.replace("doc", "").lower()]
-                extra_docs.append({"doc_key": f"extra_{eid}", "title": f"📄 {lbl}", "keywords": kws})
+                extra_docs.append(
+                    {"doc_key": f"extra_{eid}", "title": f"📄 {lbl}", "keywords": kws}
+                )
 
             docs_all = base_docs + extra_docs
 
@@ -3905,7 +4263,9 @@ with tab9:
             st.write(f"Progreso documentación: {attached}/{len(docs_all)}")
             st.progress(attached / max(1, len(docs_all)))
 
-            st.caption("✔️ Se generan UNO A UNO · ✔️ Cada documento es independiente · ✔️ Exactamente como lo espera el juzgado")
+            st.caption(
+                "✔️ Se generan UNO A UNO · ✔️ Cada documento es independiente · ✔️ Exactamente como lo espera el juzgado"
+            )
 
             for d in docs_all:
                 doc_key = d["doc_key"]
@@ -3931,7 +4291,9 @@ with tab9:
                                 options=[str(p) for p in cands],
                                 key=f"juzgado_doc_pick__{case_id}__{doc_key}",
                             )
-                            if st.button("📎 Adjuntar", key=f"juzgado_doc_attach__{case_id}__{doc_key}"):
+                            if st.button(
+                                "📎 Adjuntar", key=f"juzgado_doc_attach__{case_id}__{doc_key}"
+                            ):
                                 try:
                                     _attach_from_path(doc_key, Path(opt))
                                     st.success("✅ Adjuntado.")
@@ -3940,7 +4302,9 @@ with tab9:
                                     st.error(f"Error adjuntando: {e}")
                         else:
                             st.warning("No encontrado en documents/.")
-                            if st.button("📝 Crear borrador", key=f"juzgado_doc_draft__{case_id}__{doc_key}"):
+                            if st.button(
+                                "📝 Crear borrador", key=f"juzgado_doc_draft__{case_id}__{doc_key}"
+                            ):
                                 try:
                                     content = _generate_doc_content(doc_key, title)
                                     draft.write_text(content, encoding="utf-8")
@@ -3956,10 +4320,12 @@ with tab9:
                             if len(cands) == 1:
                                 _attach_from_path(doc_key, cands[0])
                             elif len(cands) == 0:
-                                draft.write_text(_generate_doc_content(doc_key, title), encoding="utf-8")
+                                draft.write_text(
+                                    _generate_doc_content(doc_key, title), encoding="utf-8"
+                                )
                             else:
                                 pass
-                    except Exception as e:
+                    except Exception:
                         pass
             if st.session_state.get(f"juzgado_docs_autorun__{case_id}", False):
                 st.session_state[f"juzgado_docs_autorun__{case_id}"] = False
@@ -3981,7 +4347,10 @@ with tab9:
                         if st.button("👁️ Revisar", key=f"juzgado_doc_review__{case_id}__{doc_key}"):
                             st.session_state[f"juzgado_doc_open__{case_id}__{doc_key}"] = True
 
-                if st.session_state.get(f"juzgado_doc_open__{case_id}__{doc_key}", False) and draft.exists():
+                if (
+                    st.session_state.get(f"juzgado_doc_open__{case_id}__{doc_key}", False)
+                    and draft.exists()
+                ):
                     txt = draft.read_text(encoding="utf-8")
                     new_txt = st.text_area(
                         "Editar borrador",
@@ -4009,10 +4378,22 @@ with tab9:
         try:
             for p in sorted(paths["attachments_dir"].rglob("*")):
                 if p.is_file():
-                    items.append({"role": "attachment", "rel_path": str(p.relative_to(paths["court_pack"])), "size_bytes": p.stat().st_size})
+                    items.append(
+                        {
+                            "role": "attachment",
+                            "rel_path": str(p.relative_to(paths["court_pack"])),
+                            "size_bytes": p.stat().st_size,
+                        }
+                    )
             for p in sorted(paths["generated_dir"].rglob("*")):
                 if p.is_file():
-                    items.append({"role": "generated", "rel_path": str(p.relative_to(paths["court_pack"])), "size_bytes": p.stat().st_size})
+                    items.append(
+                        {
+                            "role": "generated",
+                            "rel_path": str(p.relative_to(paths["court_pack"])),
+                            "size_bytes": p.stat().st_size,
+                        }
+                    )
         except Exception as e:
             st.error(f"Error listando documentación: {e}")
 
@@ -4058,7 +4439,9 @@ with tab9:
                             if role == "attachment" and rel.startswith("attachments/"):
                                 try:
                                     basename = Path(rel).name
-                                    attachment_id = basename.split("__", 1)[0] if "__" in basename else None
+                                    attachment_id = (
+                                        basename.split("__", 1)[0] if "__" in basename else None
+                                    )
                                 except Exception:
                                     attachment_id = None
                                 if not attachment_id:
@@ -4067,7 +4450,7 @@ with tab9:
                                     court_pack_service.remove_attachment(case_root, attachment_id)
                                     st.rerun()
                             elif role == "generated" and rel.startswith("generated/"):
-                                fp = (paths["court_pack"] / rel)
+                                fp = paths["court_pack"] / rel
                                 if fp.exists() and fp.is_file():
                                     fp.unlink()
                                 st.rerun()
@@ -4093,7 +4476,9 @@ with tab9:
                                 url = None
                                 try:
                                     api = get_api_client()
-                                    url = api.court_pack_file_url(case_id=str(case_id), rel_path=str(rel))
+                                    url = api.court_pack_file_url(
+                                        case_id=str(case_id), rel_path=str(rel)
+                                    )
                                 except Exception:
                                     url = None
                                 if url:
@@ -4112,7 +4497,9 @@ with tab9:
                                     height=260,
                                 )
                             else:
-                                st.info("Previsualización no disponible para este tipo. Usa descargar.")
+                                st.info(
+                                    "Previsualización no disponible para este tipo. Usa descargar."
+                                )
                         except Exception as e:
                             st.error(f"No se pudo previsualizar: {e}")
                 if st.button("Cerrar vista previa", key=f"juzgado_preview_close__{case_id}"):
@@ -4137,7 +4524,9 @@ with tab9:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error guardando adjunto: {e}")
-        st.caption("Los adjuntos aparecen arriba en **Documentación Solicitada** (con 👁️ vista previa).")
+        st.caption(
+            "Los adjuntos aparecen arriba en **Documentación Solicitada** (con 👁️ vista previa)."
+        )
 
         # E) 4) rellenar documento oficial
         st.markdown("### Rellenar documento oficial")
@@ -4157,7 +4546,9 @@ with tab9:
 
         btn_label = "✅ Completado" if doc0_completed else "✏️ Completar"
         btn_type = "primary" if doc0_completed else "secondary"
-        if st.button(btn_label, width="stretch", type=btn_type, key=f"juzgado_doc0_completar__{case_id}"):
+        if st.button(
+            btn_label, width="stretch", type=btn_type, key=f"juzgado_doc0_completar__{case_id}"
+        ):
             # Completar = generar el PDF oficial rellenado con los datos actuales (auto + overrides).
             # No inventa debtor_flags; si faltan, se muestra error.
             template_pdf = Path(
@@ -4220,7 +4611,7 @@ with tab9:
                             st.error(f"No se pudo rellenar el documento oficial: {msg or 'error'}")
                         else:
                             st.success("✅ Documento oficial completado.")
-                    except Exception as e:
+                    except Exception:
                         st.success("✅ Documento oficial completado.")
 
                     # region agent log (debug-mode)
@@ -4241,7 +4632,9 @@ with tab9:
                             {
                                 "case_id": str(case_id),
                                 "doc0_out_exists_after": bool(doc0_out.exists()),
-                                "doc0_out_size": int(doc0_out.stat().st_size) if doc0_out.exists() else 0,
+                                "doc0_out_size": int(doc0_out.stat().st_size)
+                                if doc0_out.exists()
+                                else 0,
                                 "doc0_errors": doc0_err,
                             },
                         )
@@ -4269,7 +4662,9 @@ with tab9:
         st.markdown("---")
         with st.container(border=True):
             st.markdown("### Paso final (opcional): Enviar justificante")
-            st.caption("Este bloque es opcional y está pensado como cierre del proceso (adjuntar justificante y guardar la notificación).")
+            st.caption(
+                "Este bloque es opcional y está pensado como cierre del proceso (adjuntar justificante y guardar la notificación)."
+            )
 
             # region agent log (debug-mode)
             def _dbg_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
@@ -4318,7 +4713,9 @@ with tab9:
                 {
                     "case_id": str(case_id),
                     "just_present": bool(just),
-                    "submissions_dir": str(paths.get("submissions_dir")) if isinstance(paths, dict) else None,
+                    "submissions_dir": str(paths.get("submissions_dir"))
+                    if isinstance(paths, dict)
+                    else None,
                 },
             )
             ts = int(time.time())
@@ -4357,7 +4754,11 @@ with tab9:
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "case_id": str(case_id),
                 # No loguear emails (PII); persistimos como parte del payload.
-                "emails": {"despacho": email_despacho, "cliente": email_cliente, "extra": email_extra},
+                "emails": {
+                    "despacho": email_despacho,
+                    "cliente": email_cliente,
+                    "extra": email_extra,
+                },
                 # Referencia al fichero guardado (si aplica)
                 "justificante_file": justificante_rel,
             }
@@ -4579,7 +4980,9 @@ with tab8:
             help="Se registra en auditoría/evidencia. Ej: abogado@despacho.com",
         )
 
-        sub_a, sub_b, sub_c = st.tabs(["🔎 Buscador documental", "🗃️ Base de datos (Datos)", "⚖️ Pliegos (Juzgado/AC)"])
+        sub_a, sub_b, sub_c = st.tabs(
+            ["🔎 Buscador documental", "🗃️ Base de datos (Datos)", "⚖️ Pliegos (Juzgado/AC)"]
+        )
 
         with sub_a:
             st.subheader("🔎 Buscador (global) — documentos + datos")
@@ -4641,9 +5044,13 @@ with tab8:
                     key="doc_search_types",
                 )
             with col_f3:
-                page_size = st.selectbox("Tamaño", [10, 20, 50, 100], index=1, key="doc_search_page_size")
+                page_size = st.selectbox(
+                    "Tamaño", [10, 20, 50, 100], index=1, key="doc_search_page_size"
+                )
             with col_f4:
-                page = st.number_input("Página", min_value=1, value=1, step=1, key="doc_search_page")
+                page = st.number_input(
+                    "Página", min_value=1, value=1, step=1, key="doc_search_page"
+                )
 
             category = st.session_state.get("doc_search_category", "")
             st.caption(
@@ -4657,7 +5064,9 @@ with tab8:
             with col_s2:
                 search_situation = st.checkbox("Datos", value=True, key="global_search_situation")
             with col_s3:
-                include_history = st.checkbox("Incluir histórico", value=False, key="global_search_include_history")
+                include_history = st.checkbox(
+                    "Incluir histórico", value=False, key="global_search_include_history"
+                )
 
             run = st.button("🔎 Buscar", type="primary")
             if run:
@@ -4731,12 +5140,20 @@ with tab8:
                                     if sn:
                                         st.write(sn)
                                     else:
-                                        st.info("Sin snippet disponible (no hay chunks o contenido vacío).")
+                                        st.info(
+                                            "Sin snippet disponible (no hay chunks o contenido vacío)."
+                                        )
 
                                     if doc_id:
-                                        url_view = _download_doc_url(case_id, doc_id, disposition="inline")
-                                        url_dl = _download_doc_url(case_id, doc_id, disposition="attachment")
-                                        st.markdown(f"[🔎 Ver]({url_view}) · [⬇️ Descargar]({url_dl})")
+                                        url_view = _download_doc_url(
+                                            case_id, doc_id, disposition="inline"
+                                        )
+                                        url_dl = _download_doc_url(
+                                            case_id, doc_id, disposition="attachment"
+                                        )
+                                        st.markdown(
+                                            f"[🔎 Ver]({url_view}) · [⬇️ Descargar]({url_dl})"
+                                        )
                         else:
                             st.info("Sin resultados en Documentos con esos filtros.")
 
@@ -4749,6 +5166,7 @@ with tab8:
                         if not groups:
                             st.info("Sin resultados en Datos.")
                         else:
+
                             def _render_group(title: str, key: str, cols: list[str]):
                                 g = groups.get(key) or {}
                                 items2 = g.get("items") or []
@@ -4772,22 +5190,40 @@ with tab8:
                                 )
                                 # Drilldown
                                 for it in items2[:20]:
-                                    with st.expander(it.get("label") or it.get("record_id"), expanded=False):
+                                    with st.expander(
+                                        it.get("label") or it.get("record_id"), expanded=False
+                                    ):
                                         rid = it.get("record_id")
                                         ent = it.get("entity")
                                         st.write(f"**record_id:** `{rid}` · **entity:** `{ent}`")
                                         if rid and ent:
                                             try:
-                                                ev = client.list_situation_record_evidence(case_id, entity=ent, record_id=rid)
+                                                ev = client.list_situation_record_evidence(
+                                                    case_id, entity=ent, record_id=rid
+                                                )
                                                 ev_items = ev.get("items", []) or []
                                                 if ev_items:
-                                                    st.dataframe(ev_items, use_container_width=True, hide_index=True)
+                                                    st.dataframe(
+                                                        ev_items,
+                                                        use_container_width=True,
+                                                        hide_index=True,
+                                                    )
                                                     for evi in ev_items:
                                                         doc_id2 = evi.get("document_id")
                                                         if doc_id2:
-                                                            url2_view = _download_doc_url(case_id, doc_id2, disposition="inline")
-                                                            url2_dl = _download_doc_url(case_id, doc_id2, disposition="attachment")
-                                                            st.markdown(f"- [🔎 Ver]({url2_view}) · [⬇️ Descargar]({url2_dl})")
+                                                            url2_view = _download_doc_url(
+                                                                case_id,
+                                                                doc_id2,
+                                                                disposition="inline",
+                                                            )
+                                                            url2_dl = _download_doc_url(
+                                                                case_id,
+                                                                doc_id2,
+                                                                disposition="attachment",
+                                                            )
+                                                            st.markdown(
+                                                                f"- [🔎 Ver]({url2_view}) · [⬇️ Descargar]({url2_dl})"
+                                                            )
                                                 else:
                                                     st.info("Sin evidencia enlazada.")
                                             except Exception as e:
@@ -4796,22 +5232,56 @@ with tab8:
                             _render_group(
                                 "🧾 Facturas",
                                 "invoice",
-                                ["supplier", "invoice_number", "issue_date", "due_date", "paid_date", "amount_total", "status", "currency"],
+                                [
+                                    "supplier",
+                                    "invoice_number",
+                                    "issue_date",
+                                    "due_date",
+                                    "paid_date",
+                                    "amount_total",
+                                    "status",
+                                    "currency",
+                                ],
                             )
                             _render_group(
                                 "💳 Créditos",
                                 "credit",
-                                ["creditor", "contract_ref", "amount_total", "currency", "maturity_date", "secured"],
+                                [
+                                    "creditor",
+                                    "contract_ref",
+                                    "amount_total",
+                                    "currency",
+                                    "maturity_date",
+                                    "secured",
+                                ],
                             )
                             _render_group(
                                 "🏛️ Deuda pública",
                                 "public_debt",
-                                ["authority", "concept", "reference", "period_start", "period_end", "amount_total", "status", "currency"],
+                                [
+                                    "authority",
+                                    "concept",
+                                    "reference",
+                                    "period_start",
+                                    "period_end",
+                                    "amount_total",
+                                    "status",
+                                    "currency",
+                                ],
                             )
                             _render_group(
                                 "🏛️ Juzgado",
                                 "court",
-                                ["court", "procedure_number", "autos_ref", "claimant", "amount_claimed", "status", "stage", "currency"],
+                                [
+                                    "court",
+                                    "procedure_number",
+                                    "autos_ref",
+                                    "claimant",
+                                    "amount_claimed",
+                                    "status",
+                                    "stage",
+                                    "currency",
+                                ],
                             )
 
                 except Exception as e:
@@ -4924,9 +5394,13 @@ with tab8:
                         placeholder="pendiente/impagada…",
                     )
                 with col_fa3:
-                    inv_page_size = st.selectbox("Tamaño", [10, 20, 50, 100], index=1, key="inv_filter_page_size")
+                    inv_page_size = st.selectbox(
+                        "Tamaño", [10, 20, 50, 100], index=1, key="inv_filter_page_size"
+                    )
                 with col_fa4:
-                    inv_page = st.number_input("Página", min_value=1, value=1, step=1, key="inv_filter_page")
+                    inv_page = st.number_input(
+                        "Página", min_value=1, value=1, step=1, key="inv_filter_page"
+                    )
                 with col_fa5:
                     inv_include_history = st.checkbox(
                         "Histórico (todas)",
@@ -4965,13 +5439,23 @@ with tab8:
 
                 with st.expander("➕ Añadir factura", expanded=False):
                     supplier = st.text_input("Proveedor/Acreedor", key="inv_supplier")
-                    supplier_tax_id = st.text_input("NIF proveedor (opcional)", key="inv_supplier_tax_id")
+                    supplier_tax_id = st.text_input(
+                        "NIF proveedor (opcional)", key="inv_supplier_tax_id"
+                    )
                     invoice_number = st.text_input("Nº factura (opcional)", key="inv_number")
-                    contract_ref = st.text_input("Ref. contrato/pedido (opcional)", key="inv_contract_ref")
-                    issue_date = st.text_input("Fecha emisión (YYYY-MM-DD, opcional)", key="inv_issue")
+                    contract_ref = st.text_input(
+                        "Ref. contrato/pedido (opcional)", key="inv_contract_ref"
+                    )
+                    issue_date = st.text_input(
+                        "Fecha emisión (YYYY-MM-DD, opcional)", key="inv_issue"
+                    )
                     due_date = st.text_input("Vencimiento (YYYY-MM-DD, opcional)", key="inv_due")
-                    amount_total = st.number_input("Importe total", min_value=0.0, value=0.0, key="inv_amount")
-                    status_txt = st.text_input("Estado (pendiente/pagada/impagada, opcional)", key="inv_status")
+                    amount_total = st.number_input(
+                        "Importe total", min_value=0.0, value=0.0, key="inv_amount"
+                    )
+                    status_txt = st.text_input(
+                        "Estado (pendiente/pagada/impagada, opcional)", key="inv_status"
+                    )
                     notes = st.text_area("Notas (opcional)", key="inv_notes")
                     reason = st.text_area(
                         "Motivo (obligatorio)",
@@ -4980,7 +5464,9 @@ with tab8:
                     )
                     evidence = _evidence_inputs("inv_create")
 
-                    if st.button("💾 Crear factura", type="primary", disabled=not bool(doc_options)):
+                    if st.button(
+                        "💾 Crear factura", type="primary", disabled=not bool(doc_options)
+                    ):
                         try:
                             payload = {
                                 "created_by": created_by,
@@ -5044,7 +5530,9 @@ with tab8:
                                         if not ev_items:
                                             st.info("Sin evidencia (no esperado en MVP).")
                                         else:
-                                            st.dataframe(ev_items, use_container_width=True, hide_index=True)
+                                            st.dataframe(
+                                                ev_items, use_container_width=True, hide_index=True
+                                            )
                                     except Exception as e:
                                         st.error(f"Error cargando evidencia: {e}")
                             with col_meta2:
@@ -5060,11 +5548,15 @@ with tab8:
                                         if not au_items:
                                             st.info("Sin auditoría.")
                                         else:
-                                            st.dataframe(au_items, use_container_width=True, hide_index=True)
+                                            st.dataframe(
+                                                au_items, use_container_width=True, hide_index=True
+                                            )
                                     except Exception as e:
                                         st.error(f"Error cargando auditoría: {e}")
 
-                            with st.expander("➕ Añadir evidencia (sin crear versión)", expanded=False):
+                            with st.expander(
+                                "➕ Añadir evidencia (sin crear versión)", expanded=False
+                            ):
                                 ev_reason_add = st.text_area(
                                     "Motivo (obligatorio)",
                                     key=f"inv_add_ev_reason_{it['record_id']}",
@@ -5255,21 +5747,31 @@ with tab8:
                     creditor = st.text_input("Acreedor", key="cred_creditor")
                     creditor_tax_id = st.text_input("NIF acreedor (opcional)", key="cred_tax_id")
                     contract_ref = st.text_input("Referencia contrato (opcional)", key="cred_ref")
-                    amount_total = st.number_input("Importe total", min_value=0.0, value=0.0, key="cred_amount")
+                    amount_total = st.number_input(
+                        "Importe total", min_value=0.0, value=0.0, key="cred_amount"
+                    )
                     outstanding_principal = st.number_input(
                         "Principal pendiente (opcional)",
                         min_value=0.0,
                         value=0.0,
                         key="cred_outstanding_principal",
                     )
-                    secured = st.checkbox("Garantizado (hipoteca/prenda/aval)", value=False, key="cred_secured")
-                    guarantee_details = st.text_area("Detalle garantía (opcional)", key="cred_guarantee")
-                    maturity_date = st.text_input("Vencimiento (YYYY-MM-DD, opcional)", key="cred_maturity")
+                    secured = st.checkbox(
+                        "Garantizado (hipoteca/prenda/aval)", value=False, key="cred_secured"
+                    )
+                    guarantee_details = st.text_area(
+                        "Detalle garantía (opcional)", key="cred_guarantee"
+                    )
+                    maturity_date = st.text_input(
+                        "Vencimiento (YYYY-MM-DD, opcional)", key="cred_maturity"
+                    )
                     notes = st.text_area("Notas (opcional)", key="cred_notes")
                     reason = st.text_area("Motivo (obligatorio)", key="cred_reason")
                     evidence = _evidence_inputs("cred_create")
 
-                    if st.button("💾 Crear crédito", type="primary", disabled=not bool(doc_options)):
+                    if st.button(
+                        "💾 Crear crédito", type="primary", disabled=not bool(doc_options)
+                    ):
                         try:
                             payload = {
                                 "created_by": created_by,
@@ -5559,7 +6061,9 @@ with tab8:
                                         if not ev_items:
                                             st.info("Sin evidencia (no esperado en MVP).")
                                         else:
-                                            st.dataframe(ev_items, use_container_width=True, hide_index=True)
+                                            st.dataframe(
+                                                ev_items, use_container_width=True, hide_index=True
+                                            )
                                     except Exception as e:
                                         st.error(f"Error cargando evidencia: {e}")
                             with col_meta2:
@@ -5575,11 +6079,15 @@ with tab8:
                                         if not au_items:
                                             st.info("Sin auditoría.")
                                         else:
-                                            st.dataframe(au_items, use_container_width=True, hide_index=True)
+                                            st.dataframe(
+                                                au_items, use_container_width=True, hide_index=True
+                                            )
                                     except Exception as e:
                                         st.error(f"Error cargando auditoría: {e}")
 
-                            with st.expander("➕ Añadir evidencia (sin crear versión)", expanded=False):
+                            with st.expander(
+                                "➕ Añadir evidencia (sin crear versión)", expanded=False
+                            ):
                                 ev_reason_add = st.text_area(
                                     "Motivo (obligatorio)",
                                     key=f"asset_add_ev_reason_{it['record_id']}",
@@ -5725,16 +6233,26 @@ with tab8:
                 with st.expander("➕ Añadir deuda pública", expanded=False):
                     authority = st.selectbox("Organismo", ["AEAT", "TGSS", "OTRO"], key="pub_auth")
                     concept = st.text_input("Concepto (opcional)", key="pub_concept")
-                    period_start = st.text_input("Periodo inicio (YYYY-MM-DD, opcional)", key="pub_period_start")
-                    period_end = st.text_input("Periodo fin (YYYY-MM-DD, opcional)", key="pub_period_end")
-                    expediente_aplazamiento = st.text_input("Expediente aplazamiento (opcional)", key="pub_expediente")
-                    amount_total = st.number_input("Importe", min_value=0.0, value=0.0, key="pub_amount")
+                    period_start = st.text_input(
+                        "Periodo inicio (YYYY-MM-DD, opcional)", key="pub_period_start"
+                    )
+                    period_end = st.text_input(
+                        "Periodo fin (YYYY-MM-DD, opcional)", key="pub_period_end"
+                    )
+                    expediente_aplazamiento = st.text_input(
+                        "Expediente aplazamiento (opcional)", key="pub_expediente"
+                    )
+                    amount_total = st.number_input(
+                        "Importe", min_value=0.0, value=0.0, key="pub_amount"
+                    )
                     deferred = st.checkbox("Aplazada/fraccionada", value=False, key="pub_deferred")
                     notes = st.text_area("Notas (opcional)", key="pub_notes")
                     reason = st.text_area("Motivo (obligatorio)", key="pub_reason")
                     evidence = _evidence_inputs("pub_create")
 
-                    if st.button("💾 Crear deuda pública", type="primary", disabled=not bool(doc_options)):
+                    if st.button(
+                        "💾 Crear deuda pública", type="primary", disabled=not bool(doc_options)
+                    ):
                         try:
                             payload = {
                                 "created_by": created_by,
@@ -5857,7 +6375,9 @@ with tab8:
                         key="court_action_type",
                     )
                     court = st.text_input("Juzgado (opcional)", key="court_name")
-                    procedure_number = st.text_input("Nº procedimiento (opcional)", key="court_proc")
+                    procedure_number = st.text_input(
+                        "Nº procedimiento (opcional)", key="court_proc"
+                    )
                     claimant = st.text_input("Demandante (opcional)", key="court_claimant")
                     amount_claimed = st.number_input(
                         "Importe reclamado (opcional)",
@@ -5871,7 +6391,9 @@ with tab8:
                     reason = st.text_area("Motivo (obligatorio)", key="court_reason")
                     evidence = _evidence_inputs("court_create")
 
-                    if st.button("💾 Crear actuación", type="primary", disabled=not bool(doc_options)):
+                    if st.button(
+                        "💾 Crear actuación", type="primary", disabled=not bool(doc_options)
+                    ):
                         try:
                             payload = {
                                 "created_by": created_by,
@@ -5925,12 +6447,15 @@ with tab8:
             )
 
             template_code_default = "JUZ_SOL_CONCURSO_VOLUNTARIO_PJ"
-            template_code = st.text_input(
-                "template_code (puedes cambiarlo)",
-                value=template_code_default,
-                key="subm_template_code",
-                help="Ej: JUZ_SOL_CONCURSO_VOLUNTARIO_PJ",
-            ).strip() or template_code_default
+            template_code = (
+                st.text_input(
+                    "template_code (puedes cambiarlo)",
+                    value=template_code_default,
+                    key="subm_template_code",
+                    help="Ej: JUZ_SOL_CONCURSO_VOLUNTARIO_PJ",
+                ).strip()
+                or template_code_default
+            )
 
             col_s1, col_s2 = st.columns([2, 1])
             with col_s1:
@@ -5996,11 +6521,15 @@ with tab8:
 
                 st.markdown("---")
                 # UX: ocultar el bloque de edición manual por defecto (evita “cajas” bajo el wizard).
-                show_manual = st.toggle("Avanzado: editar campos manuales", value=False, key="subm_show_manual_fields")
+                show_manual = st.toggle(
+                    "Avanzado: editar campos manuales", value=False, key="subm_show_manual_fields"
+                )
 
                 if show_manual:
                     st.subheader("1.5) Rellenar campos manuales (guardar)")
-                    st.info("Deshabilitado por ahora para evitar volver a mostrar 'cajas' técnicas. Usar el wizard y el guardado.")
+                    st.info(
+                        "Deshabilitado por ahora para evitar volver a mostrar 'cajas' técnicas. Usar el wizard y el guardado."
+                    )
 
                 st.markdown("---")
                 st.subheader("2) Validar → Congelar → Generar")
@@ -6025,7 +6554,9 @@ with tab8:
                                 case_id, active_submission_id, template_code=template_code
                             )
                             st.session_state["subm_last_snapshot"] = s
-                            st.success(f"✅ Snapshot creado: {s.get('snapshot_id')} ({s.get('created_items')})")
+                            st.success(
+                                f"✅ Snapshot creado: {s.get('snapshot_id')} ({s.get('created_items')})"
+                            )
                         except Exception as e:
                             st.error(f"Error congelando: {e}")
                 with col_c:
@@ -6073,7 +6604,9 @@ with tab8:
                             st.download_button(
                                 f"⬇️ Descargar {o.get('format')} {o.get('generated_id')[:8]}…",
                                 data=data,
-                                file_name=os.path.basename(o.get("storage_path") or f"{template_code}_{case_id}.docx"),
+                                file_name=os.path.basename(
+                                    o.get("storage_path") or f"{template_code}_{case_id}.docx"
+                                ),
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 key=f"dl_{o.get('generated_id')}",
                             )
@@ -6108,7 +6641,9 @@ with tab8:
 # =========================================
 with tab10:
     st.header("🧑‍⚖️ Administrador Concursal")
-    st.caption("Pestaña vacía (placeholder). Se implementará el flujo y documentos del Administrador Concursal.")
+    st.caption(
+        "Pestaña vacía (placeholder). Se implementará el flujo y documentos del Administrador Concursal."
+    )
 
 # =========================================
 # FOOTER

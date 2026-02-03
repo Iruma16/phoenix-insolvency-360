@@ -1,6 +1,4 @@
 import pytest
-from datetime import datetime
-
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -49,7 +47,12 @@ def test_add_and_list_submission_templates(client_with_db):
     # create submission
     r = client_with_db.post(
         "/api/cases/case_st1/submissions",
-        json={"target": "JUZGADO", "reference": "Autos 1/2026", "created_by": "abogado", "notes": "Alta"},
+        json={
+            "target": "JUZGADO",
+            "reference": "Autos 1/2026",
+            "created_by": "abogado",
+            "notes": "Alta",
+        },
     )
     assert r.status_code == 201, r.text
     sub_id = r.json()["submission_id"]
@@ -69,4 +72,3 @@ def test_add_and_list_submission_templates(client_with_db):
     assert lst.status_code == 200, lst.text
     items = lst.json()["items"]
     assert any(it["template_code"] == "JUZ_SOL_CONCURSO_VOLUNTARIO_PJ" for it in items)
-

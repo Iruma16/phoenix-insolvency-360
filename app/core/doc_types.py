@@ -13,7 +13,6 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-
 # =========================================================
 # CATÁLOGO (ESTRATEGIA B: `documents.doc_type` usa estos valores)
 # =========================================================
@@ -77,6 +76,7 @@ UI_CATEGORIES: dict[str, list[str]] = {
 # =========================================================
 # Clasificación: reglas + prioridades
 # =========================================================
+
 
 @dataclass(frozen=True)
 class DocTypeInference:
@@ -323,7 +323,9 @@ def infer_doc_type(
     """
 
     filename_n = _normalize(filename or "")
-    haystack = " ".join([filename or "", title or "", source or "", (raw_text_preview or "")[:4000]])
+    haystack = " ".join(
+        [filename or "", title or "", source or "", (raw_text_preview or "")[:4000]]
+    )
     text = _normalize(haystack)
 
     # -----------------------------------------
@@ -356,7 +358,9 @@ def infer_doc_type(
 
     # 4) Embargo (si no es AEAT/TGSS)
     if _contains_any(text, ["embargo", "diligencia de embargo", "traba"]):
-        return DocTypeInference(doc_type="EMBARGO", confidence=0.85, best_score=7.0, second_score=0.0)
+        return DocTypeInference(
+            doc_type="EMBARGO", confidence=0.85, best_score=7.0, second_score=0.0
+        )
 
     # 5) Extracto bancario manda sobre factura si hay señales de banco
     if _contains_any(text, ["extracto", "iban", "saldo", "movimientos", "fecha valor"]):
@@ -386,20 +390,28 @@ def infer_doc_type(
 
     # Umbral conservador
     if best < 2.0:
-        return DocTypeInference(doc_type="OTRO", confidence=0.0, best_score=best, second_score=second)
+        return DocTypeInference(
+            doc_type="OTRO", confidence=0.0, best_score=best, second_score=second
+        )
 
     # Confianza (0..1) basada en separación de scores
     confidence = (best / (best + second + 1e-6)) if best > 0 else 0.0
     confidence = max(0.0, min(1.0, float(confidence)))
 
     if confidence < 0.55:
-        return DocTypeInference(doc_type="OTRO", confidence=confidence, best_score=best, second_score=second)
+        return DocTypeInference(
+            doc_type="OTRO", confidence=confidence, best_score=best, second_score=second
+        )
 
     # Normalizar a catálogo
     if best_type not in DOC_TYPES_SET:
-        return DocTypeInference(doc_type="OTRO", confidence=0.0, best_score=best, second_score=second)
+        return DocTypeInference(
+            doc_type="OTRO", confidence=0.0, best_score=best, second_score=second
+        )
 
-    return DocTypeInference(doc_type=best_type, confidence=confidence, best_score=best, second_score=second)
+    return DocTypeInference(
+        doc_type=best_type, confidence=confidence, best_score=best, second_score=second
+    )
 
 
 def expand_category_to_doc_types(category: Optional[str]) -> Optional[list[str]]:
@@ -407,4 +419,3 @@ def expand_category_to_doc_types(category: Optional[str]) -> Optional[list[str]]
         return None
     key = (category or "").strip().upper()
     return UI_CATEGORIES.get(key)
-
