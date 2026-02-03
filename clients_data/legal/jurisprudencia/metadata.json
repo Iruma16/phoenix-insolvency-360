@@ -1,0 +1,14 @@
+{
+  "source": "CENDOJ (Centro de Documentación Judicial)",
+  "last_update": "2024-01-01",
+  "reference": "Jurisprudencia relevante sobre calificación culpable en concursos",
+  "scope": "Sentencias clave TS y AP sobre concursos",
+  "version": "inicial_2024",
+  "version_label": "Jurisprudencia TS/AP seleccionada 2022-2024",
+  "hash": "",
+  "notes": "Selección manual de sentencias relevantes. NO actualizar automáticamente. Cada sentencia debe ser seleccionada por criterio legal explícito. El version_label identifica el rango temporal y selección de sentencias.",
+  "chunk_strategy": "por_fundamento",
+  "total_sentences": 0,
+  "ingestion_date": ""
+}
+

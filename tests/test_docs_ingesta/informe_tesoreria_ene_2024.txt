@@ -1,0 +1,102 @@
+INFORME DE TESORERÍA
+Test Ingesta SL
+
+═══════════════════════════════════════════════════════════════
+
+Fecha: 20 de enero de 2024
+Elaborado por: Departamento Financiero
+Destinatario: Administración
+
+═══════════════════════════════════════════════════════════════
+
+SITUACIÓN DE TESORERÍA - ENERO 2024
+
+SALDO ACTUAL: 12.500€
+
+COMPROMISOS INMEDIATOS (próximos 15 días):
+─────────────────────────────────────────────────────────────
+Nóminas (5 empleados)                           22.000€
+Seguridad Social                                 7.500€
+Proveedores críticos (mínimo)                   35.000€
+Alquiler local                                   3.500€
+Suministros (luz, agua, etc)                     2.000€
+─────────────────────────────────────────────────────────────
+TOTAL NECESIDADES:                              70.000€
+
+DÉFICIT INMEDIATO:                             -57.500€
+
+═══════════════════════════════════════════════════════════════
+
+COBROS PREVISTOS (próximos 30 días):
+─────────────────────────────────────────────────────────────
+Clientes con pago confirmado                    15.000€
+Clientes con pago probable                       8.000€
+Otros cobros                                     2.000€
+─────────────────────────────────────────────────────────────
+TOTAL COBROS PREVISTOS:                         25.000€
+
+═══════════════════════════════════════════════════════════════
+
+ANÁLISIS DE LA SITUACIÓN:
+
+1. SITUACIÓN CRÍTICA DE LIQUIDEZ
+   - Imposibilidad de atender pagos inmediatos
+   - Déficit de caja: -57.500€
+   - Ratio de liquidez: 0,32 (muy por debajo de mínimo 1,0)
+
+2. FINANCIACIÓN AGOTADA
+   - Línea de crédito: CANCELADA por el banco
+   - Último préstamo solicitado: DENEGADO (15/12/2023)
+   - Descuento de pagarés: NO DISPONIBLE
+
+3. IMPAGOS ACUMULADOS
+   - Proveedores: 145.000€ (algunos > 120 días)
+   - Hacienda (IVA 4T 2023): 12.000€ pendiente
+   - AEAT (IRPF diciembre): 3.500€ pendiente
+
+4. SITUACIÓN LABORAL
+   - 2 nóminas de diciembre pagadas con retraso
+   - Enero: IMPOSIBLE PAGAR con fondos actuales
+   - Seguridad Social: impago inminente
+
+═══════════════════════════════════════════════════════════════
+
+CONCLUSIÓN:
+
+Se CONSTATA SITUACIÓN DE INSOLVENCIA ACTUAL:
+
+- La empresa NO puede atender sus obligaciones corrientes
+- No existen fuentes de financiación disponibles
+- El pasivo exigible supera ampliamente el activo líquido
+- Imposibilidad de pagar nóminas del mes en curso
+
+Esta situación ha fracasado tras:
+- Intento de refinanciación bancaria (RECHAZADO)
+- Negociaciones con proveedores (SIN ACUERDO)
+- Búsqueda de inversores (SIN ÉXITO)
+
+═══════════════════════════════════════════════════════════════
+
+RECOMENDACIÓN URGENTE:
+
+Dada la INSOLVENCIA ACTUAL INMINENTE y la imposibilidad de 
+continuar la actividad normal, se recomienda:
+
+1. Consulta INMEDIATA con asesor legal especializado
+2. Valorar SOLICITUD DE CONCURSO VOLUNTARIO
+3. Suspender nuevos compromisos económicos
+4. Comunicar situación a los trabajadores
+
+El plazo legal de 2 meses para solicitar el concurso puede 
+considerarse AGOTADO, dado que la situación de insolvencia 
+es EVIDENTE desde al menos noviembre de 2023.
+
+═══════════════════════════════════════════════════════════════
+
+Firmado:
+Departamento Financiero
+Test Ingesta SL
+
+Madrid, 20 de enero de 2024
+
+DOCUMENTO CONFIDENCIAL

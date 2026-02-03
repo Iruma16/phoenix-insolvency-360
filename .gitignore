@@ -1,0 +1,84 @@
+# --- SEGURIDAD (CRÍTICO) ---
+.env
+.env.*
+*.key
+
+# --- CARPETAS GENERADAS / OUTPUTS (NO VERSIONAR) ---
+runs/
+artifacts/
+outputs/
+logs/
+reports/
+
+# --- DATOS (NO VERSIONAR) ---
+clients_data/data/
+clients_data/**/cases/
+clients_data/**/_vectorstore/
+clients_data/**/_cache/
+clients_data/**/logs/
+clients_data/**/exports/
+clients_data/**/reports/
+clients_data/**/documents/original/
+clients_data/**/documents/processed/
+clients_data/default/
+clients_data/**/.DS_Store
+runtime/
+
+# Carpetas de demo locales (no versionar)
+case_retail_demo_sl_2026/
+
+# Datos de demo grandes (NO versionar; usar solo `data/sample/`)
+data/demo_ready/
+data/casos_prueba/
+data/*.pdf
+data/*.docx
+data/*.xlsx
+
+# --- RESULTADOS DE TESTS ---
+tests/report_junit.xml
+tests/coverage.xml
+tests/coverage_html/
+tests/reports/
+.pytest_cache/
+.coverage
+.coverage*
+htmlcov/
+
+# --- ENTORNOS Y LIBRERÍAS ---
+venv/
+.venv/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+
+# --- BASES DE DATOS LOCALES ---
+*.db
+*.sqlite3
+
+# --- ARCHIVOS DE SISTEMA Y TEMPORALES ---
+.DS_Store
+Thumbs.db
+temp.pdf
+*.log
+
+# --- ARTEFACTOS PESADOS (FUERA DE GIT) ---
+memoria.pdf
+
+# --- DUPLICADOS ACCIDENTALES (macOS Finder) ---
+* 2.py
+* 2.txt
+* 2.yaml
+* 2.toml
+Makefile 2
+.pre-commit-config 2.yaml
+
+# --- STREAMLIT ---
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# --- DOCKER ---
+docker/.env
+docker/*.env

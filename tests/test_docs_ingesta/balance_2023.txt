@@ -1,0 +1,74 @@
+BALANCE DE SITUACIÓN Y CUENTA DE PÉRDIDAS Y GANANCIAS
+Ejercicio 2023
+
+EMPRESA: Test Ingesta SL
+CIF: B12345678
+Fecha de cierre: 31/12/2023
+
+═══════════════════════════════════════════════════════════════
+
+BALANCE DE SITUACIÓN (en euros)
+
+ACTIVO                                    2023          2022
+─────────────────────────────────────────────────────────────
+Activo no corriente                     250.000       320.000
+  Inmovilizado material                 200.000       250.000
+  Inversiones financieras                50.000        70.000
+
+Activo corriente                        180.000       280.000
+  Existencias                            80.000       120.000
+  Deudores comerciales                   60.000       110.000
+  Tesorería                              40.000        50.000
+
+TOTAL ACTIVO                            430.000       600.000
+
+PATRIMONIO NETO Y PASIVO                  2023          2022
+─────────────────────────────────────────────────────────────
+Patrimonio neto                         -45.000        85.000
+  Capital social                        100.000       100.000
+  Reservas                              -15.000       -15.000
+  Resultado del ejercicio              -130.000         0.000
+
+Pasivo no corriente                     175.000       180.000
+  Deudas a largo plazo                  175.000       180.000
+
+Pasivo corriente                        300.000       335.000
+  Deudas a corto plazo                  180.000       200.000
+  Proveedores                           120.000       135.000
+
+TOTAL PATRIMONIO NETO Y PASIVO          430.000       600.000
+
+═══════════════════════════════════════════════════════════════
+
+CUENTA DE PÉRDIDAS Y GANANCIAS (en euros)
+
+                                          2023          2022
+─────────────────────────────────────────────────────────────
+Importe neto cifra de negocios          450.000       680.000
+Gastos de explotación                  -520.000      -600.000
+
+RESULTADO DE EXPLOTACIÓN                -70.000        80.000
+
+Gastos financieros                      -60.000       -80.000
+
+RESULTADO ANTES DE IMPUESTOS           -130.000            0
+
+Impuesto sobre beneficios                     0            0
+
+RESULTADO DEL EJERCICIO                -130.000            0
+
+═══════════════════════════════════════════════════════════════
+
+OBSERVACIONES:
+
+- Patrimonio neto NEGATIVO: -45.000€ (causa legal de disolución)
+- Pérdidas significativas en el ejercicio: -130.000€
+- Reducción del 34% en cifra de negocios
+- Deterioro progresivo desde Q1 2023
+- Ratio de liquidez: 0,60 (por debajo de 1)
+- Situación de insolvencia actual
+
+═══════════════════════════════════════════════════════════════
+
+Fecha de elaboración: 31 de enero de 2024
+Firmado: Administrador único
